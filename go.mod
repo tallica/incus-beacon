@@ -3,6 +3,7 @@ module github.com/tallica/incus-beacon
 go 1.27
 
 require (
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/lxc/incus/v7 v7.6.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1

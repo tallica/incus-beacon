@@ -64,11 +64,15 @@ network.
    4. A fingerprint different from `volatile.base_image` means the tag was
       republished.
 5. **Semver check**, only for targets with `track=semver`:
-   1. List the tags.
-   2. Keep tags that have the current tag's suffix and precision, aren't
-      prereleases (unless the current tag is one), and pass the include, exclude
-      and constraint filters.
-   3. Report the highest tag that is above the current one.
+   1. List the tags, once per repository per cycle.
+   2. Keep tags with the current tag's shape: the same `v` prefix, number of
+      numeric parts (`1.27` moves only to `x.y` tags) and whole suffix. A suffix
+      is compared as a unit, so `-alpine` stays `-alpine` and a prerelease such
+      as `-rc1` is never offered for a release tag.
+   3. Apply the include, exclude and constraint filters, and report the highest
+      tag above the current one. A newer tag outranks a rebuilt current tag.
+   4. A current tag that isn't a version (`latest`) is an error under
+      `track=semver`.
 6. **Write results.** Write status keys only where a value changed, then send a
    notification for each transition (`serve` only, or `check --write`).
 

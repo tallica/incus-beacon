@@ -70,6 +70,7 @@ func TestErrors(t *testing.T) {
 		{"track", "latest", "must be digest or semver"},
 		{"include", "(", "include"},
 		{"exclude", "[", "exclude"},
+		{"constraint", "~>>1", "constraint"},
 	}
 	for _, tt := range tests {
 		p, err := Parse(map[string]string{"user.beacon." + tt.key: tt.value}, true)

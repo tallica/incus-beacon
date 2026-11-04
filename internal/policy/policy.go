@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+
+	mmsemver "github.com/Masterminds/semver/v3"
+
+	"github.com/tallica/incus-beacon/internal/semver"
 )
 
 const (
@@ -17,7 +21,7 @@ type Policy struct {
 	Watched    bool
 	Image      string
 	Track      string
-	Constraint string
+	Constraint *mmsemver.Constraints
 	Include    *regexp.Regexp
 	Exclude    *regexp.Regexp
 }
@@ -50,7 +54,14 @@ func Parse(config map[string]string, watchAll bool) (Policy, error) {
 	default:
 		errs = append(errs, fmt.Errorf("track %q: must be %s or %s", v, TrackDigest, TrackSemver))
 	}
-	p.Constraint = Key(config, "constraint")
+	if v := Key(config, "constraint"); v != "" {
+		c, err := semver.ParseConstraint(v)
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			p.Constraint = c
+		}
+	}
 
 	var err error
 	if p.Include, err = compile(config, "include"); err != nil {
