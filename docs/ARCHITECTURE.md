@@ -37,8 +37,7 @@ lands in its own commit, and this doc changes with it where the code differs.
 | `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                               | Masterminds/semver                |
 | `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                | registry, semver, policy          |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                        | stdlib                            |
-| `internal/notify`   | Detects status transitions and sends them through shoutrrr URLs or a webhook                               | shoutrrr                          |
-| `internal/serve`    | The interval loop with jitter, `/health` and `/ready`, graceful shutdown                                   | check, incus, notify              |
+| `internal/serve`    | The interval loop with jitter, `/health` and `/ready`, graceful shutdown                                   | check, incus                      |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
@@ -73,8 +72,8 @@ network.
       tag above the current one. A newer tag outranks a rebuilt current tag.
    4. A current tag that isn't a version (`latest`) is an error under
       `track=semver`.
-6. **Write results.** Write status keys only where a value changed, then send a
-   notification for each transition (`serve` only, or `check --write`).
+6. **Write results.** Write status keys only where a value changed.
+   Notifications on these changes are on the [backlog](../BACKLOG.md).
 
 ### Serving
 

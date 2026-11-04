@@ -32,6 +32,15 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Later
 
+- [ ] **Notifications** — tell people when an instance gets an update or a check
+      starts failing, once per change. The written `user.beacon.*` keys are the
+      dedupe state: notify only for instances whose write succeeded, and group
+      one cycle's changes into one message. Open: how to send.
+      [shoutrrr](https://github.com/nicholas-fedor/shoutrrr) (MIT) covers email,
+      Slack, ntfy, Telegram and more behind one `--notify-url`, but roughly
+      doubles the binary (about 13 to 25 MB) and adds many linked modules. A
+      JSON `--webhook-url`, maybe with hand-written ntfy and SMTP, stays small
+      but covers less.
 - [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
       or recreate on the newer image, health-gate, and roll back; opt-in per
       instance.
