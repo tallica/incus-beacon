@@ -24,5 +24,7 @@ get an entry.
   in `user.beacon.*` keys.
 - `incus-beacon serve` checks on an interval (`--interval`, default 6h) and
   records results; `/health` and `/ready` on `--listen` report on it.
+- A container image, `ghcr.io/tallica/incus-beacon` for amd64 and arm64, is
+  published with each release; it runs `serve` as an unprivileged user.
 
 [Unreleased]: https://github.com/tallica/incus-beacon/commits/master

@@ -75,7 +75,7 @@ incus config show web --project beacon-test | grep user.beacon
 ## Go targets
 
 These and `make check` need Go and golangci-lint; `make release-snapshot` also
-needs GoReleaser.
+needs GoReleaser, and `make image` Docker (or `make image CONTAINER=podman`).
 
 | Target                  | What it does                                    |
 | ----------------------- | ----------------------------------------------- |
@@ -85,3 +85,4 @@ needs GoReleaser.
 | `make race`             | Tests with the race detector                    |
 | `make audit`            | govulncheck: vulnerabilities the code can reach |
 | `make release-snapshot` | Local GoReleaser dry run into `dist/`           |
+| `make image`            | Container image for the host's platform         |

@@ -1,10 +1,11 @@
-.PHONY: check run build install test race vet lint fmt fmt-check audit release-notes release-check release-snapshot clean
+.PHONY: check run build install test race vet lint fmt fmt-check audit release-notes release-check release-snapshot image clean
 
 BINARY   := incus-beacon
 PKG      := github.com/tallica/incus-beacon
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT   := $(shell git rev-parse --verify -q HEAD)
 DATE     := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+CONTAINER ?= docker
 LDFLAGS  := -X $(PKG)/internal/version.Version=$(VERSION) \
             -X $(PKG)/internal/version.Commit=$(COMMIT) \
             -X $(PKG)/internal/version.Date=$(DATE)
@@ -58,6 +59,10 @@ release-check:
 
 release-snapshot:
 	goreleaser release --snapshot --clean
+
+image:
+	$(CONTAINER) build -f Containerfile -t $(BINARY):$(VERSION) \
+		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) .
 
 clean:
 	rm -rf bin dist .archive

@@ -43,5 +43,8 @@ notes.
 
 ## Downstream
 
-<!-- Steps after the release is published, e.g. a package tap bump,
-announcing, recording a short demo of the headline feature. -->
+The tag also runs `.github/workflows/image.yml`, which pushes
+`ghcr.io/tallica/incus-beacon` for linux/amd64 and linux/arm64, tagged with the
+version and its `major.minor`. It runs apart from the release job, so check it
+passed. The first push creates the package as private on ghcr.io; make it public
+in the package settings once (to verify on the first release).
