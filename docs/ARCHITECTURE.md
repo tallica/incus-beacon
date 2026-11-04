@@ -64,9 +64,9 @@ network.
       republished.
 5. **Semver check**, only for targets with `track=semver`:
    1. List the tags, once per repository per cycle.
-   2. Keep tags with the current tag's shape: the same `v` prefix, number of
-      numeric parts (`1.27` moves only to `x.y` tags) and whole suffix. A suffix
-      is compared as a unit, so `-alpine` stays `-alpine` and a prerelease such
+   2. Keep tags with the current tag's shape (see
+      [README.md](../README.md#instance-keys)): the same `v` prefix, number of
+      numeric parts and whole suffix, compared as a unit, so a prerelease such
       as `-rc1` is never offered for a release tag.
    3. Apply the include, exclude and constraint filters, and report the highest
       tag above the current one. A newer tag outranks a rebuilt current tag.
@@ -81,8 +81,8 @@ network.
 several beacons don't hit a registry in step. A cycle lists, checks and writes,
 and has at most one interval to finish. It connects to Incus lazily and again
 after a failed listing, so a restarted daemon recovers without a restart here.
-`/health` answers while the process runs; `/ready` answers 200 once the last
-cycle finished without error, and 503 otherwise, with that cycle's summary.
+`/ready` reflects the last cycle; what each endpoint answers is in
+[README.md](../README.md#endpoints).
 
 ### Image ref resolution
 
