@@ -101,9 +101,11 @@ Refs are normalised with Docker conventions: `nginx` becomes
 ## Invariants
 
 - **The fingerprint is the layer hash, not the manifest digest.** Incus sets
-  `volatile.base_image` to a sha256 over the image's layer digests, so a
-  manifest digest never matches it. The exact concatenation is to verify against
-  `client/oci_images.go` in Incus, and a test vector from a real image pins it.
+  `volatile.base_image` to a sha256 over the layer digest strings
+  (`sha256:<hex>`), concatenated with no separator (`computeFingerprint` in
+  Incus `client/oci_images.go`), so a manifest digest never matches it. Incus
+  picks the manifest for its own host's platform, so the beacon selects by
+  `image.architecture`. A test vector read from a running instance pins this.
 - **The beacon writes only `user.beacon.*`, and only on change.** Every config
   write emits an `instance-updated` lifecycle event, and other watchers
   (lazyincus, ic-healthd, incus-compose) react to those. So there is no "last
