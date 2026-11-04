@@ -2,6 +2,7 @@ package incus
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/lxc/incus/v7/shared/api"
@@ -189,5 +190,17 @@ func TestNormalizeFingerprint(t *testing.T) {
 	t.Parallel()
 	if got := normalizeFingerprint(" AB:cd:EF "); got != "abcdef" {
 		t.Errorf("normalizeFingerprint = %q", got)
+	}
+}
+
+func TestTrusted(t *testing.T) {
+	t.Parallel()
+	if err := trusted(fixture().connect(t)); err != nil {
+		t.Errorf("trusted server: %v", err)
+	}
+	f := fixture()
+	f.untrusted = true
+	if err := trusted(f.connect(t)); err == nil || !strings.Contains(err.Error(), "doesn't trust this client certificate") {
+		t.Errorf("untrusted server: err %v", err)
 	}
 }

@@ -63,7 +63,7 @@ func Connect(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServ
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", opts.URL, err)
 	}
-	return srv, nil
+	return srv, trusted(srv)
 }
 
 func connectRemote(name string) (incusclient.InstanceServer, error) {
@@ -85,7 +85,19 @@ func connectRemote(name string) (incusclient.InstanceServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to remote %q: %w", name, err)
 	}
-	return srv, nil
+	return srv, trusted(srv)
+}
+
+// trusted fails early: Incus hides its API extensions from untrusted clients.
+func trusted(srv incusclient.InstanceServer) error {
+	info, _, err := srv.GetServer()
+	if err != nil {
+		return fmt.Errorf("read server info: %w", err)
+	}
+	if info.Auth != "trusted" {
+		return errors.New("the server doesn't trust this client certificate; add it with incus config trust add-certificate")
+	}
+	return nil
 }
 
 type transporter struct{ t *http.Transport }

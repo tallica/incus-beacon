@@ -25,6 +25,14 @@ type fakeIncus struct {
 	versions  map[string]int // project/name -> ETag counter
 	conflicts int            // PUTs to refuse with 412 before accepting
 	puts      int
+	untrusted bool
+}
+
+func (f *fakeIncus) auth() string {
+	if f.untrusted {
+		return "untrusted"
+	}
+	return "trusted"
 }
 
 func (f *fakeIncus) connect(t *testing.T) incusclient.InstanceServer {
@@ -65,7 +73,7 @@ func (f *fakeIncus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/1.0":
 		sync200(w, api.Server{ServerUntrusted: api.ServerUntrusted{
 			APIExtensions: []string{"instance_all_projects"},
-			Auth:          "trusted",
+			Auth:          f.auth(),
 		}})
 	case r.URL.Path == "/1.0/instances":
 		var out []api.Instance
