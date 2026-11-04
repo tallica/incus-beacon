@@ -1,7 +1,7 @@
 # incus-beacon
 
-Monitors OCI registries for new image versions and optionally updates your Incus
-instances automatically
+Watches OCI registries for newer images of Incus OCI containers and reports what
+can be updated.
 
 This file is for any agent (or person) working in the tree; it is the one home
 for how work is done here. README.md is the front door for users. This table is
@@ -18,6 +18,7 @@ the one map of where each kind of fact lives; everywhere else links to the home:
 | Dev setup, make targets, testing            | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                    |                                       |
 | Release procedure                           | [docs/RELEASING.md](docs/RELEASING.md)                        |                                       |
 | Failure modes and fixes                     | [docs/runbooks/](docs/runbooks/)                              |                                       |
+| Reporting vulnerabilities, audit status     | [SECURITY.md](SECURITY.md)                                    |                                       |
 | How docs are written                        | [docs/README.md](docs/README.md#writing)                      |                                       |
 | Template version and how it was rendered    | [.template.json](.template.json)                              | edited by hand                        |
 | Current session state                       | `sessions/` (local only)                                      | committed                             |
