@@ -1,1 +1,4 @@
 .claude/
+
+# Written by make notices, checked byte for byte by make notices-check
+THIRD_PARTY_NOTICES.md
