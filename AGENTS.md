@@ -129,8 +129,8 @@ Releases follow [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Go
 
-- Standard library first; a new dependency needs a reason, an entry in
-  THIRD_PARTY_NOTICES.md and a compatible licence.
+- Standard library first; a new dependency needs a reason, a licence on the list
+  in `scripts/notices.sh` and a `make notices` run in the same commit.
 - No CGO: release binaries are static and cross-compiled.
 - `context.Context` is the first parameter of anything that does I/O or can
   block.

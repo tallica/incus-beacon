@@ -84,5 +84,7 @@ needs GoReleaser, and `make image` Docker (or `make image CONTAINER=podman`).
 | `make install`          | Version-stamped binary into `$GOBIN`            |
 | `make race`             | Tests with the race detector                    |
 | `make audit`            | govulncheck: vulnerabilities the code can reach |
+| `make notices`          | THIRD_PARTY_NOTICES.md from the linked modules  |
+| `make notices-check`    | Fails if THIRD_PARTY_NOTICES.md is stale        |
 | `make release-snapshot` | Local GoReleaser dry run into `dist/`           |
 | `make image`            | Container image for the host's platform         |

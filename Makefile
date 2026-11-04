@@ -1,4 +1,4 @@
-.PHONY: check run build install test race vet lint fmt fmt-check audit release-notes release-check release-snapshot image clean
+.PHONY: check run build install test race vet lint fmt fmt-check audit notices notices-check release-notes release-check release-snapshot image clean
 
 BINARY   := incus-beacon
 PKG      := github.com/tallica/incus-beacon
@@ -49,6 +49,14 @@ fmt-check:
 # Vulnerabilities the code can reach, from the Go vulnerability database.
 audit:
 	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+# THIRD_PARTY_NOTICES.md from the modules the release binaries link, after a
+# licence check; CI runs notices-check, which fails when the file is stale.
+notices:
+	@scripts/notices.sh
+
+notices-check:
+	@scripts/notices.sh --check
 
 release-notes:
 	@test -n "$(TAG)" || { echo "usage: make release-notes TAG=vX.Y.Z" >&2; exit 2; }

@@ -26,5 +26,7 @@ get an entry.
   records results; `/health` and `/ready` on `--listen` report on it.
 - A container image, `ghcr.io/tallica/incus-beacon` for amd64 and arm64, is
   published with each release; it runs `serve` as an unprivileged user.
+- Release archives carry THIRD_PARTY_NOTICES.md with the licence and NOTICE text
+  of every module the binary links, not only direct dependencies.
 
 [Unreleased]: https://github.com/tallica/incus-beacon/commits/master
