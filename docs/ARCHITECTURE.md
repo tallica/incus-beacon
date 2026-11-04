@@ -95,12 +95,13 @@ Refs are normalised with Docker conventions: `nginx` becomes
 
 ### Connecting to Incus
 
-- **As a container (`serve`):** HTTPS to `--incus`. On the first run the beacon
-  redeems a one-time trust token from `--token-file`, generates a client
-  certificate, and keeps it in `--state-dir`. Later runs reuse that certificate.
-  This is the pattern ic-healthd, ic-dns and incus-caddy-config use.
-- **From a host (CLI):** an `incus` CLI remote (`--remote`), or an explicit
-  `--client-cert` and `--client-key`.
+- **Over HTTPS (a container, or any host):** `--incus` with `--client-cert` and
+  `--client-key`, a certificate the server already trusts.
+  `--server-fingerprint` pins the server's self-signed certificate. Joining with
+  a one-time trust token instead, as ic-healthd does, is on the
+  [backlog](../BACKLOG.md).
+- **From a host (CLI):** an `incus` CLI remote (`--remote`, or the CLI's
+  default), which reuses that remote's certificates or local socket.
 
 ## Invariants
 

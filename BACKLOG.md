@@ -13,6 +13,15 @@ not work. An idea that needs more than a paragraph gets its own file in
 - [ ] **Generated THIRD_PARTY_NOTICES.md** — the Incus client links about 50
       modules whose notices aren't listed yet; generate them with `go-licenses`
       (planned for the repo template). Must land before the first release.
+- [ ] **Connect with a one-time trust token** — so the container can join Incus
+      with `incus config trust add incus-beacon` instead of a hand-made client
+      certificate. `--token-file` exists but refuses to run until this lands.
+      incus-compose has no importable package for it (the flow lives in
+      `cmd/ic-healthd`), so it is built on the Incus client: decode the token
+      (`shared/tls.CertificateTokenDecode`; it carries the server fingerprint,
+      so the first connection is pinned too), generate a cert
+      (`GenerateMemCert`), POST it with the token, keep cert, key and server
+      fingerprint in `--state-dir` (0600), then reconnect as trusted.
 - [ ] **lazyincus integration** — show `user.beacon.status` and `latest` in the
       lazyincus instance and image panels, and leave `user.beacon.*` out of its
       config fingerprint as `user.healthcheck.*` already is, so beacon writes
