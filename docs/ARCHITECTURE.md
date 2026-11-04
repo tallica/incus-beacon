@@ -79,9 +79,12 @@ The first source that yields a ref wins:
 1. `user.beacon.image`, or `user.label.beacon.image`.
 2. `user.image_alias`, which incus-compose sets to the fully resolved ref.
 3. The `update_source` (server and alias) of the instance's image record, looked
-   up by `volatile.base_image` in the instance's project. Whether this survives
-   an image copy or prune is to verify.
-4. Otherwise the result is `unknown`, with the reason "no registry ref".
+   up once per `volatile.base_image` in the instance's project. Incus prunes
+   cached images, so this record is often gone.
+4. The image keys Incus copies onto the instance: `image.description` holds
+   `<registry>/<repo> (OCI)` and `image.id` holds `<repo>:<tag>` as launched. An
+   `image.id` pinned by digest has no tag to track and gives no ref.
+5. Otherwise the result is `unknown`, with the reason "no registry ref".
 
 Refs are normalised with Docker conventions: `nginx` becomes
 `docker.io/library/nginx:latest`.

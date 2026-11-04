@@ -42,11 +42,11 @@ func TestExitCodes(t *testing.T) {
 
 func TestLogsGoToStderr(t *testing.T) {
 	t.Parallel()
-	_, out, errOut := runArgs(t, "status", "--log-format", "json")
+	_, out, errOut := runArgs(t, "check", "--log-format", "json")
 	if out != "" {
 		t.Errorf("stdout %q, want nothing", out)
 	}
-	if !strings.Contains(errOut, `"command":"status"`) {
+	if !strings.Contains(errOut, `"command":"check"`) {
 		t.Errorf("stderr %q, want a JSON log line naming the command", errOut)
 	}
 }

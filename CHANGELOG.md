@@ -17,5 +17,7 @@ get an entry.
 
 - `incus-beacon` takes `check`, `status`, `serve` and `version` commands; every
   flag can also be set through a `BEACON_*` environment variable.
+- `incus-beacon status` lists the watched Incus OCI instances, their image and
+  the update status recorded on them, as a table or JSON.
 
 [Unreleased]: https://github.com/tallica/incus-beacon/commits/master

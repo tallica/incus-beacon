@@ -1,0 +1,6 @@
+PROJECT  INSTANCE  STATUS            IMAGE                          LATEST  SINCE                 NOTE
+apps     api       update-available  ghcr.io/example/api:1.2.0      1.3.0   2026-11-01T10:00:00Z
+apps     bad       unchecked         ghcr.io/example/bad:1          -       -                     policy: track "weird": must be digest or semver
+apps     orphan    unchecked         -                              -       -                     no registry ref
+default  db        error             docker.io/library/postgres:17  -       2026-11-02T08:30:00Z  rate limited
+default  web       current           docker.io/library/nginx:1.27   -       -

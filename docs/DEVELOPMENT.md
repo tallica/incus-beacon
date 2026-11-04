@@ -38,8 +38,18 @@ The planned `internal/` packages and their jobs are listed in
 
 ## Testing
 
-<!-- What is unit-tested, what needs real hardware or services, and
-the manual checklist to run before shipping. -->
+`make test` needs no Incus daemon or network. Incus access is tested against a
+fake `/1.0` API in `internal/incus/fake_test.go`; table and JSON output are
+golden files in `internal/report/testdata/`, rewritten with
+`go test ./internal/report -update`.
+
+Against a real Incus, `status` only reads, so it is safe on any remote:
+
+```sh
+make build
+bin/incus-beacon status --remote <remote>
+bin/incus-beacon status --remote <remote> --format json --projects <project>
+```
 
 ## Go targets
 
