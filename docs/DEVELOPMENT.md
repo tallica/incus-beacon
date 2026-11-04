@@ -14,10 +14,16 @@ Setting up, building and testing incus-beacon. Design is in
 
 ```
 .
-├── docs/        topic docs, runbooks, templates
-├── scripts/     helper scripts
-└── ...
+├── cmd/incus-beacon/   entry point: subcommand dispatch and wiring only
+├── internal/           all logic, one package per component
+│   └── version/        build version, set through ldflags
+├── backlogs/           ideas too big for a BACKLOG.md line
+├── docs/               topic docs, runbooks, templates
+└── scripts/            helper scripts
 ```
+
+The planned `internal/` packages and their jobs are listed in
+[ARCHITECTURE.md](ARCHITECTURE.md#components).
 
 ## Make targets
 

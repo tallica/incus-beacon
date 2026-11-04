@@ -10,9 +10,40 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Next
 
+- [ ] **lazyincus integration** — show `user.beacon.status` and `latest` in the
+      lazyincus instance and image panels, and leave `user.beacon.*` out of its
+      config fingerprint as `user.healthcheck.*` already is, so beacon writes
+      don't read as drift.
+- [ ] **Check new instances right away** — follow `instance-created` and image
+      changes through the Incus event stream (incus-compose `ievent`) rather
+      than waiting up to a full interval.
+
 ## Later
+
+- [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
+      or recreate on the newer image, health-gate, and roll back; opt-in per
+      instance.
+- [ ] **Prometheus metrics** — counts by status, registry latency and errors on
+      `/metrics` for people who already run a dashboard.
+- [ ] **Per-registry credentials and mirrors in instance keys** — for setups
+      where one docker `config.json` isn't enough.
+- [ ] **Cooldown** — report a new tag only once it is a set age, so a broken
+      release pulled within hours never triggers an update.
+- [ ] **Changelog links in notifications** — built from the
+      `org.opencontainers.image.source` and version labels, so a notification
+      says what changed.
 
 ## Not planned
 
-<!-- Rejected ideas, each with the reason and date, so they aren't
-pitched again: "- **Idea** — why not (YYYY-MM-DD)." -->
+- **Copying the lazyincus upstream-check code** — the maintainer chose a fresh
+  implementation; lazyincus stays a reference (2026-11-04).
+- **Unix-socket-only access to Incus** — unproven inside OCI containers and
+  grants full admin; a local socket through `--remote` stays available for host
+  CLI use (2026-11-04).
+- **A YAML config file or a bbolt state database** — flags, environment and
+  instance keys cover v0.1, and the instance keys are the state. Revisit if
+  per-registry settings outgrow flags (2026-11-04).
+- **cobra or urfave/cli** — the standard library `flag` package covers four
+  subcommands (2026-11-04).
+- **A "last checked" key written every cycle** — see the write-on-change
+  invariant in [ARCHITECTURE.md](docs/ARCHITECTURE.md#invariants) (2026-11-04).

@@ -47,9 +47,16 @@ go under Removed, security fixes under Security.
 Scopes name the area touched (a package, component or doc). Keep the list short
 and consistent:
 
-| Scope | Area |
-| ----- | ---- |
-|       |      |
+| Scope      | Area                                                     |
+| ---------- | -------------------------------------------------------- |
+| `cli`      | `cmd/incus-beacon`, `internal/config`, `internal/report` |
+| `incus`    | `internal/incusx`, `internal/policy`: Incus API and keys |
+| `registry` | `internal/registry`: OCI registry access, auth, backoff  |
+| `check`    | `internal/check`, `internal/semverx`: update detection   |
+| `notify`   | `internal/notify`                                        |
+| `serve`    | `internal/serve`: daemon loop and health endpoints       |
+| `deploy`   | Containerfile, image publishing, deployment recipes      |
+| `docs`     | Docs not tied to one area above                          |
 
 ## Branches
 
