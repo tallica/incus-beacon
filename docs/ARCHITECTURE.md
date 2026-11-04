@@ -30,17 +30,17 @@ lands in its own commit, and this doc changes with it where the code differs.
 | ------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `cmd/incus-beacon`  | Subcommand dispatch (`check`, `status`, `serve`, `version`); builds the logger and wires the packages      | everything below                  |
 | `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                               | stdlib                            |
-| `internal/logx`     | zerolog setup: level, JSON or console format, stderr only                                                  | zerolog                           |
-| `internal/incusx`   | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.beacon.*`  | Incus client, incus-compose trust |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                  | zerolog                           |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.beacon.*`  | Incus client, incus-compose trust |
 | `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                               | stdlib                            |
 | `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff | oras-go                           |
-| `internal/semverx`  | Splits tags into version and suffix, filters candidates and picks the newest                               | Masterminds/semver                |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                | registry, semverx, policy         |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                               | Masterminds/semver                |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                | registry, semver, policy          |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                        | stdlib                            |
 | `internal/notify`   | Detects status transitions and sends them through shoutrrr URLs or a webhook                               | shoutrrr                          |
-| `internal/serve`    | The interval loop with jitter, `/health` and `/ready`, graceful shutdown                                   | check, incusx, notify             |
+| `internal/serve`    | The interval loop with jitter, `/health` and `/ready`, graceful shutdown                                   | check, incus, notify              |
 
-`internal/incusx` and `internal/registry` sit behind interfaces, so the
+`internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
 network.
 

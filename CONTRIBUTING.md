@@ -50,9 +50,9 @@ and consistent:
 | Scope      | Area                                                     |
 | ---------- | -------------------------------------------------------- |
 | `cli`      | `cmd/incus-beacon`, `internal/config`, `internal/report` |
-| `incus`    | `internal/incusx`, `internal/policy`: Incus API and keys |
+| `incus`    | `internal/incus`, `internal/policy`: Incus API and keys  |
 | `registry` | `internal/registry`: OCI registry access, auth, backoff  |
-| `check`    | `internal/check`, `internal/semverx`: update detection   |
+| `check`    | `internal/check`, `internal/semver`: update detection    |
 | `notify`   | `internal/notify`                                        |
 | `serve`    | `internal/serve`: daemon loop and health endpoints       |
 | `deploy`   | Containerfile, image publishing, deployment recipes      |

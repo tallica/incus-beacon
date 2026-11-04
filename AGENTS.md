@@ -133,6 +133,9 @@ Releases follow [docs/RELEASING.md](docs/RELEASING.md).
 - `context.Context` is the first parameter of anything that does I/O or can
   block.
 - `cmd/` only wires things together; logic lives in `internal/`.
+- Packages are named for what they hold (`internal/log`, `internal/incus`), with
+  no `x` suffix; a library import that clashes gets an alias where it is
+  imported.
 - Golden files live in each package's `testdata/`; regenerate them with the
   test's `-update` flag, never by hand.
 - `make race` when a change touches goroutines, timers or shared state.
