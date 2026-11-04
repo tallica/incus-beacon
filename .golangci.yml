@@ -1,0 +1,47 @@
+version: "2"
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - exhaustive
+    - gocritic
+    - makezero
+    - misspell
+    - nakedret
+    - nilerr
+    - prealloc
+    - revive
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - wastedassign
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+    nakedret:
+      max-func-lines: 0
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax

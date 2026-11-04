@@ -1,0 +1,6 @@
+overrides:
+  - files: "*.md"
+    options:
+      embeddedLanguageFormatting: "off"
+      printWidth: 80
+      proseWrap: "always"

@@ -1,0 +1,15 @@
+name: vuln
+
+# Weekly as well as from CI: an advisory can land with nothing here changing.
+# The schedule has to live in this repo; it only fires where it is declared.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    uses: "tallica/workflows/.github/workflows/govulncheck.yml@v1"

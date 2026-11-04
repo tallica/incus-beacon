@@ -1,0 +1,30 @@
+# OS and editor droppings
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Local config and secrets: never committed; .env.example documents them
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+
+# Session handoffs: local only (see AGENTS.md)
+/sessions/
+
+# Claude Code: settings, hooks and skills are per user, not part of the repo
+.claude/
+
+# Obsidian, when the repo is opened as a vault
+.obsidian/workspace.json
+.trash/
+
+
+# Go build output and release staging
+/bin/
+/dist/
+/.archive/

@@ -1,0 +1,13 @@
+{
+  "template": "claude-repo-template",
+  "version": "v1.0.0",
+  "name": "incus-beacon",
+  "description": "Monitors OCI registries for new image versions and optionally updates your Incus instances automatically",
+  "author": "Michał Lipski",
+  "repo": "tallica/incus-beacon",
+  "branch": "master",
+  "workflows": "tallica/workflows",
+  "overlays": ["go"],
+  "versioning": "semver",
+  "minimal": false
+}

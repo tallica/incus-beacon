@@ -1,0 +1,14 @@
+name: PR
+
+# Commit format and the CHANGELOG rule, checked on every pull request.
+# The label events matter: adding `user-facing` re-runs the CHANGELOG guard.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  pr:
+    uses: "tallica/workflows/.github/workflows/pr.yml@v1"

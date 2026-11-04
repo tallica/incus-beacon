@@ -1,0 +1,50 @@
+version: 2
+project_name: "incus-beacon"
+
+# The markdown that goes into the archives is rewritten copies, staged
+# outside dist/ because --clean wipes that before the hooks run: unpacked
+# elsewhere, links to docs/ have nothing to resolve against.
+before:
+  hooks:
+    - go mod tidy
+    - sh -c 'mkdir -p .archive'
+    - sh -c 'for f in README.md CHANGELOG.md THIRD_PARTY_NOTICES.md; do scripts/absolute-links.sh {{ .Tag }} < "$f" > ".archive/$f"; done'
+
+builds:
+  - main: ./cmd/incus-beacon
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/tallica/incus-beacon/internal/version.Version={{ .Version }}
+      - -X github.com/tallica/incus-beacon/internal/version.Commit={{ .FullCommit }}
+      - -X github.com/tallica/incus-beacon/internal/version.Date={{ .CommitDate }}
+
+archives:
+  - formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - src: .archive/*.md
+        strip_parent: true
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# The release notes are the tag's CHANGELOG.md section, passed by the
+# workflow as --release-notes. Leave the changelog enabled: disabling it
+# also skips loading that file, and the release goes out with no body.
+
+release:
+  mode: replace
