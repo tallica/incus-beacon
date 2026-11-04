@@ -13,4 +13,9 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `incus-beacon` takes `check`, `status`, `serve` and `version` commands; every
+  flag can also be set through a `BEACON_*` environment variable.
+
 [Unreleased]: https://github.com/tallica/incus-beacon/commits/master
