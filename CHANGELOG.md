@@ -19,5 +19,8 @@ get an entry.
   flag can also be set through a `BEACON_*` environment variable.
 - `incus-beacon status` lists the watched Incus OCI instances, their image and
   the update status recorded on them, as a table or JSON.
+- `incus-beacon check` finds newer images for Incus OCI instances (a rebuilt
+  tag, or with `track=semver` a newer version tag); `--write` records the result
+  in `user.beacon.*` keys.
 
 [Unreleased]: https://github.com/tallica/incus-beacon/commits/master

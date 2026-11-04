@@ -2,9 +2,11 @@ package incus
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -18,8 +20,11 @@ type fakeIncus struct {
 	instances []api.Instance
 	images    map[string]api.Image // key: project/fingerprint
 
-	mu       sync.Mutex
-	requests []string
+	mu        sync.Mutex
+	requests  []string
+	versions  map[string]int // project/name -> ETag counter
+	conflicts int            // PUTs to refuse with 412 before accepting
+	puts      int
 }
 
 func (f *fakeIncus) connect(t *testing.T) incusclient.InstanceServer {
@@ -30,8 +35,8 @@ func (f *fakeIncus) connect(t *testing.T) incusclient.InstanceServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := &http.Client{Transport: rewrite{target}}
-	srv, err := incusclient.ConnectIncusHTTP(nil, client)
+	client := &http.Client{Transport: rewrite{target: target, t: &http.Transport{}}}
+	srv, err := incusclient.ConnectIncusHTTP(&incusclient.ConnectionArgs{SkipGetEvents: true}, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +75,10 @@ func (f *fakeIncus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sync200(w, out)
+	case strings.HasPrefix(r.URL.Path, "/1.0/instances/"):
+		f.serveInstance(w, r, strings.TrimPrefix(r.URL.Path, "/1.0/instances/"), project(q.Get("project")))
+	case strings.HasPrefix(r.URL.Path, "/1.0/operations/"):
+		sync200(w, api.Operation{ID: "op", Status: "Success", StatusCode: api.Success})
 	case strings.HasPrefix(r.URL.Path, "/1.0/images/"):
 		fp := strings.TrimPrefix(r.URL.Path, "/1.0/images/")
 		img, ok := f.images[project(q.Get("project"))+"/"+fp]
@@ -80,6 +89,50 @@ func (f *fakeIncus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sync200(w, img)
 	default:
 		notFound(w)
+	}
+}
+
+func (f *fakeIncus) serveInstance(w http.ResponseWriter, r *http.Request, name, proj string) {
+	i := slices.IndexFunc(f.instances, func(inst api.Instance) bool {
+		return inst.Name == name && project(inst.Project) == proj
+	})
+	if i < 0 {
+		notFound(w)
+		return
+	}
+	if f.versions == nil {
+		f.versions = map[string]int{}
+	}
+	key := proj + "/" + name
+	etag := fmt.Sprintf(`"v%d"`, f.versions[key])
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("ETag", etag)
+		sync200(w, f.instances[i])
+	case http.MethodPut:
+		if f.conflicts > 0 || r.Header.Get("If-Match") != etag {
+			f.conflicts--
+			f.versions[key]++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusPreconditionFailed)
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": "error", "error": "ETag mismatch", "error_code": 412})
+			return
+		}
+		var put api.InstancePut
+		if err := json.NewDecoder(r.Body).Decode(&put); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		f.puts++
+		f.versions[key]++
+		f.instances[i].Config = put.Config
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"type": "async", "status": "Operation created", "status_code": 100,
+			"operation": "/1.0/operations/op",
+			"metadata":  api.Operation{ID: "op", Status: "Running", StatusCode: api.Running},
+		})
 	}
 }
 
@@ -97,11 +150,17 @@ func notFound(w http.ResponseWriter) {
 }
 
 // rewrite sends the client's fixed https://custom.socket requests to the fake.
-type rewrite struct{ target *url.URL }
+// It is an incus HTTPTransporter, which operation waits require.
+type rewrite struct {
+	target *url.URL
+	t      *http.Transport
+}
 
 func (rw rewrite) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.URL.Scheme = rw.target.Scheme
 	r.URL.Host = rw.target.Host
-	return http.DefaultTransport.RoundTrip(r)
+	return rw.t.RoundTrip(r)
 }
+
+func (rw rewrite) Transport() *http.Transport { return rw.t }

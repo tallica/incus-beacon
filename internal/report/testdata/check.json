@@ -1,0 +1,36 @@
+[
+  {
+    "project": "apps",
+    "instance": "api",
+    "status": "update-available",
+    "image": "ghcr.io/example/api:1.2.0",
+    "latest": "1.3.0"
+  },
+  {
+    "project": "apps",
+    "instance": "worker",
+    "status": "update-available",
+    "image": "ghcr.io/example/worker:3",
+    "latest": "3@sha256:bbbbbbbbbbbb"
+  },
+  {
+    "project": "apps",
+    "instance": "orphan",
+    "status": "unknown",
+    "image": "",
+    "note": "no registry ref"
+  },
+  {
+    "project": "default",
+    "instance": "db",
+    "status": "error",
+    "image": "docker.io/library/postgres:17",
+    "note": "rate limited until 2026-11-04T18:00:00Z"
+  },
+  {
+    "project": "default",
+    "instance": "web",
+    "status": "current",
+    "image": "docker.io/library/nginx:1.27"
+  }
+]

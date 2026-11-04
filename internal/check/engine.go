@@ -268,3 +268,20 @@ func short(digest string) string {
 	}
 	return "sha256:" + hex
 }
+
+// Beacon moves since only when status or latest changes.
+func Beacon(r Result, now time.Time) incus.Beacon {
+	prev := r.Target.Beacon
+	b := incus.Beacon{Status: string(r.Status), Current: r.Current, Latest: r.Latest}
+	if r.Status == Error || r.Status == Unknown {
+		b.Error = r.Reason
+		if b.Latest == "" {
+			b.Latest = prev.Latest
+		}
+	}
+	b.Since = prev.Since
+	if b.Status != prev.Status || b.Latest != prev.Latest || b.Since == "" {
+		b.Since = now.UTC().Format(time.RFC3339)
+	}
+	return b
+}

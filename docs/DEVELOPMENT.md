@@ -43,12 +43,24 @@ fake `/1.0` API in `internal/incus/fake_test.go`; table and JSON output are
 golden files in `internal/report/testdata/`, rewritten with
 `go test ./internal/report -update`.
 
-Against a real Incus, `status` only reads, so it is safe on any remote:
+Against a real Incus, `status` and `check` without `--write` only read, so they
+are safe on any remote:
 
 ```sh
 make build
 bin/incus-beacon status --remote <remote>
-bin/incus-beacon status --remote <remote> --format json --projects <project>
+bin/incus-beacon check --remote <remote> --format json --log-level debug
+```
+
+`check --write` changes `user.beacon.*` keys on instances, and each change emits
+an `instance-updated` event. Try it on a throwaway project first:
+
+```sh
+incus project create beacon-test
+incus launch docker:nginx:1.27 web --project beacon-test
+incus config set web user.beacon.track=semver --project beacon-test
+bin/incus-beacon check --remote <remote> --project beacon-test --write
+incus config show web --project beacon-test | grep user.beacon
 ```
 
 ## Go targets

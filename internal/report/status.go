@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/tallica/incus-beacon/internal/incus"
@@ -58,16 +59,26 @@ func StatusRows(targets []incus.Target, onlyUpdates bool) []StatusRow {
 
 func WriteStatus(w io.Writer, format string, rows []StatusRow) error {
 	if format == "json" {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(rows)
+		return writeJSON(w, rows)
 	}
+	table := [][]string{{"PROJECT", "INSTANCE", "STATUS", "IMAGE", "LATEST", "SINCE", "NOTE"}}
+	for _, r := range rows {
+		table = append(table, []string{r.Project, r.Instance, r.Status, dash(r.Image), dash(r.Latest), dash(r.Since), r.Note})
+	}
+	return writeTable(w, table)
+}
+
+func writeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+func writeTable(w io.Writer, rows [][]string) error {
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROJECT\tINSTANCE\tSTATUS\tIMAGE\tLATEST\tSINCE\tNOTE")
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Project, r.Instance, r.Status, dash(r.Image), dash(r.Latest), dash(r.Since), r.Note)
+		fmt.Fprintln(tw, strings.Join(r, "\t"))
 	}
 	if err := tw.Flush(); err != nil {
 		return err

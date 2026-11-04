@@ -9,12 +9,16 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/config"
 	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
+	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/report"
 	"github.com/tallica/incus-beacon/internal/version"
 )
@@ -72,6 +76,8 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 	logger = logger.With().Str("command", cfg.Command).Logger()
 	var err error
 	switch cfg.Command {
+	case config.CmdCheck:
+		err = runCheck(ctx, cfg.Check, logger, stdout)
 	case config.CmdStatus:
 		err = runStatus(ctx, cfg.Status, stdout)
 	default:
@@ -83,6 +89,65 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 		return exitError
 	}
 	return exitOK
+}
+
+func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdout io.Writer) error {
+	srv, err := incus.Connect(ctx, connectOptions(c.Common))
+	if err != nil {
+		return err
+	}
+	projects := c.Projects
+	if c.Project != "" {
+		projects = []string{c.Project}
+	}
+	targets, err := incus.Targets(ctx, srv, incus.ListOptions{
+		Projects: projects,
+		Instance: c.Instance,
+		WatchAll: c.Watch == config.WatchAll,
+	})
+	if err != nil {
+		return err
+	}
+	reg, err := registry.New(registry.Options{
+		AuthFile:  c.RegistryAuthFile,
+		Timeout:   c.Timeout,
+		UserAgent: userAgent(),
+	})
+	if err != nil {
+		return err
+	}
+	results := check.New(reg, c.Concurrency, logger).Run(ctx, targets)
+	failed := 0
+	if c.Write {
+		failed = writeResults(ctx, srv, results, logger)
+	}
+	if err := report.WriteCheck(stdout, c.Format, report.CheckRows(results)); err != nil {
+		return err
+	}
+	if failed > 0 {
+		return fmt.Errorf("status not recorded on %d instances", failed)
+	}
+	return nil
+}
+
+// writeResults goes on after a failed write so the report still covers all.
+func writeResults(ctx context.Context, srv incusclient.InstanceServer, results []check.Result, logger zerolog.Logger) (failed int) {
+	now := time.Now()
+	written := 0
+	for i := range results {
+		r := &results[i]
+		changed, err := incus.WriteStatus(ctx, srv, r.Target, check.Beacon(*r, now))
+		if err != nil {
+			logger.Warn().Err(err).Str("project", r.Target.Project).Str("instance", r.Target.Instance).Msg("status not recorded")
+			failed++
+			continue
+		}
+		if changed {
+			written++
+		}
+	}
+	logger.Info().Int("written", written).Int("unchanged", len(results)-written-failed).Int("failed", failed).Msg("status recorded")
+	return failed
 }
 
 func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
@@ -108,6 +173,8 @@ func connectOptions(c config.Common) incus.ConnectOptions {
 		ClientKey:         c.ClientKey,
 		ServerFingerprint: c.ServerFingerprint,
 		TokenFile:         c.TokenFile,
-		UserAgent:         "incus-beacon/" + version.Version,
+		UserAgent:         userAgent(),
 	}
 }
+
+func userAgent() string { return "incus-beacon/" + version.Version }
