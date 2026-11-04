@@ -76,6 +76,15 @@ network.
 6. **Write results.** Write status keys only where a value changed, then send a
    notification for each transition (`serve` only, or `check --write`).
 
+### Serving
+
+`serve` runs a cycle at start, then every `--interval` give or take 10%, so
+several beacons don't hit a registry in step. A cycle lists, checks and writes,
+and has at most one interval to finish. It connects to Incus lazily and again
+after a failed listing, so a restarted daemon recovers without a restart here.
+`/health` answers while the process runs; `/ready` answers 200 once the last
+cycle finished without error, and 503 otherwise, with that cycle's summary.
+
 ### Image ref resolution
 
 The first source that yields a ref wins:

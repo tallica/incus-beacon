@@ -52,6 +52,15 @@ bin/incus-beacon status --remote <remote>
 bin/incus-beacon check --remote <remote> --format json --log-level debug
 ```
 
+`serve --watch opt-in` connects, lists and serves `/health` and `/ready` but
+watches nothing until an instance sets `user.beacon.enable=true`, so it is a
+safe way to try the daemon on a real remote:
+
+```sh
+bin/incus-beacon serve --remote <remote> --watch opt-in --interval 1m --listen 127.0.0.1:9153
+curl 127.0.0.1:9153/ready
+```
+
 `check --write` changes `user.beacon.*` keys on instances, and each change emits
 an `instance-updated` event. Try it on a throwaway project first:
 

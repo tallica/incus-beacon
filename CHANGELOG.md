@@ -22,5 +22,7 @@ get an entry.
 - `incus-beacon check` finds newer images for Incus OCI instances (a rebuilt
   tag, or with `track=semver` a newer version tag); `--write` records the result
   in `user.beacon.*` keys.
+- `incus-beacon serve` checks on an interval (`--interval`, default 6h) and
+  records results; `/health` and `/ready` on `--listen` report on it.
 
 [Unreleased]: https://github.com/tallica/incus-beacon/commits/master

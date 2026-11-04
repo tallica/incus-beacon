@@ -31,7 +31,8 @@ func TestExitCodes(t *testing.T) {
 		{nil, exitUsage},
 		{[]string{"-h"}, exitOK},
 		{[]string{"nope"}, exitUsage},
-		{[]string{"serve"}, exitUsage},
+		{[]string{"serve", "--interval", "10s"}, exitUsage},
+		{[]string{"status", "--remote", "no-such-remote-for-tests"}, exitError},
 	}
 	for _, tt := range tests {
 		if code, _, _ := runArgs(t, tt.args...); code != tt.want {
@@ -42,11 +43,11 @@ func TestExitCodes(t *testing.T) {
 
 func TestLogsGoToStderr(t *testing.T) {
 	t.Parallel()
-	_, out, errOut := runArgs(t, "serve", "--log-format", "json")
+	_, out, errOut := runArgs(t, "status", "--remote", "no-such-remote-for-tests", "--log-format", "json")
 	if out != "" {
 		t.Errorf("stdout %q, want nothing", out)
 	}
-	if !strings.Contains(errOut, `"command":"serve"`) {
+	if !strings.Contains(errOut, `"command":"status"`) {
 		t.Errorf("stderr %q, want a JSON log line naming the command", errOut)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/report"
+	"github.com/tallica/incus-beacon/internal/serve"
 	"github.com/tallica/incus-beacon/internal/version"
 )
 
@@ -78,10 +80,12 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 	switch cfg.Command {
 	case config.CmdCheck:
 		err = runCheck(ctx, cfg.Check, logger, stdout)
+	case config.CmdServe:
+		err = runServe(ctx, cfg.Serve, logger)
 	case config.CmdStatus:
 		err = runStatus(ctx, cfg.Status, stdout)
 	default:
-		logger.Error().Msg("not implemented yet")
+		logger.Error().Msg("unknown command")
 		return exitUsage
 	}
 	if err != nil {
@@ -119,7 +123,10 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	results := check.New(reg, c.Concurrency, logger).Run(ctx, targets)
 	failed := 0
 	if c.Write {
-		failed = writeResults(ctx, srv, results, logger)
+		var written int
+		written, failed = writeResults(ctx, srv, results, logger)
+		logger.Info().Int("written", written).Int("unchanged", len(results)-written-failed).
+			Int("failed", failed).Msg("status recorded")
 	}
 	if err := report.WriteCheck(stdout, c.Format, report.CheckRows(results)); err != nil {
 		return err
@@ -131,9 +138,8 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 }
 
 // writeResults goes on after a failed write so the report still covers all.
-func writeResults(ctx context.Context, srv incusclient.InstanceServer, results []check.Result, logger zerolog.Logger) (failed int) {
+func writeResults(ctx context.Context, srv incusclient.InstanceServer, results []check.Result, logger zerolog.Logger) (written, failed int) {
 	now := time.Now()
-	written := 0
 	for i := range results {
 		r := &results[i]
 		changed, err := incus.WriteStatus(ctx, srv, r.Target, check.Beacon(*r, now))
@@ -146,8 +152,58 @@ func writeResults(ctx context.Context, srv incusclient.InstanceServer, results [
 			written++
 		}
 	}
-	logger.Info().Int("written", written).Int("unchanged", len(results)-written-failed).Int("failed", failed).Msg("status recorded")
-	return failed
+	return written, failed
+}
+
+func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error {
+	reg, err := registry.New(registry.Options{
+		AuthFile:  c.RegistryAuthFile,
+		Timeout:   c.Timeout,
+		UserAgent: userAgent(),
+	})
+	if err != nil {
+		return err
+	}
+	engine := check.New(reg, c.Concurrency, logger)
+	var srv incusclient.InstanceServer
+
+	cycle := func(ctx context.Context) (serve.Summary, error) {
+		if srv == nil {
+			s, err := incus.Connect(ctx, connectOptions(c.Common))
+			if err != nil {
+				return serve.Summary{}, err
+			}
+			srv = s
+		}
+		targets, err := incus.Targets(ctx, srv, incus.ListOptions{
+			Projects: c.Projects,
+			WatchAll: c.Watch == config.WatchAll,
+		})
+		if err != nil {
+			srv = nil
+			return serve.Summary{}, err
+		}
+		results := engine.Run(ctx, targets)
+		sum := serve.Summary{Targets: len(results)}
+		for i := range results {
+			switch results[i].Status {
+			case check.UpdateAvailable:
+				sum.Updates++
+			case check.Error:
+				sum.Errors++
+			case check.Current, check.Unknown:
+			}
+		}
+		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger)
+		return sum, nil
+	}
+
+	ln, err := net.Listen("tcp", c.Listen)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	logger.Info().Str("listen", ln.Addr().String()).Dur("interval", c.Interval).Msg("serving")
+	return (&serve.Server{Interval: c.Interval, Cycle: cycle, Log: logger}).Run(ctx, ln)
 }
 
 func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
