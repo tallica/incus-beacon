@@ -31,6 +31,12 @@
   },
   {
     "project": "default",
+    "instance": "cache",
+    "status": "unchecked",
+    "image": "docker.io/library/redis:7"
+  },
+  {
+    "project": "default",
     "instance": "web",
     "status": "current",
     "image": "docker.io/library/nginx:1.27"
