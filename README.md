@@ -48,8 +48,7 @@ default  cache     current           docker.io/library/redis:7.4   -
 ### Run it on Incus
 
 The image runs `serve` as uid 65534 and listens on port 9153. It needs a client
-certificate the Incus server trusts (to verify: the recipe below has not yet
-been run end to end as an Incus container).
+certificate the Incus server trusts.
 
 1. Create a certificate and have Incus trust it. `--restricted --projects`
    limits it to the projects it should watch:
@@ -67,9 +66,8 @@ been run end to end as an Incus container).
    incus info | grep certificate_fingerprint
    ```
 
-3. Create the instance, give it the certificate files readable by uid 65534
-   inside the container (here a host directory as a disk device; the ownership
-   needed depends on the instance's idmap), then start it:
+3. Create the instance, give it the certificate files readable by uid 65534,
+   then start it:
 
    ```sh
    incus remote add ghcr https://ghcr.io --protocol=oci
@@ -78,11 +76,21 @@ been run end to end as an Incus container).
      -c environment.BEACON_SERVER_FINGERPRINT=<fingerprint> \
      -c environment.BEACON_CLIENT_CERT=/certs/client.crt \
      -c environment.BEACON_CLIENT_KEY=/certs/client.key
-   incus config device add beacon certs disk source=/path/to/certs path=/certs readonly=true
+   for f in client.crt client.key; do
+     incus file push "$f" beacon/certs/"$f" --uid 65534 --gid 65534 --mode 0400 --create-dirs
+   done
    incus start beacon
    ```
 
-4. Check it: `curl http://<beacon-ip>:9153/ready`.
+   A host directory as a disk device should work too (to verify; the ownership
+   needed depends on the instance's idmap):
+
+   ```sh
+   incus config device add beacon certs disk source=/path/to/certs path=/certs readonly=true
+   ```
+
+4. Check it: `incus exec beacon -- wget -q -O - http://127.0.0.1:9153/ready`, or
+   `curl http://<beacon-ip>:9153/ready` from another host.
 
 With incus-compose the same settings go into a service:
 
