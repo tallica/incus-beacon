@@ -64,7 +64,7 @@ func (s *Server) Run(ctx context.Context, ln net.Listener) error {
 		case <-timer.C:
 			s.runCycle(ctx)
 			next := jittered(s.Interval, rand.Float64())
-			s.Log.Debug().Dur("next_in", next).Msg("cycle scheduled")
+			s.Log.Debug().Stringer("next_in", next.Round(time.Second)).Msg("cycle scheduled")
 			timer.Reset(next)
 		}
 	}
@@ -95,7 +95,7 @@ func (s *Server) runCycle(ctx context.Context) {
 	}
 	ev.Int("targets", sum.Targets).Int("updates", sum.Updates).Int("errors", sum.Errors).
 		Int("written", sum.Written).Int("failed_writes", sum.Failed).
-		Dur("took", sum.Finished.Sub(sum.Started)).Msg("cycle done")
+		Stringer("took", sum.Finished.Sub(sum.Started).Round(time.Millisecond)).Msg("cycle done")
 }
 
 // jittered spreads d by ±10% for r in [0, 1).

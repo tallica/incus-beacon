@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -139,5 +140,25 @@ func TestCycleGetsADeadline(t *testing.T) {
 	}
 	if _, r := ready(t, s); r.LastError == "" {
 		t.Error("a timed-out cycle should leave its error on /ready")
+	}
+}
+
+func TestCycleLogsDurationAsString(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	s := &Server{Interval: time.Hour, Log: zerolog.New(&buf), Cycle: func(context.Context) (Summary, error) {
+		return Summary{}, nil
+	}}
+	s.runCycle(t.Context())
+	var line struct{ Took any }
+	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+		t.Fatal(err)
+	}
+	took, ok := line.Took.(string)
+	if !ok {
+		t.Fatalf("took = %#v, want a duration string", line.Took)
+	}
+	if _, err := time.ParseDuration(took); err != nil {
+		t.Error(err)
 	}
 }

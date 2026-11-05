@@ -198,7 +198,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	logger.Info().Str("listen", ln.Addr().String()).Dur("interval", c.Interval).Msg("serving")
+	logger.Info().Str("listen", ln.Addr().String()).Stringer("interval", c.Interval).Msg("serving")
 	return (&serve.Server{Interval: c.Interval, Cycle: cycle, Log: logger}).Run(ctx, ln)
 }
 
