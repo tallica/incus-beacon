@@ -25,7 +25,8 @@ LABEL org.opencontainers.image.title="incus-beacon" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$COMMIT"
 COPY --from=build /out/incus-beacon /usr/local/bin/incus-beacon
-COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/incus-beacon/
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY LICENSE THIRD_PARTY_NOTICES.md IMAGE_NOTICES.md /usr/share/doc/incus-beacon/
 USER 65534:65534
 EXPOSE 9153
 HEALTHCHECK --interval=1m --timeout=5s --start-period=1m --start-interval=5s \
