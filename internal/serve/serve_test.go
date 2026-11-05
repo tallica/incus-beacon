@@ -162,3 +162,55 @@ func TestCycleLogsDurationAsString(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestBackoffCapsAtInterval(t *testing.T) {
+	t.Parallel()
+	s := &Server{Interval: 6 * time.Hour}
+	want := []time.Duration{6 * time.Hour, time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute}
+	for failures, w := range want {
+		if got := s.wait(failures); got != w {
+			t.Errorf("wait(%d) = %s, want %s", failures, got, w)
+		}
+	}
+	if got := s.wait(20); got != 6*time.Hour {
+		t.Errorf("wait(20) = %s, want the interval", got)
+	}
+	if got := (&Server{Interval: time.Minute}).wait(1); got != time.Minute {
+		t.Errorf("1m interval: wait(1) = %s, want 1m", got)
+	}
+}
+
+func TestRetrySoonerAfterError(t *testing.T) {
+	t.Parallel()
+	var cycles atomic.Int32
+	s := &Server{Interval: time.Hour, Retry: 20 * time.Millisecond, Log: zerolog.Nop(), Cycle: func(context.Context) (Summary, error) {
+		if cycles.Add(1) == 1 {
+			return Summary{}, errors.New("incus unreachable")
+		}
+		return Summary{}, nil
+	}}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = s.Run(ctx, ln) }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	code, r := ready(t, s)
+	for r.Cycles < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+		code, r = ready(t, s)
+	}
+	if r.Cycles < 2 {
+		t.Fatalf("%d cycles in 5s after a failure, want a retry long before the 1h interval", r.Cycles)
+	}
+	if code != http.StatusOK {
+		t.Errorf("after the retry: %d %+v", code, r)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := cycles.Load(); n != 2 {
+		t.Errorf("%d cycles; after a success the next should wait the full interval", n)
+	}
+}

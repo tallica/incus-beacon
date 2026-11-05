@@ -35,5 +35,6 @@ on that instance only.
 
 ## Verify
 
-The next cycle (or a restart, which runs one at once) logs `cycle done` without
-`error`, and `/ready` answers 200.
+The next cycle, retried within a minute of the first failure (or a restart,
+which runs one at once), logs `cycle done` without `error`, and `/ready`
+answers 200.

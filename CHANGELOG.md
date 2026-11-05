@@ -26,6 +26,8 @@ get an entry.
   with a registry they never came from; `user.beacon.image` overrides this.
 - `incus-beacon serve` checks on an interval (`--interval`, default 6h) and
   records results; `/health` and `/ready` on `--listen` report on it.
+- After a failed cycle, `serve` retries within a minute, backing off to
+  `--interval`, so `/ready` recovers without waiting hours.
 - A container image, `ghcr.io/tallica/incus-beacon` for amd64 and arm64, is
   published with each release; it runs `serve` as an unprivileged user.
 - Release archives carry THIRD_PARTY_NOTICES.md with the licence and NOTICE text

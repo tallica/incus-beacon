@@ -2,6 +2,7 @@
 package serve
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,7 @@ type Cycle func(ctx context.Context) (Summary, error)
 
 type Server struct {
 	Interval time.Duration
+	Retry    time.Duration // first wait after a failed cycle; defaultRetry when zero
 	Cycle    Cycle
 	Log      zerolog.Logger
 
@@ -37,7 +39,10 @@ type Server struct {
 	lastErr string
 }
 
-const shutdownTimeout = 5 * time.Second
+const (
+	shutdownTimeout = 5 * time.Second
+	defaultRetry    = time.Minute
+)
 
 // Run follows docs/ARCHITECTURE.md#serving until ctx is done.
 func (s *Server) Run(ctx context.Context, ln net.Listener) error {
@@ -47,6 +52,7 @@ func (s *Server) Run(ctx context.Context, ln net.Listener) error {
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
+	failures := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -62,21 +68,36 @@ func (s *Server) Run(ctx context.Context, ln net.Listener) error {
 		case err := <-served:
 			return err
 		case <-timer.C:
-			s.runCycle(ctx)
-			next := jittered(s.Interval, rand.Float64())
+			if s.runCycle(ctx) {
+				failures++
+			} else {
+				failures = 0
+			}
+			next := jittered(s.wait(failures), rand.Float64())
 			s.Log.Debug().Stringer("next_in", next.Round(time.Second)).Msg("cycle scheduled")
 			timer.Reset(next)
 		}
 	}
 }
 
-func (s *Server) runCycle(ctx context.Context) {
+func (s *Server) wait(failures int) time.Duration {
+	if failures == 0 {
+		return s.Interval
+	}
+	d := cmp.Or(s.Retry, defaultRetry)
+	for i := 1; i < failures && d < s.Interval; i++ {
+		d *= 2
+	}
+	return min(d, s.Interval)
+}
+
+func (s *Server) runCycle(ctx context.Context) (failed bool) {
 	cycleCtx, cancel := context.WithTimeout(ctx, s.Interval)
 	defer cancel()
 	started := time.Now()
 	sum, err := s.Cycle(cycleCtx)
 	if ctx.Err() != nil {
-		return
+		return false
 	}
 	sum.Started, sum.Finished = started, time.Now()
 
@@ -96,6 +117,7 @@ func (s *Server) runCycle(ctx context.Context) {
 	ev.Int("targets", sum.Targets).Int("updates", sum.Updates).Int("errors", sum.Errors).
 		Int("written", sum.Written).Int("failed_writes", sum.Failed).
 		Stringer("took", sum.Finished.Sub(sum.Started).Round(time.Millisecond)).Msg("cycle done")
+	return err != nil
 }
 
 // jittered spreads d by ±10% for r in [0, 1).

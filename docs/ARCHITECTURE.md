@@ -80,9 +80,11 @@ network.
 
 `serve` runs a cycle at start, then every `--interval` give or take 10%, so
 several beacons don't hit a registry in step. A cycle lists, checks and writes,
-and has at most one interval to finish. It connects to Incus lazily and again
-after a failed listing, so a restarted daemon recovers without a restart here.
-`/ready` reflects the last cycle; what each endpoint answers is in
+and has at most one interval to finish. After a failed cycle the next comes
+after a minute, doubling with each further failure up to the interval, so
+`/ready` recovers soon after the cause is fixed. It connects to Incus lazily and
+again after a failed listing, so a restarted daemon recovers without a restart
+here. `/ready` reflects the last cycle; what each endpoint answers is in
 [README.md](../README.md#endpoints).
 
 ### Image ref resolution
