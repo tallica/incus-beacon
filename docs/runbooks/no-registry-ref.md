@@ -26,8 +26,9 @@ same layers were also pushed to that ref:
 incus config set <instance> user.beacon.image=docker.io/library/nginx:1.27
 ```
 
-For `no base image fingerprint`, recreate the instance from its image (to
-verify). For an instance you don't want watched, set `user.beacon.enable=false`.
+For `no base image fingerprint`, rebuild the instance from its image, which
+replaces its root filesystem: `incus rebuild <image> <instance>`. For an
+instance you don't want watched, set `user.beacon.enable=false`.
 
 ## Verify
 
