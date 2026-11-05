@@ -125,7 +125,7 @@ often needed:
 | `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`    |
 | `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                        |
 | `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)           |
-| `--projects`                               | Comma-separated projects to watch; all visible ones by default              |
+| `--project`                                | Project to watch, or several comma-separated; all visible ones by default   |
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |
 | `--registry-auth-file`                     | A docker `config.json`; the usual docker locations by default               |

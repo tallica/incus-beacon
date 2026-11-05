@@ -57,7 +57,6 @@ type Common struct {
 
 type Check struct {
 	Common
-	Project  string
 	Instance string
 	Format   string
 	Write    bool
@@ -129,7 +128,6 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 	case CmdCheck:
 		c := &Check{}
 		bindCommon(fs, &c.Common, FormatAuto)
-		fs.StringVar(&c.Project, "project", "", "check only this project")
 		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
 		fs.BoolVar(&c.Write, "write", false, "also record results in user.beacon.* keys")
@@ -219,7 +217,7 @@ func bindCommon(fs *flag.FlagSet, c *Common, logFormat string) {
 	fs.StringVar(&c.ClientKey, "client-key", "", "client key file for --incus")
 	fs.StringVar(&c.ServerFingerprint, "server-fingerprint", "", "expected server certificate fingerprint")
 
-	fs.Var((*csvValue)(&c.Projects), "projects", "comma-separated projects to watch (default: all)")
+	fs.Var((*csvValue)(&c.Projects), "project", "project to watch; comma-separate several (default: all)")
 	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
 
 	fs.StringVar(&c.RegistryAuthFile, "registry-auth-file", "", "docker config.json with registry credentials")

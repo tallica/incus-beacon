@@ -67,7 +67,7 @@ func TestListFlags(t *testing.T) {
 	t.Parallel()
 	cfg, err := parse(t, nil, CmdServe,
 		"--notify-url", "ntfy://ntfy.sh/a", "--notify-url", "slack://x@y",
-		"--projects", "default, web,,")
+		"--project", "default, web,,")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,5 +143,32 @@ func TestVersionAliases(t *testing.T) {
 		if err != nil || cfg.Command != CmdVersion {
 			t.Errorf("%q: cfg %+v, err %v", arg, cfg, err)
 		}
+	}
+}
+
+func TestProjectFlag(t *testing.T) {
+	t.Parallel()
+	for _, cmd := range []string{CmdCheck, CmdStatus, CmdServe} {
+		cfg, err := parse(t, map[string]string{"BEACON_PROJECT": "default,web"}, cmd)
+		if err != nil {
+			t.Fatalf("%s: %v", cmd, err)
+		}
+		if got, want := commonOf(cfg).Projects, []string{"default", "web"}; !slices.Equal(got, want) {
+			t.Errorf("%s: projects %q, want %q", cmd, got, want)
+		}
+	}
+	if _, err := parse(t, nil, CmdCheck, "--projects", "web"); !errors.Is(err, ErrUsage) {
+		t.Errorf("--projects: err = %v, want a usage error", err)
+	}
+}
+
+func commonOf(cfg *Config) Common {
+	switch {
+	case cfg.Check != nil:
+		return cfg.Check.Common
+	case cfg.Status != nil:
+		return cfg.Status.Common
+	default:
+		return cfg.Serve.Common
 	}
 }

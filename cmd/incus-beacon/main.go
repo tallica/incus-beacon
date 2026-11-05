@@ -100,12 +100,8 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	if err != nil {
 		return err
 	}
-	projects := c.Projects
-	if c.Project != "" {
-		projects = []string{c.Project}
-	}
 	targets, err := incus.Targets(ctx, srv, incus.ListOptions{
-		Projects: projects,
+		Projects: c.Projects,
 		Instance: c.Instance,
 		WatchAll: c.Watch == config.WatchAll,
 	})
