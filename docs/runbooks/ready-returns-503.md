@@ -3,8 +3,8 @@
 ## Symptom
 
 `curl http://<beacon>:9153/ready` answers 503, the container health check fails,
-and the log has `"message":"cycle done"` with an `error` field. The JSON from
-`/ready` carries the same text in `last_error`.
+and the log has a `cycle done` line at level `ERR` with an `error` field. The
+JSON from `/ready` carries the same text in `last_error`.
 
 ## Cause
 
