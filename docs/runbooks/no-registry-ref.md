@@ -3,7 +3,8 @@
 ## Symptom
 
 `incus-beacon status` or `check` lists an instance as `unknown` with the note
-`no registry ref`, `pinned by digest` or `not pulled from a registry`.
+`no registry ref`, `pinned by digest`, `not pulled from a registry` or
+`no base image fingerprint`.
 
 ## Cause
 
@@ -12,7 +13,9 @@ looks ([image ref resolution](../ARCHITECTURE.md#image-ref-resolution)). An
 instance created from a copied or imported image may have none of them.
 `pinned by digest` means the instance was launched from `<name>@sha256:…` with
 no tag, so there is no newer version to look for. `not pulled from a registry`
-means the image was built or imported locally.
+means the image was built or imported locally. `no base image fingerprint` means
+Incus recorded no `volatile.base_image` for the instance, so there is nothing to
+compare a registry image with.
 
 ## Fix
 
@@ -23,7 +26,8 @@ same layers were also pushed to that ref:
 incus config set <instance> user.beacon.image=docker.io/library/nginx:1.27
 ```
 
-For an instance you don't want watched, set `user.beacon.enable=false`.
+For `no base image fingerprint`, recreate the instance from its image (to
+verify). For an instance you don't want watched, set `user.beacon.enable=false`.
 
 ## Verify
 

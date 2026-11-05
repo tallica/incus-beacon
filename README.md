@@ -40,8 +40,8 @@ incus-beacon check
 ```
 
 ```
-PROJECT  INSTANCE  STATUS            IMAGE                         LATEST  NOTE
-default  web       update-available  docker.io/library/nginx:1.27  1.31
+PROJECT  INSTANCE  STATUS            IMAGE                         LATEST                    NOTE
+default  web       update-available  docker.io/library/nginx:1.27  1.27@sha256:6784fb0834aa
 default  cache     current           docker.io/library/redis:7.4   -
 ```
 

@@ -3,9 +3,6 @@
 How incus-beacon is put together and the invariants the code relies on but can't
 show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
-This is the v0.1 design. None of the components below are implemented yet. Each
-lands in its own commit, and this doc changes with it where the code differs.
-
 ## Principles
 
 - **Report, don't act.** v0.1 only detects newer images and records them. It
@@ -32,7 +29,7 @@ lands in its own commit, and this doc changes with it where the code differs.
 | `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                               | stdlib                            |
 | `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                  | zerolog                           |
 | `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.beacon.*`  | Incus client, incus-compose trust |
-| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                               | stdlib                            |
+| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                               | Masterminds/semver                |
 | `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff | oras-go                           |
 | `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                               | Masterminds/semver                |
 | `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                | registry, semver, policy          |

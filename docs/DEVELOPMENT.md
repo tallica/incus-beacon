@@ -6,9 +6,8 @@ Setting up, building and testing incus-beacon. Design is in
 
 ## Prerequisites
 
-`git`, `make`, and Node.js for `npx`, which runs Prettier.
-
-<!-- Add the project's own tools and the versions needed. -->
+`git`, `make`, Go 1.27, golangci-lint for linting and Go formatting, and Node.js
+for `npx`, which runs Prettier.
 
 ## Layout
 
@@ -22,7 +21,7 @@ Setting up, building and testing incus-beacon. Design is in
 └── scripts/            helper scripts
 ```
 
-The planned `internal/` packages and their jobs are listed in
+The `internal/` packages and their jobs are listed in
 [ARCHITECTURE.md](ARCHITECTURE.md#components).
 
 ## Make targets
@@ -32,8 +31,8 @@ The planned `internal/` packages and their jobs are listed in
 | `make check`                    | With `make fmt-check`, the gate before every commit; CI runs both |
 | `make lint`                     | Linters                                                           |
 | `make test`                     | Tests                                                             |
-| `make fmt`                      | Format the tree with Prettier; Markdown wraps at 80 columns       |
-| `make fmt-check`                | What CI checks: fails if `make fmt` would change anything         |
+| `make fmt`                      | Format Go and Markdown; Markdown wraps at 80 columns              |
+| `make fmt-check`                | Fails if Prettier would change anything; `make lint` checks Go    |
 | `make release-notes TAG=vX.Y.Z` | Print a version's CHANGELOG section                               |
 
 ## Testing
@@ -74,8 +73,8 @@ incus config show web --project beacon-test | grep user.beacon
 
 ## Go targets
 
-These and `make check` need Go and golangci-lint; `make release-snapshot` also
-needs GoReleaser, and `make image` Docker (or `make image CONTAINER=podman`).
+`make release-snapshot` also needs GoReleaser, and `make image` Docker (or
+`make image CONTAINER=podman`).
 
 | Target                  | What it does                                    |
 | ----------------------- | ----------------------------------------------- |

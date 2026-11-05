@@ -8,11 +8,12 @@
 ## Cause
 
 The registry answered 429 Too Many Requests, or reported no pulls left
-(`ratelimit-remaining: 0`). incus-beacon then pauses that registry until the
-time shown, or for an hour when the registry gives none. Docker Hub allows
-anonymous users 100 manifest GETs per 6 hours per IP address; HEAD requests,
-which incus-beacon tries first, don't count. Many instances whose tags moved at
-once, or other clients behind the same address, use the allowance up.
+(`ratelimit-remaining: 0`). incus-beacon then pauses manifest downloads from
+that registry until the time shown, or for an hour when the registry gives none.
+Docker Hub allows anonymous users 100 manifest GETs per 6 hours per IP address;
+HEAD requests, which incus-beacon tries first, don't count. Many instances whose
+tags moved at once, or other clients behind the same address, use the allowance
+up.
 
 ## Fix
 
