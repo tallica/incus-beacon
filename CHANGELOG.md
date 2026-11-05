@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-05
+
 ### Added
 
 - `--log-color` (`auto`, `never`, `always`) controls coloured console logs; the
@@ -46,5 +48,6 @@ get an entry.
 - Release archives carry THIRD_PARTY_NOTICES.md with the licence and NOTICE text
   of every module the binary links, not only direct dependencies.
 
-[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.1.0...master
+[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.1.1...master
+[0.1.1]: https://github.com/tallica/incus-beacon/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/tallica/incus-beacon/releases/tag/v0.1.0
