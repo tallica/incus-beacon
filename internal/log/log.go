@@ -12,22 +12,16 @@ import (
 	"github.com/tallica/incus-beacon/internal/config"
 )
 
-// New picks console output for config.FormatAuto when w is a terminal.
+// New colours console output only when w is a terminal.
 func New(w io.Writer, level, format string) (zerolog.Logger, error) {
 	lvl, err := zerolog.ParseLevel(level)
 	if err != nil || lvl == zerolog.NoLevel {
 		return zerolog.Nop(), fmt.Errorf("log level %q: unknown", level)
 	}
-	if format == config.FormatAuto {
-		format = config.FormatJSON
-		if isTerminal(w) {
-			format = config.FormatConsole
-		}
-	}
 	switch format {
 	case config.FormatJSON:
 	case config.FormatConsole:
-		w = zerolog.ConsoleWriter{Out: w, TimeFormat: time.TimeOnly}
+		w = zerolog.ConsoleWriter{Out: w, TimeFormat: time.TimeOnly, NoColor: !isTerminal(w)}
 	default:
 		return zerolog.Nop(), fmt.Errorf("log format %q: unknown", format)
 	}

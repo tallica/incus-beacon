@@ -90,11 +90,9 @@ type Config struct {
 	Serve   *Serve
 }
 
-// Log format values; FormatAuto picks console on a terminal, JSON otherwise.
 const (
-	FormatAuto    = "auto"
-	FormatJSON    = "json"
 	FormatConsole = "console"
+	FormatJSON    = "json"
 )
 
 const (
@@ -132,7 +130,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 	switch name {
 	case CmdCheck:
 		c := &Check{}
-		bindCommon(fs, &c.Common, FormatAuto)
+		bindCommon(fs, &c.Common)
 		bindRegistry(fs, &c.Registry)
 		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
@@ -143,7 +141,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		}
 	case CmdStatus:
 		c := &Status{}
-		bindCommon(fs, &c.Common, FormatAuto)
+		bindCommon(fs, &c.Common)
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
 		fs.BoolVar(&c.OnlyUpdates, "only-updates", false, "list only instances with an update available")
 		cfg.Status = c
@@ -152,7 +150,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		}
 	case CmdServe:
 		c := &Serve{}
-		bindCommon(fs, &c.Common, FormatJSON)
+		bindCommon(fs, &c.Common)
 		bindRegistry(fs, &c.Registry)
 		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
@@ -212,9 +210,9 @@ func EnvName(flagName string) string {
 	return "BEACON_" + strings.ToUpper(strings.ReplaceAll(flagName, "-", "_"))
 }
 
-func bindCommon(fs *flag.FlagSet, c *Common, logFormat string) {
+func bindCommon(fs *flag.FlagSet, c *Common) {
 	fs.StringVar(&c.LogLevel, "log-level", "info", "log level: debug, info, warn or error")
-	fs.StringVar(&c.LogFormat, "log-format", logFormat, "log format: auto, json or console")
+	fs.StringVar(&c.LogFormat, "log-format", FormatConsole, "log format: console or json")
 
 	fs.StringVar(&c.Remote, "remote", "", "incus CLI remote to use (default: the CLI's default remote)")
 	fs.StringVar(&c.Incus, "incus", "", "Incus API URL, e.g. https://192.168.1.10:8443")
@@ -237,7 +235,7 @@ func bindRegistry(fs *flag.FlagSet, c *Registry) {
 func (c *Common) validate() error {
 	errs := []error{
 		oneOf("log-level", c.LogLevel, logLevels...),
-		oneOf("log-format", c.LogFormat, FormatAuto, FormatJSON, FormatConsole),
+		oneOf("log-format", c.LogFormat, FormatConsole, FormatJSON),
 		oneOf("watch", c.Watch, WatchAll, WatchOptIn),
 	}
 	if (c.ClientCert == "") != (c.ClientKey == "") {

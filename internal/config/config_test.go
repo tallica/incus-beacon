@@ -25,7 +25,7 @@ func TestDefaultsPerCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := cfg.Serve
-	if s.Interval != 6*time.Hour || s.Listen != ":9153" || s.LogFormat != FormatJSON {
+	if s.Interval != 6*time.Hour || s.Listen != ":9153" || s.LogFormat != FormatConsole {
 		t.Errorf("serve defaults: interval %s, listen %q, log format %q", s.Interval, s.Listen, s.LogFormat)
 	}
 	if s.Watch != WatchAll || s.Concurrency != 4 || s.Timeout != 30*time.Second || s.LogLevel != "info" {
@@ -36,7 +36,7 @@ func TestDefaultsPerCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Check.LogFormat != FormatAuto || cfg.Check.Format != OutputTable || cfg.Check.Write {
+	if cfg.Check.LogFormat != FormatConsole || cfg.Check.Format != OutputTable || cfg.Check.Write {
 		t.Errorf("check defaults: %+v", cfg.Check)
 	}
 }

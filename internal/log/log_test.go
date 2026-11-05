@@ -32,19 +32,6 @@ func TestLevelFilters(t *testing.T) {
 	}
 }
 
-func TestAutoIsJSONOffTerminal(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	logger, err := New(&buf, "info", config.FormatAuto)
-	if err != nil {
-		t.Fatal(err)
-	}
-	logger.Info().Msg("hello")
-	if !json.Valid(bytes.TrimSpace(buf.Bytes())) {
-		t.Errorf("auto format to a buffer is not JSON: %q", buf.String())
-	}
-}
-
 func TestConsoleFormat(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
@@ -55,6 +42,9 @@ func TestConsoleFormat(t *testing.T) {
 	logger.Info().Msg("hello")
 	if json.Valid(bytes.TrimSpace(buf.Bytes())) || !strings.Contains(buf.String(), "hello") {
 		t.Errorf("console output %q", buf.String())
+	}
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Errorf("console output off a terminal has colour codes: %q", buf.String())
 	}
 }
 

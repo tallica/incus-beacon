@@ -129,7 +129,7 @@ often needed:
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |
 | `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default  |
-| `--log-level`, `--log-format`              | `debug` to `error`; `json` or `console` (logs go to stderr)                 |
+| `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)       |
 
 ### Instance keys
 
