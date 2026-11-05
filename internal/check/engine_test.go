@@ -102,15 +102,22 @@ func TestDigest(t *testing.T) {
 	f.set("ghcr.io/example/app:1.2", head1, fpOld)
 	f.set("ghcr.io/example/new:1.2", head2, fpNew)
 
+	local := target("local", "ghcr.io/example/app:1.2", fpOld, "")
+	local.Local, local.RefSource = true, incus.RefFromBeacon
+
 	res := run(t, f,
 		target("same", "ghcr.io/example/app:1.2", fpOld, ""),
 		target("rebuilt", "ghcr.io/example/new:1.2", fpOld, ""),
+		local,
 	)
 	if r := res[0]; r.Status != Current || r.Latest != "" || r.Current != "ghcr.io/example/app:1.2" {
 		t.Errorf("same layers: %+v", r)
 	}
 	if r := res[1]; r.Status != UpdateAvailable || r.Latest != "1.2@sha256:bbbbbbbbbbbb" {
 		t.Errorf("rebuilt tag: %+v", r)
+	}
+	if r := res[2]; r.Status != Current {
+		t.Errorf("local image with user.beacon.image: %+v, want it checked", r)
 	}
 }
 
@@ -185,6 +192,8 @@ func TestSettledWithoutRegistry(t *testing.T) {
 	bad.PolicyErr = errors.New(`track "x": must be digest or semver`)
 	arch := target("arch", "ghcr.io/example/app:1", fpOld, "")
 	arch.Arch = "mips"
+	local := target("local", "ghcr.io/example/app:1", fpOld, "")
+	local.Local, local.RefSource = true, incus.RefFromCompose
 
 	res := run(t, f,
 		bad,
@@ -193,6 +202,7 @@ func TestSettledWithoutRegistry(t *testing.T) {
 		target("pinned", "ghcr.io/example/app@sha256:abc", fpOld, ""),
 		target("badref", "Not A Ref", fpOld, ""),
 		arch,
+		local,
 	)
 	want := []struct {
 		status Status
@@ -204,6 +214,7 @@ func TestSettledWithoutRegistry(t *testing.T) {
 		{Unknown, "pinned by digest"},
 		{Error, "invalid repository"},
 		{Error, "no OCI platform"},
+		{Unknown, "not pulled from a registry"},
 	}
 	for i, w := range want {
 		if res[i].Status != w.status || !strings.Contains(res[i].Reason, w.reason) {

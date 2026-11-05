@@ -52,7 +52,8 @@ network.
    config, so profile-set policy applies too. Skip instances the policy leaves
    unwatched.
 2. **Resolve the image ref** (see below) and the platform, which comes from
-   `image.architecture`.
+   `image.architecture`, or from the instance's architecture when the image
+   carries none.
 3. **Dedupe** targets by `(ref, platform)`. At most `--concurrency` lookups run
    at once.
 4. **Digest check**, for every target:
@@ -86,7 +87,12 @@ after a failed listing, so a restarted daemon recovers without a restart here.
 
 ### Image ref resolution
 
-The first source that yields a ref wins:
+Incus describes every image it pulls from a registry as
+`<registry>/<repo> (OCI)` (`client/oci_images.go`; older servers to verify). Any
+other OCI image was built, imported or published locally, so no registry holds
+its layers and no lookup could match them: it is `unknown`, with the reason "not
+pulled from a registry", unless `user.beacon.image` names a ref to check anyway.
+Otherwise, the first source that yields a ref wins:
 
 1. `user.beacon.image`, or `user.label.beacon.image`.
 2. `user.image_alias`, which incus-compose sets to the fully resolved ref.
@@ -117,8 +123,8 @@ Refs are normalised with Docker conventions: `nginx` becomes
   `volatile.base_image` to a sha256 over the layer digest strings
   (`sha256:<hex>`), concatenated with no separator (`computeFingerprint` in
   Incus `client/oci_images.go`), so a manifest digest never matches it. Incus
-  picks the manifest for its own host's platform, so the beacon selects by
-  `image.architecture`. A test vector read from a running instance pins this.
+  picks the manifest for its own host's platform, so the beacon selects by that
+  platform. A test vector read from a running instance pins this.
 - **The beacon writes only `user.beacon.*`, and only on change.** Every config
   write emits an `instance-updated` lifecycle event, and other watchers
   (lazyincus, ic-healthd, incus-compose) react to those. So there is no "last

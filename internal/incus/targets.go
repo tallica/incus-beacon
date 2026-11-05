@@ -1,6 +1,7 @@
 package incus
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/url"
@@ -35,6 +36,7 @@ type Target struct {
 	BaseImage string
 	Ref       string
 	RefSource string
+	Local     bool
 	Policy    policy.Policy
 	PolicyErr error
 	Beacon    Beacon
@@ -72,8 +74,9 @@ func Targets(ctx context.Context, srv incusclient.InstanceServer, opts ListOptio
 		t := Target{
 			Project:   project(inst.Project),
 			Instance:  inst.Name,
-			Arch:      inst.ExpandedConfig["image.architecture"],
+			Arch:      cmp.Or(inst.ExpandedConfig["image.architecture"], inst.Architecture),
 			BaseImage: inst.Config["volatile.base_image"],
+			Local:     !pulled(inst.ExpandedConfig),
 			Policy:    pol,
 			PolicyErr: polErr,
 			Beacon:    readBeacon(inst.Config),
@@ -113,6 +116,11 @@ func listInstances(ctx context.Context, srv incusclient.InstanceServer, projects
 		all = append(all, insts...)
 	}
 	return all, nil
+}
+
+// pulled matches the description Incus gives every image it pulls from a registry.
+func pulled(config map[string]string) bool {
+	return strings.HasSuffix(config["image.description"], " (OCI)")
 }
 
 func isOCI(config map[string]string) bool {

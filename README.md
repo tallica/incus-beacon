@@ -141,7 +141,7 @@ when both are set.
 | Key                      | Values                       | Meaning                                                                  |
 | ------------------------ | ---------------------------- | ------------------------------------------------------------------------ |
 | `user.beacon.enable`     | `true`, `false`              | Watch this instance or not, whatever `--watch` says                      |
-| `user.beacon.image`      | an image ref                 | The ref to track, when Incus no longer knows where the image came from   |
+| `user.beacon.image`      | an image ref                 | The ref to track, when Incus doesn't know it or the image is local       |
 | `user.beacon.track`      | `digest` (default), `semver` | `digest` reports a rebuilt tag; `semver` also reports newer version tags |
 | `user.beacon.constraint` | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                             |
 | `user.beacon.include`    | a regex                      | With `semver`: only tags that match                                      |

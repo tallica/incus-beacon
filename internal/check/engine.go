@@ -122,6 +122,9 @@ func prepare(r *Result) (plan, bool) {
 	case t.PolicyErr != nil:
 		r.Status, r.Reason = Error, "policy: "+t.PolicyErr.Error()
 		return plan{}, false
+	case t.Local && t.RefSource != incus.RefFromBeacon:
+		r.Status, r.Reason = Unknown, "not pulled from a registry"
+		return plan{}, false
 	case t.Ref == "":
 		r.Status, r.Reason = Unknown, "no registry ref"
 		return plan{}, false

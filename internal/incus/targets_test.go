@@ -26,8 +26,17 @@ func instance(projectName, name string, local, expanded map[string]string) api.I
 	return inst
 }
 
+func withArch(inst api.Instance, arch string) api.Instance {
+	inst.Architecture = arch
+	return inst
+}
+
 func oci(extra map[string]string) map[string]string {
-	m := map[string]string{"volatile.container.oci": "true", "image.architecture": "x86_64"}
+	m := map[string]string{
+		"volatile.container.oci": "true",
+		"image.architecture":     "x86_64",
+		"image.description":      "docker.io/library/example (OCI)",
+	}
 	for k, v := range extra {
 		m[k] = v
 	}
@@ -52,6 +61,12 @@ func fixture() *fakeIncus {
 			instance("apps", "off", oci(map[string]string{"user.beacon.enable": "false"}), nil),
 			instance("apps", "bad", oci(map[string]string{"user.beacon.track": "weird"}), nil),
 			instance("apps", "orphan", oci(map[string]string{"volatile.base_image": fpMissing}), nil),
+			withArch(instance("apps", "built", map[string]string{
+				"volatile.container.oci": "true",
+				"volatile.base_image":    fpMissing,
+				"image.description":      "ghcr.io/example/app:1.0 (built by incus-compose)",
+				"user.image_alias":       "ghcr.io/example/app:1.0",
+			}, nil), "aarch64"),
 			instance("apps", "pruned", oci(map[string]string{
 				"volatile.base_image": fpMissing,
 				"image.description":   "ghcr.io/example/worker (OCI)",
@@ -83,7 +98,7 @@ func TestTargetsAllProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"apps/api", "apps/bad", "apps/orphan", "apps/pruned", "default/db", "default/db2", "default/web"}
+	want := []string{"apps/api", "apps/bad", "apps/built", "apps/orphan", "apps/pruned", "default/db", "default/db2", "default/web"}
 	if got := names(targets); !slices.Equal(got, want) {
 		t.Fatalf("targets %q, want %q (non-OCI and enable=false left out, sorted)", got, want)
 	}
@@ -107,6 +122,12 @@ func TestTargetsAllProjects(t *testing.T) {
 			t.Errorf("%s: ref %q from %q, want %q from %q", r.name, tg.Ref, tg.RefSource, r.ref, r.from)
 		}
 	}
+	if b := byName["apps/built"]; !b.Local || b.Arch != "aarch64" {
+		t.Errorf("apps/built: local %t, arch %q; want local, arch from the instance", b.Local, b.Arch)
+	}
+	if byName["apps/api"].Local {
+		t.Error("apps/api: pulled image marked local")
+	}
 	if byName["apps/bad"].PolicyErr == nil {
 		t.Error("apps/bad: want a policy error for track=weird")
 	}
@@ -126,7 +147,7 @@ func TestTargetsFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := names(targets), []string{"apps/api", "apps/bad", "apps/orphan", "apps/pruned"}; !slices.Equal(got, want) {
+	if got, want := names(targets), []string{"apps/api", "apps/bad", "apps/built", "apps/orphan", "apps/pruned"}; !slices.Equal(got, want) {
 		t.Errorf("projects=apps: %q, want %q", got, want)
 	}
 
