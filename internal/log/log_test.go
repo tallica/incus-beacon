@@ -12,7 +12,7 @@ import (
 func TestLevelFilters(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	logger, err := New(&buf, "warn", config.FormatJSON)
+	logger, err := New(&buf, "warn", config.FormatJSON, config.ColorAuto)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestLevelFilters(t *testing.T) {
 func TestConsoleFormat(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	logger, err := New(&buf, "info", config.FormatConsole)
+	logger, err := New(&buf, "info", config.FormatConsole, config.ColorAuto)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +50,44 @@ func TestConsoleFormat(t *testing.T) {
 
 func TestInvalid(t *testing.T) {
 	t.Parallel()
-	if _, err := New(&bytes.Buffer{}, "loud", config.FormatJSON); err == nil {
+	if _, err := New(&bytes.Buffer{}, "loud", config.FormatJSON, config.ColorAuto); err == nil {
 		t.Error("unknown level accepted")
 	}
-	if _, err := New(&bytes.Buffer{}, "info", "xml"); err == nil {
+	if _, err := New(&bytes.Buffer{}, "info", "xml", config.ColorAuto); err == nil {
 		t.Error("unknown format accepted")
+	}
+	if _, err := New(&bytes.Buffer{}, "info", config.FormatConsole, "loud"); err == nil {
+		t.Error("unknown colour accepted")
+	}
+}
+
+func TestUseColor(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		color    string
+		terminal bool
+		want     bool
+	}{
+		{config.ColorAuto, true, true},
+		{config.ColorAuto, false, false},
+		{config.ColorNever, true, false},
+		{config.ColorAlways, false, true},
+	} {
+		if got, err := useColor(tt.color, tt.terminal); err != nil || got != tt.want {
+			t.Errorf("useColor(%q, terminal %v) = %v, %v; want %v", tt.color, tt.terminal, got, err, tt.want)
+		}
+	}
+}
+
+func TestAlwaysColorsABuffer(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	logger, err := New(&buf, "info", config.FormatConsole, config.ColorAlways)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger.Info().Msg("hello")
+	if !strings.Contains(buf.String(), "\x1b[") {
+		t.Errorf("--log-color always gave no colour codes: %q", buf.String())
 	}
 }

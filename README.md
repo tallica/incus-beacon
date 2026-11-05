@@ -130,6 +130,7 @@ often needed:
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |
 | `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default  |
 | `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)       |
+| `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`   |
 
 ### Instance keys
 

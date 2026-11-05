@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `--log-color` (`auto`, `never`, `always`) controls coloured console logs; the
+  container image sets `never`, so `incus console --show-log` reads cleanly.
+
 ### Fixed
 
 - The container image carries CA certificates, so registry lookups no longer

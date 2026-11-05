@@ -55,7 +55,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	}
 
 	common := commonOf(cfg)
-	logger, err := log.New(stderr, common.LogLevel, common.LogFormat)
+	logger, err := log.New(stderr, common.LogLevel, common.LogFormat, common.LogColor)
 	if err != nil {
 		fmt.Fprintln(stderr, "incus-beacon:", err)
 		return exitUsage

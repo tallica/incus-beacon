@@ -38,6 +38,7 @@ var ErrHelp = flag.ErrHelp
 type Common struct {
 	LogLevel  string
 	LogFormat string
+	LogColor  string
 
 	Remote            string
 	Incus             string
@@ -88,6 +89,12 @@ type Config struct {
 const (
 	FormatConsole = "console"
 	FormatJSON    = "json"
+)
+
+const (
+	ColorAuto   = "auto"
+	ColorNever  = "never"
+	ColorAlways = "always"
 )
 
 const (
@@ -205,6 +212,7 @@ func EnvName(flagName string) string {
 func bindCommon(fs *flag.FlagSet, c *Common) {
 	fs.StringVar(&c.LogLevel, "log-level", "info", "log level: debug, info, warn or error")
 	fs.StringVar(&c.LogFormat, "log-format", FormatConsole, "log format: console or json")
+	fs.StringVar(&c.LogColor, "log-color", ColorAuto, "console log colour: auto (on a terminal), never or always")
 
 	fs.StringVar(&c.Remote, "remote", "", "incus CLI remote to use (default: the CLI's default remote)")
 	fs.StringVar(&c.Incus, "incus", "", "Incus API URL, e.g. https://192.168.1.10:8443")
@@ -226,6 +234,7 @@ func (c *Common) validate() error {
 	errs := []error{
 		oneOf("log-level", c.LogLevel, logLevels...),
 		oneOf("log-format", c.LogFormat, FormatConsole, FormatJSON),
+		oneOf("log-color", c.LogColor, ColorAuto, ColorNever, ColorAlways),
 		oneOf("watch", c.Watch, WatchAll, WatchOptIn),
 	}
 	if (c.ClientCert == "") != (c.ClientKey == "") {

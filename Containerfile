@@ -27,6 +27,8 @@ LABEL org.opencontainers.image.title="incus-beacon" \
 COPY --from=build /out/incus-beacon /usr/local/bin/incus-beacon
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY LICENSE THIRD_PARTY_NOTICES.md IMAGE_NOTICES.md /usr/share/doc/incus-beacon/
+# Incus gives an OCI container a pty, which would colour its console log.
+ENV BEACON_LOG_COLOR=never
 USER 65534:65534
 EXPOSE 9153
 HEALTHCHECK --interval=1m --timeout=5s --start-period=1m --start-interval=5s \

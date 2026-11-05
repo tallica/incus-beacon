@@ -28,6 +28,9 @@ func TestDefaultsPerCommand(t *testing.T) {
 	if s.Interval != 6*time.Hour || s.Listen != ":9153" || s.LogFormat != FormatConsole {
 		t.Errorf("serve defaults: interval %s, listen %q, log format %q", s.Interval, s.Listen, s.LogFormat)
 	}
+	if s.LogColor != ColorAuto {
+		t.Errorf("log color %q, want auto", s.LogColor)
+	}
 	if s.Watch != WatchAll || s.Concurrency != 4 || s.Timeout != 30*time.Second || s.LogLevel != "info" {
 		t.Errorf("common defaults: %+v", s.Common)
 	}
@@ -53,6 +56,17 @@ func TestFlagOverridesEnv(t *testing.T) {
 	}
 	if cfg.Serve.Interval != 2*time.Hour {
 		t.Errorf("interval %s, want the variable's 2h", cfg.Serve.Interval)
+	}
+}
+
+func TestLogColorEnv(t *testing.T) {
+	t.Parallel()
+	cfg, err := parse(t, map[string]string{"BEACON_LOG_COLOR": "never"}, CmdServe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Serve.LogColor != ColorNever {
+		t.Errorf("log color %q, want the variable's never", cfg.Serve.LogColor)
 	}
 }
 
@@ -88,6 +102,7 @@ func TestUsageErrors(t *testing.T) {
 		{"extra argument", nil, []string{CmdStatus, "web"}, "unexpected argument"},
 		{"short interval", nil, []string{CmdServe, "--interval", "10s"}, "at least 1m"},
 		{"bad level", nil, []string{CmdCheck, "--log-level", "loud"}, "log-level"},
+		{"bad colour", nil, []string{CmdCheck, "--log-color", "loud"}, "log-color"},
 		{"bad format", nil, []string{CmdStatus, "--format", "yaml"}, "format"},
 		{"bad watch", nil, []string{CmdCheck, "--watch", "some"}, "watch"},
 		{"zero concurrency", nil, []string{CmdCheck, "--concurrency", "0"}, "concurrency"},
