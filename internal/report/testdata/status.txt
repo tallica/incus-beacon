@@ -4,4 +4,5 @@ apps     bad       unchecked         ghcr.io/example/bad:1          -       -   
 apps     orphan    unchecked         -                              -       -                     no registry ref
 default  db        error             docker.io/library/postgres:17  -       2026-11-02T08:30:00Z  rate limited
 default  cache     unchecked         docker.io/library/redis:7      -       -
+default  built     unchecked         ghcr.io/example/built:1        -       -                     not pulled from a registry
 default  web       current           docker.io/library/nginx:1.27   -       -

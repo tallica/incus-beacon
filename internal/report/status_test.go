@@ -49,7 +49,8 @@ func statusTargets() []incus.Target {
 				Error: "rate limited", Since: "2026-11-02T08:30:00Z",
 			},
 		},
-		{Project: "default", Instance: "cache", Ref: "redis:7"},
+		{Project: "default", Instance: "cache", Ref: "redis:7", BaseImage: "fp", Arch: "x86_64"},
+		{Project: "default", Instance: "built", Ref: "ghcr.io/example/built:1", BaseImage: "fp", Arch: "x86_64", Local: true},
 		{Project: "default", Instance: "web", Ref: "docker.io/library/nginx:1.27", Beacon: incus.Beacon{Status: "current"}},
 	}
 }

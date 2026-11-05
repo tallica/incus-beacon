@@ -37,6 +37,13 @@
   },
   {
     "project": "default",
+    "instance": "built",
+    "status": "unchecked",
+    "image": "ghcr.io/example/built:1",
+    "note": "not pulled from a registry"
+  },
+  {
+    "project": "default",
     "instance": "web",
     "status": "current",
     "image": "docker.io/library/nginx:1.27"

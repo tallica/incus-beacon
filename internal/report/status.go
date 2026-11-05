@@ -9,8 +9,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/incus"
-	"github.com/tallica/incus-beacon/internal/registry"
 )
 
 // StatusUnchecked is shown for instances incus-beacon has not recorded yet.
@@ -45,25 +45,16 @@ func StatusRows(targets []incus.Target, onlyUpdates bool) []StatusRow {
 		if r.Status == "" {
 			r.Status = StatusUnchecked
 		}
+		pre := check.Precheck(*t)
 		if r.Image == "" {
-			r.Image = normalize(t.Ref)
+			r.Image = pre.Current
 		}
-		if t.PolicyErr != nil {
-			r.Note = "policy: " + t.PolicyErr.Error()
-		} else if t.Ref == "" && r.Image == "" {
-			r.Note = "no registry ref"
+		if t.Beacon.Status == "" || t.PolicyErr != nil {
+			r.Note = pre.Reason
 		}
 		rows = append(rows, r)
 	}
 	return rows
-}
-
-// normalize spells a ref as check records it, so both commands show one name.
-func normalize(ref string) string {
-	if r, err := registry.ParseRef(ref); err == nil {
-		return r.String()
-	}
-	return ref
 }
 
 func WriteStatus(w io.Writer, format string, rows []StatusRow) error {

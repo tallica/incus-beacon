@@ -115,6 +115,13 @@ func (e *Engine) Run(ctx context.Context, targets []incus.Target) []Result {
 	return results
 }
 
+// Precheck is what a check decides before any registry lookup.
+func Precheck(t incus.Target) Result {
+	r := Result{Target: t}
+	prepare(&r)
+	return r
+}
+
 func prepare(r *Result) (plan, bool) {
 	t := r.Target
 	r.Current = t.Ref
