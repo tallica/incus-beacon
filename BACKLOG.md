@@ -10,9 +10,6 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Next
 
-- [ ] **Generated THIRD_PARTY_NOTICES.md** — the Incus client links about 50
-      modules whose notices aren't listed yet; generate them with `go-licenses`
-      (planned for the repo template). Must land before the first release.
 - [ ] **Connect with a one-time trust token** — so the container can join Incus
       with `incus config trust add incus-beacon` instead of a hand-made client
       certificate. `--token-file` exists but refuses to run until this lands.
