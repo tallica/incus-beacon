@@ -19,14 +19,15 @@ get an entry.
   flag can also be set through a `BEACON_*` environment variable.
 - `incus-beacon status` lists the watched Incus OCI instances, their image and
   the update status recorded on them, as a table or JSON.
-- `incus-beacon check` finds newer images for Incus OCI instances (a rebuilt
-  tag, or with `track=semver` a newer version tag); `--write` records the result
-  in `user.beacon.*` keys.
+- `incus-beacon check` finds newer images for Incus OCI instances: a rebuilt
+  tag, or with `track=semver` a newer version; `--write` records the result.
+- Instance keys `user.beacon.enable`, `image`, `track`, `constraint`, `include`
+  and `exclude` set what is watched and how, per instance or profile.
 - Images built or imported locally show as `unknown` rather than being compared
   with a registry they never came from; `user.beacon.image` overrides this.
 - `incus-beacon serve` checks on an interval (`--interval`, default 6h) and
   records results; `/health` and `/ready` on `--listen` report on it.
-- After a failed cycle, `serve` retries within a minute, backing off to
+- After a failed cycle, `serve` retries after about a minute, backing off to
   `--interval`, so `/ready` recovers without waiting hours.
 - A container image, `ghcr.io/tallica/incus-beacon` for amd64 and arm64, is
   published with each release; it runs `serve` as an unprivileged user.
