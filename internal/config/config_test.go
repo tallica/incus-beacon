@@ -188,3 +188,12 @@ func commonOf(cfg *Config) Common {
 		return cfg.Serve.Common
 	}
 }
+
+func TestNoTrustTokenFlagsYet(t *testing.T) {
+	t.Parallel()
+	for _, f := range []string{"--token-file", "--state-dir"} {
+		if _, err := parse(t, nil, CmdCheck, f, "x"); !errors.Is(err, ErrUsage) {
+			t.Errorf("%s: err = %v, want a usage error until trust tokens land", f, err)
+		}
+	}
+}

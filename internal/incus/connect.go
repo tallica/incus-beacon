@@ -22,7 +22,6 @@ type ConnectOptions struct {
 	ClientCert        string
 	ClientKey         string
 	ServerFingerprint string
-	TokenFile         string
 	UserAgent         string
 }
 
@@ -30,9 +29,6 @@ type ConnectOptions struct {
 func Connect(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServer, error) {
 	if opts.URL == "" {
 		return connectRemote(opts.Remote)
-	}
-	if opts.TokenFile != "" {
-		return nil, errors.New("--token-file is not supported yet; use --client-cert and --client-key")
 	}
 	if opts.ClientCert == "" {
 		return nil, errors.New("--incus needs --client-cert and --client-key")

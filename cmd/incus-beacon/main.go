@@ -224,7 +224,6 @@ func connectOptions(c config.Common) incus.ConnectOptions {
 		ClientCert:        c.ClientCert,
 		ClientKey:         c.ClientKey,
 		ServerFingerprint: c.ServerFingerprint,
-		TokenFile:         c.TokenFile,
 		UserAgent:         userAgent(),
 	}
 }

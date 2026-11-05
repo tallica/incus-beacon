@@ -41,8 +41,6 @@ type Common struct {
 
 	Remote            string
 	Incus             string
-	TokenFile         string
-	StateDir          string
 	ClientCert        string
 	ClientKey         string
 	ServerFingerprint string
@@ -216,8 +214,6 @@ func bindCommon(fs *flag.FlagSet, c *Common) {
 
 	fs.StringVar(&c.Remote, "remote", "", "incus CLI remote to use (default: the CLI's default remote)")
 	fs.StringVar(&c.Incus, "incus", "", "Incus API URL, e.g. https://192.168.1.10:8443")
-	fs.StringVar(&c.TokenFile, "token-file", "", "file holding a one-time trust token")
-	fs.StringVar(&c.StateDir, "state-dir", "/var/lib/incus-beacon", "directory for the generated client certificate")
 	fs.StringVar(&c.ClientCert, "client-cert", "", "client certificate file for --incus")
 	fs.StringVar(&c.ClientKey, "client-key", "", "client key file for --incus")
 	fs.StringVar(&c.ServerFingerprint, "server-fingerprint", "", "expected server certificate fingerprint")
