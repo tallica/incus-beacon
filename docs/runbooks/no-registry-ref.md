@@ -12,7 +12,7 @@ looks ([image ref resolution](../ARCHITECTURE.md#image-ref-resolution)). An
 instance created from a copied or imported image may have none of them.
 `pinned by digest` means the instance was launched from `<name>@sha256:…` with
 no tag, so there is no newer version to look for. `not pulled from a registry`
-means the image was built, imported or published locally.
+means the image was built or imported locally.
 
 ## Fix
 

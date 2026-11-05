@@ -22,9 +22,8 @@ get an entry.
 - `incus-beacon check` finds newer images for Incus OCI instances (a rebuilt
   tag, or with `track=semver` a newer version tag); `--write` records the result
   in `user.beacon.*` keys.
-- Images built, imported or published locally show as `unknown` rather than
-  being compared with a registry they never came from; `user.beacon.image`
-  overrides this.
+- Images built or imported locally show as `unknown` rather than being compared
+  with a registry they never came from; `user.beacon.image` overrides this.
 - `incus-beacon serve` checks on an interval (`--interval`, default 6h) and
   records results; `/health` and `/ready` on `--listen` report on it.
 - A container image, `ghcr.io/tallica/incus-beacon` for amd64 and arm64, is

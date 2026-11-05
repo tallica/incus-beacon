@@ -89,10 +89,12 @@ after a failed listing, so a restarted daemon recovers without a restart here.
 
 Incus describes every image it pulls from a registry as
 `<registry>/<repo> (OCI)` (`client/oci_images.go`; older servers to verify). Any
-other OCI image was built, imported or published locally, so no registry holds
-its layers and no lookup could match them: it is `unknown`, with the reason "not
-pulled from a registry", unless `user.beacon.image` names a ref to check anyway.
-Otherwise, the first source that yields a ref wins:
+other OCI image was built or imported locally, so no registry holds its layers
+and no lookup could match them: it is `unknown`, with the reason "not pulled
+from a registry", unless `user.beacon.image` names a ref to check anyway. An
+image made with `incus publish` keeps no `image.*` keys, and an instance created
+from it is not an OCI instance, so it is not watched at all. Otherwise, the
+first source that yields a ref wins:
 
 1. `user.beacon.image`, or `user.label.beacon.image`.
 2. `user.image_alias`, which incus-compose sets to the fully resolved ref.
