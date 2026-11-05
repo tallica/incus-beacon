@@ -24,7 +24,7 @@ var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdVersion}
 var summaries = map[string]string{
 	CmdCheck:   "check registries for newer images and print what can be updated",
 	CmdStatus:  "show the update status already recorded on instances",
-	CmdServe:   "run checks on an interval, record results and notify",
+	CmdServe:   "run checks on an interval and record results",
 	CmdVersion: "print the version",
 }
 
@@ -73,11 +73,8 @@ type Status struct {
 type Serve struct {
 	Common
 	Registry
-	Interval     time.Duration
-	Listen       string
-	NotifyURLs   []string
-	WebhookURL   string
-	NotifyErrors bool
+	Interval time.Duration
+	Listen   string
 }
 
 // Config sets at most one command field; none for version.
@@ -152,9 +149,6 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindRegistry(fs, &c.Registry)
 		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
-		fs.Var((*listValue)(&c.NotifyURLs), "notify-url", "shoutrrr URL to notify; repeatable")
-		fs.StringVar(&c.WebhookURL, "webhook-url", "", "URL to POST update transitions to as JSON")
-		fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when a check starts failing")
 		cfg.Serve = c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
@@ -279,16 +273,6 @@ func applyEnv(fs *flag.FlagSet, getenv func(string) string) error {
 		}
 	})
 	return errors.Join(errs...)
-}
-
-// listValue splits on whitespace too, so one variable can carry several URLs.
-type listValue []string
-
-func (l *listValue) String() string { return strings.Join(*l, " ") }
-
-func (l *listValue) Set(v string) error {
-	*l = append(*l, strings.Fields(v)...)
-	return nil
 }
 
 type csvValue []string

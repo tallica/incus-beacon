@@ -65,25 +65,12 @@ func TestEnvName(t *testing.T) {
 
 func TestListFlags(t *testing.T) {
 	t.Parallel()
-	cfg, err := parse(t, nil, CmdServe,
-		"--notify-url", "ntfy://ntfy.sh/a", "--notify-url", "slack://x@y",
-		"--project", "default, web,,")
+	cfg, err := parse(t, nil, CmdServe, "--project", "default, web,,")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if want := []string{"ntfy://ntfy.sh/a", "slack://x@y"}; !slices.Equal(cfg.Serve.NotifyURLs, want) {
-		t.Errorf("notify urls %q, want %q", cfg.Serve.NotifyURLs, want)
 	}
 	if want := []string{"default", "web"}; !slices.Equal(cfg.Serve.Projects, want) {
 		t.Errorf("projects %q, want %q", cfg.Serve.Projects, want)
-	}
-
-	cfg, err = parse(t, map[string]string{"BEACON_NOTIFY_URL": "ntfy://ntfy.sh/a  slack://x@y"}, CmdServe)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Serve.NotifyURLs) != 2 {
-		t.Errorf("notify urls from env: %q", cfg.Serve.NotifyURLs)
 	}
 }
 
@@ -189,11 +176,11 @@ func commonOf(cfg *Config) Common {
 	}
 }
 
-func TestNoTrustTokenFlagsYet(t *testing.T) {
+func TestNoUnimplementedFlags(t *testing.T) {
 	t.Parallel()
-	for _, f := range []string{"--token-file", "--state-dir"} {
-		if _, err := parse(t, nil, CmdCheck, f, "x"); !errors.Is(err, ErrUsage) {
-			t.Errorf("%s: err = %v, want a usage error until trust tokens land", f, err)
+	for _, f := range []string{"--token-file", "--state-dir", "--notify-url", "--webhook-url", "--notify-errors"} {
+		if _, err := parse(t, nil, CmdServe, f+"=x"); !errors.Is(err, ErrUsage) {
+			t.Errorf("%s: err = %v, want a usage error until the feature lands", f, err)
 		}
 	}
 }
