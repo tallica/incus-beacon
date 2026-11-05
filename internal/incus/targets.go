@@ -101,8 +101,16 @@ func listInstances(ctx context.Context, srv incusclient.InstanceServer, projects
 		}
 		return insts, nil
 	}
+	// Incus lists no instances, without an error, for a project that doesn't exist.
+	known, err := srv.GetProjectNames()
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
 	var all []api.Instance
 	for _, p := range projects {
+		if !slices.Contains(known, p) {
+			return nil, fmt.Errorf("project %s: not found, or this certificate may not use it", p)
+		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

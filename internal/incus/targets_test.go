@@ -151,6 +151,11 @@ func TestTargetsFilters(t *testing.T) {
 		t.Errorf("projects=apps: %q, want %q", got, want)
 	}
 
+	_, err = Targets(t.Context(), srv, ListOptions{Projects: []string{"apps", "typo"}, WatchAll: true})
+	if err == nil || !strings.Contains(err.Error(), `project typo: not found`) {
+		t.Errorf("unknown project: err = %v, want it named as not found", err)
+	}
+
 	targets, err = Targets(t.Context(), srv, ListOptions{Instance: "web", WatchAll: true})
 	if err != nil {
 		t.Fatal(err)

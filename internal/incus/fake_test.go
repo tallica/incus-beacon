@@ -72,9 +72,17 @@ func (f *fakeIncus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/1.0":
 		sync200(w, api.Server{ServerUntrusted: api.ServerUntrusted{
-			APIExtensions: []string{"instance_all_projects"},
+			APIExtensions: []string{"instance_all_projects", "projects"},
 			Auth:          f.auth(),
 		}})
+	case r.URL.Path == "/1.0/projects":
+		urls := []string{"/1.0/projects/" + api.ProjectDefaultName}
+		for _, inst := range f.instances {
+			if u := "/1.0/projects/" + project(inst.Project); !slices.Contains(urls, u) {
+				urls = append(urls, u)
+			}
+		}
+		sync200(w, urls)
 	case r.URL.Path == "/1.0/instances":
 		var out []api.Instance
 		for _, inst := range f.instances {

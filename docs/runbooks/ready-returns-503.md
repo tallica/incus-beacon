@@ -16,8 +16,9 @@ The last cycle could not list instances, so it checked nothing. Usually one of:
   pin is wrong, or the server certificate changed.
 - `the server doesn't trust this client certificate`: the certificate was never
   added, or was removed.
-- `list instances in project …: not authorized` (to verify): the certificate is
-  restricted to other projects than `--project` names.
+- `project …: not found, or this certificate may not use it`: `--project` names
+  a project that doesn't exist, or (to verify) one the certificate is not
+  restricted to.
 - `connection refused` or a timeout: Incus isn't listening on that address
   (`core.https_address`), or a firewall is in the way.
 
