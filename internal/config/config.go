@@ -49,7 +49,10 @@ type Common struct {
 
 	Projects []string
 	Watch    string
+}
 
+// Registry holds the settings of commands that query registries.
+type Registry struct {
 	RegistryAuthFile string
 	Concurrency      int
 	Timeout          time.Duration
@@ -57,6 +60,7 @@ type Common struct {
 
 type Check struct {
 	Common
+	Registry
 	Instance string
 	Format   string
 	Write    bool
@@ -70,6 +74,7 @@ type Status struct {
 
 type Serve struct {
 	Common
+	Registry
 	Interval     time.Duration
 	Listen       string
 	NotifyURLs   []string
@@ -128,12 +133,13 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 	case CmdCheck:
 		c := &Check{}
 		bindCommon(fs, &c.Common, FormatAuto)
+		bindRegistry(fs, &c.Registry)
 		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
 		fs.BoolVar(&c.Write, "write", false, "also record results in user.beacon.* keys")
 		cfg.Check = c
 		validate = func() error {
-			return errors.Join(c.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))
+			return errors.Join(c.Common.validate(), c.Registry.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))
 		}
 	case CmdStatus:
 		c := &Status{}
@@ -147,6 +153,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 	case CmdServe:
 		c := &Serve{}
 		bindCommon(fs, &c.Common, FormatJSON)
+		bindRegistry(fs, &c.Registry)
 		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
 		fs.Var((*listValue)(&c.NotifyURLs), "notify-url", "shoutrrr URL to notify; repeatable")
@@ -154,7 +161,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when a check starts failing")
 		cfg.Serve = c
 		validate = func() error {
-			errs := []error{c.validate()}
+			errs := []error{c.Common.validate(), c.Registry.validate()}
 			if c.Interval < time.Minute {
 				errs = append(errs, fmt.Errorf("interval %s: must be at least 1m", c.Interval))
 			}
@@ -219,7 +226,9 @@ func bindCommon(fs *flag.FlagSet, c *Common, logFormat string) {
 
 	fs.Var((*csvValue)(&c.Projects), "project", "project to watch; comma-separate several (default: all)")
 	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
+}
 
+func bindRegistry(fs *flag.FlagSet, c *Registry) {
 	fs.StringVar(&c.RegistryAuthFile, "registry-auth-file", "", "docker config.json with registry credentials")
 	fs.IntVar(&c.Concurrency, "concurrency", 4, "registry lookups run at once")
 	fs.DurationVar(&c.Timeout, "timeout", 30*time.Second, "timeout for each registry call")
@@ -231,17 +240,22 @@ func (c *Common) validate() error {
 		oneOf("log-format", c.LogFormat, FormatAuto, FormatJSON, FormatConsole),
 		oneOf("watch", c.Watch, WatchAll, WatchOptIn),
 	}
-	if c.Concurrency < 1 {
-		errs = append(errs, fmt.Errorf("concurrency %d: must be at least 1", c.Concurrency))
-	}
-	if c.Timeout <= 0 {
-		errs = append(errs, fmt.Errorf("timeout %s: must be positive", c.Timeout))
-	}
 	if (c.ClientCert == "") != (c.ClientKey == "") {
 		errs = append(errs, errors.New("client-cert and client-key must be given together"))
 	}
 	if c.Remote != "" && c.Incus != "" {
 		errs = append(errs, errors.New("remote and incus are mutually exclusive"))
+	}
+	return errors.Join(errs...)
+}
+
+func (c *Registry) validate() error {
+	var errs []error
+	if c.Concurrency < 1 {
+		errs = append(errs, fmt.Errorf("concurrency %d: must be at least 1", c.Concurrency))
+	}
+	if c.Timeout <= 0 {
+		errs = append(errs, fmt.Errorf("timeout %s: must be positive", c.Timeout))
 	}
 	return errors.Join(errs...)
 }

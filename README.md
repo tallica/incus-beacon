@@ -128,7 +128,7 @@ often needed:
 | `--project`                                | Project to watch, or several comma-separated; all visible ones by default   |
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |
-| `--registry-auth-file`                     | A docker `config.json`; the usual docker locations by default               |
+| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default  |
 | `--log-level`, `--log-format`              | `debug` to `error`; `json` or `console` (logs go to stderr)                 |
 
 ### Instance keys

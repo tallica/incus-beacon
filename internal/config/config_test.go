@@ -162,6 +162,22 @@ func TestProjectFlag(t *testing.T) {
 	}
 }
 
+func TestStatusHasNoRegistryFlags(t *testing.T) {
+	t.Parallel()
+	var out strings.Builder
+	if _, err := Parse([]string{CmdStatus, "-h"}, env(nil), &out); !errors.Is(err, ErrHelp) {
+		t.Fatalf("err = %v, want ErrHelp", err)
+	}
+	for _, f := range []string{"-concurrency", "-timeout", "-registry-auth-file"} {
+		if strings.Contains(out.String(), f) {
+			t.Errorf("status -h lists %s", f)
+		}
+	}
+	if !strings.Contains(out.String(), "-project ") {
+		t.Error("status -h lacks -project")
+	}
+}
+
 func commonOf(cfg *Config) Common {
 	switch {
 	case cfg.Check != nil:
