@@ -108,6 +108,9 @@ func TestUsageErrors(t *testing.T) {
 		{"zero concurrency", nil, []string{CmdCheck, "--concurrency", "0"}, "concurrency"},
 		{"cert without key", nil, []string{CmdCheck, "--client-cert", "c.crt"}, "together"},
 		{"remote and url", nil, []string{CmdCheck, "--remote", "r", "--incus", "https://example.com:8443"}, "mutually exclusive"},
+		{"token without incus", nil, []string{CmdServe, "--token", "t", "--state-dir", "/path/to/state"}, "token needs incus"},
+		{"token without state dir", map[string]string{"BEACON_TOKEN": "t"}, []string{CmdServe, "--incus", "https://example.com:8443"}, "token needs state-dir"},
+		{"token and cert", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--token", "t", "--state-dir", "/s", "--client-cert", "c", "--client-key", "k"}, "token and client-cert"},
 		{"bad env value", map[string]string{"BEACON_CONCURRENCY": "many"}, []string{CmdCheck}, "BEACON_CONCURRENCY"},
 	}
 	for _, tt := range tests {
@@ -193,7 +196,7 @@ func commonOf(cfg *Config) Common {
 
 func TestNoUnimplementedFlags(t *testing.T) {
 	t.Parallel()
-	for _, f := range []string{"--token-file", "--state-dir", "--notify-url", "--webhook-url", "--notify-errors"} {
+	for _, f := range []string{"--token-file", "--notify-url", "--webhook-url", "--notify-errors"} {
 		if _, err := parse(t, nil, CmdServe, f+"=x"); !errors.Is(err, ErrUsage) {
 			t.Errorf("%s: err = %v, want a usage error until the feature lands", f, err)
 		}

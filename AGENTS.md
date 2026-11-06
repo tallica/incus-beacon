@@ -26,9 +26,8 @@ the one map of where each kind of fact lives; everywhere else links to the home:
 ## Status
 
 Pre-1.0 and not yet released: `check`, `status` and `serve` work against a real
-Incus; trust tokens, notifications and automatic updates are on the backlog. Go
-1.27, built static with `CGO_ENABLED=0`. No dependency is pinned below its
-latest release.
+Incus; notifications and automatic updates are on the backlog. Go 1.27, built
+static with `CGO_ENABLED=0`. No dependency is pinned below its latest release.
 
 ## Working on this
 

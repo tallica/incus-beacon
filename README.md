@@ -47,44 +47,41 @@ default  cache     current           docker.io/library/redis:7.4   -
 
 ### Run it on Incus
 
-The image runs `serve` as uid 65534 and listens on port 9153. It needs a client
-certificate the Incus server trusts.
+The image runs `serve` as uid 65534, listens on port 9153 and keeps its client
+certificate in `/var/lib/incus-beacon`. It joins Incus with a one-time trust
+token, which also carries the server's fingerprint for pinning.
 
-1. Create a certificate and have Incus trust it. `--restricted --projects`
-   limits it to the projects it should watch:
-
-   ```sh
-   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:secp384r1 -nodes \
-     -days 3650 -subj /CN=incus-beacon -keyout client.key -out client.crt
-   incus config trust add-certificate client.crt --name incus-beacon
-   # or: ... --restricted --projects default,apps
-   ```
-
-2. Note the server's certificate fingerprint for pinning:
+1. Create a volume owned by uid 65534, so the certificate survives the instance
+   being rebuilt for a new image:
 
    ```sh
-   incus info | grep certificate_fingerprint
+   incus storage volume create default beacon-data initial.uid=65534 initial.gid=65534
    ```
 
-3. Create the instance, give it the certificate files readable by uid 65534,
-   then start it:
+2. Create the instance with a trust token, attach the volume, then start it.
+   `--restricted --projects` limits it to the projects it should watch:
 
    ```sh
    incus remote add ghcr https://ghcr.io --protocol=oci
    incus create ghcr:tallica/incus-beacon beacon \
      -c environment.BEACON_INCUS=https://<incus-host>:8443 \
-     -c environment.BEACON_SERVER_FINGERPRINT=<fingerprint> \
-     -c environment.BEACON_CLIENT_CERT=/certs/client.crt \
-     -c environment.BEACON_CLIENT_KEY=/certs/client.key
-   for f in client.crt client.key; do
-     incus file push "$f" beacon/certs/"$f" --uid 65534 --gid 65534 --mode 0400 --create-dirs
-   done
+     -c environment.BEACON_TOKEN="$(incus config trust add incus-beacon --quiet)"
+   # or: ... trust add incus-beacon --restricted --projects default,apps --quiet
+   incus storage volume attach default beacon-data beacon state /var/lib/incus-beacon
    incus start beacon
    ```
 
-4. Check it: `incus exec beacon -- wget -q -O - http://127.0.0.1:9153/ready`, or
+   The first start redeems the token; later starts reuse the saved certificate,
+   and the spent token left in the config is no longer usable.
+
+3. Check it: `incus exec beacon -- wget -q -O - http://127.0.0.1:9153/ready`, or
    `curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
    network, such as the Incus host.
+
+A certificate made by hand works too: give `BEACON_CLIENT_CERT`,
+`BEACON_CLIENT_KEY` and `BEACON_SERVER_FINGERPRINT` (from
+`incus info | grep certificate_fingerprint`) instead of the token, and push the
+files in with `incus file push … --uid 65534 --gid 65534 --mode 0400`.
 
 With incus-compose the same settings go into a service. It mounts the volume, a
 directory on the Incus host, with `shift=true`, which needs idmapped mount
@@ -139,6 +136,7 @@ often needed:
 | `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`    |
 | `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                        |
 | `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)           |
+| `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir  |
 | `--project`                                | Project to watch, or several comma-separated; all visible ones by default   |
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |

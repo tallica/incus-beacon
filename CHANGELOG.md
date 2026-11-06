@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `--token` joins Incus with a one-time trust token and keeps the certificate in
+  `--state-dir`; the container needs no hand-made certificate or fingerprint.
+
 ## [0.1.1] - 2026-11-05
 
 ### Added

@@ -2,12 +2,14 @@
 package incus
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -22,44 +24,75 @@ type ConnectOptions struct {
 	ClientCert        string
 	ClientKey         string
 	ServerFingerprint string
+	Token             string
+	StateDir          string
 	UserAgent         string
 }
 
-// Connect uses URL with a client certificate, else an incus CLI remote.
+// Connect uses URL with a given, saved or token-enrolled certificate, else a CLI remote.
 func Connect(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServer, error) {
 	if opts.URL == "" {
 		return connectRemote(opts.Remote)
 	}
-	if opts.ClientCert == "" {
-		return nil, errors.New("--incus needs --client-cert and --client-key")
+	if opts.ClientCert != "" {
+		cert, err := os.ReadFile(opts.ClientCert)
+		if err != nil {
+			return nil, fmt.Errorf("client certificate: %w", err)
+		}
+		key, err := os.ReadFile(opts.ClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("client key: %w", err)
+		}
+		return connectTrusted(ctx, opts.URL, cert, key, opts.ServerFingerprint, opts.UserAgent)
 	}
-	cert, err := os.ReadFile(opts.ClientCert)
+	if opts.StateDir != "" {
+		st, err := loadState(opts.StateDir)
+		switch {
+		case err == nil:
+			fp := cmp.Or(opts.ServerFingerprint, st.fingerprint)
+			srv, err := connectTrusted(ctx, opts.URL, st.cert, st.key, fp, opts.UserAgent)
+			if errors.Is(err, errUntrusted) {
+				return nil, fmt.Errorf("%w; the certificate in %s was enrolled earlier: remove it and give a new --token", err, opts.StateDir)
+			}
+			return srv, err
+		case !errors.Is(err, fs.ErrNotExist):
+			return nil, err
+		}
+	}
+	if opts.Token != "" {
+		return enroll(ctx, opts)
+	}
+	return nil, errors.New("--incus needs --client-cert and --client-key, or --token and --state-dir")
+}
+
+func connectTrusted(ctx context.Context, url string, cert, key []byte, fingerprint, userAgent string) (incusclient.InstanceServer, error) {
+	srv, err := dial(ctx, url, cert, key, fingerprint, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("client certificate: %w", err)
+		return nil, err
 	}
-	key, err := os.ReadFile(opts.ClientKey)
-	if err != nil {
-		return nil, fmt.Errorf("client key: %w", err)
-	}
+	return srv, trusted(srv)
+}
+
+func dial(ctx context.Context, url string, cert, key []byte, fingerprint, userAgent string) (incusclient.InstanceServer, error) {
 	args := &incusclient.ConnectionArgs{
 		TLSClientCert: string(cert),
 		TLSClientKey:  string(key),
-		UserAgent:     opts.UserAgent,
+		UserAgent:     userAgent,
 		SkipGetEvents: true,
 	}
-	if opts.ServerFingerprint != "" {
-		want := normalizeFingerprint(opts.ServerFingerprint)
+	if fingerprint != "" {
+		want := normalizeFingerprint(fingerprint)
 		args.InsecureSkipVerify = true
 		args.TransportWrapper = func(t *http.Transport) incusclient.HTTPTransporter {
 			t.TLSClientConfig.VerifyPeerCertificate = pinFingerprint(want)
 			return transporter{t: t}
 		}
 	}
-	srv, err := incusclient.ConnectIncusWithContext(ctx, opts.URL, args)
+	srv, err := incusclient.ConnectIncusWithContext(ctx, url, args)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", opts.URL, err)
+		return nil, fmt.Errorf("connect to %s: %w", url, err)
 	}
-	return srv, trusted(srv)
+	return srv, nil
 }
 
 func connectRemote(name string) (incusclient.InstanceServer, error) {
@@ -84,6 +117,8 @@ func connectRemote(name string) (incusclient.InstanceServer, error) {
 	return srv, trusted(srv)
 }
 
+var errUntrusted = errors.New("the server doesn't trust this client certificate")
+
 // trusted fails early: Incus hides its API extensions from untrusted clients.
 func trusted(srv incusclient.InstanceServer) error {
 	info, _, err := srv.GetServer()
@@ -91,7 +126,7 @@ func trusted(srv incusclient.InstanceServer) error {
 		return fmt.Errorf("read server info: %w", err)
 	}
 	if info.Auth != "trusted" {
-		return errors.New("the server doesn't trust this client certificate; add it with incus config trust add-certificate")
+		return fmt.Errorf("%w; add it with incus config trust add-certificate", errUntrusted)
 	}
 	return nil
 }
