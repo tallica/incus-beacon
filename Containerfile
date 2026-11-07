@@ -1,6 +1,6 @@
 # Builds natively on the build host and cross-compiles, so a multi-arch build
 # needs no emulation.
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
 ARG TARGETOS TARGETARCH
 ARG VERSION=dev COMMIT= DATE=
 WORKDIR /src
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 RUN mkdir /out/state
 
 # busybox rather than scratch: health checks need wget, and incus exec a shell.
-FROM busybox:1.37-musl
+FROM busybox:1.37-musl@sha256:f6a95d611e0a8780fabdb2aec43e31275b2720dfefa3e41b16835bfc42454478
 ARG VERSION=dev COMMIT=
 LABEL org.opencontainers.image.title="incus-beacon" \
       org.opencontainers.image.description="Reports newer registry images for Incus OCI instances" \
