@@ -185,6 +185,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	engine := check.New(reg, c.Concurrency, logger)
 	sender, err := notify.New(notify.Options{
 		URLs:    c.NotifyURLs,
+		URLFile: c.NotifyURLFile,
 		Command: c.NotifyCommand,
 		Metrics: set,
 		Log:     logger,
@@ -295,6 +296,9 @@ func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
 }
 
 func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) error {
+	if _, err := notify.New(notify.Options{URLs: c.NotifyURLs}); err != nil {
+		return err
+	}
 	image := c.Image
 	if image == "" {
 		var released bool
@@ -316,6 +320,8 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 		Projects:    c.Projects,
 		Watch:       c.Watch,
 		Events:      c.Events,
+		NotifyURLs:  c.NotifyURLs,
+		NotifyErrs:  c.NotifyErrs,
 		Wait:        c.Wait,
 		Log:         logger,
 	})

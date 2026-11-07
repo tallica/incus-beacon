@@ -133,6 +133,8 @@ func TestUsageErrors(t *testing.T) {
 		{"token file without state dir", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--token-file", "/f"}, "token needs state-dir"},
 		{"bad env value", map[string]string{"BEACON_CONCURRENCY": "many"}, []string{CmdCheck}, "BEACON_CONCURRENCY"},
 		{"notify errors alone", nil, []string{CmdServe, "--notify-errors"}, "notify-errors needs"},
+		{"install notify errors alone", nil, []string{CmdInstall, "--notify-errors"}, "notify-errors needs notify-url"},
+		{"install notify command", nil, []string{CmdInstall, "--notify-command", "x"}, "not defined"},
 		{"notify on check", nil, []string{CmdCheck, "--notify-url", "https://example.com"}, "not defined"},
 	}
 	for _, tt := range tests {
@@ -236,6 +238,20 @@ func TestNotifyFlags(t *testing.T) {
 	}
 	if len(cfg.Serve.NotifyURLs) != 2 {
 		t.Errorf("BEACON_NOTIFY_URL gave %q, want two URLs", cfg.Serve.NotifyURLs)
+	}
+	cfg, err = parse(t, map[string]string{"BEACON_NOTIFY_URL_FILE": "/var/lib/incus-beacon/notify-urls", "BEACON_NOTIFY_ERRORS": "true"}, CmdServe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Serve.NotifyURLFile != "/var/lib/incus-beacon/notify-urls" || !cfg.Serve.NotifyErrors {
+		t.Errorf("as install sets it: %+v", cfg.Serve.Notify)
+	}
+	cfg, err = parse(t, nil, CmdInstall, "--notify-url", "https://example.com/a", "--notify-url", "slack://example.com/b", "--notify-errors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Install.NotifyURLs) != 2 || !cfg.Install.NotifyErrs {
+		t.Errorf("install notify %q %t", cfg.Install.NotifyURLs, cfg.Install.NotifyErrs)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -22,6 +23,7 @@ const (
 	secretsDir = "/run/secrets"
 	tokenFile  = secretsDir + "/token"
 	stateDev   = "state"
+	notifyFile = "notify-urls"
 	imageUID   = 65534
 	imageRepo  = "ghcr.io/tallica/incus-beacon"
 )
@@ -34,6 +36,8 @@ type Options struct {
 	Projects    []string
 	Watch       string
 	Events      bool
+	NotifyURLs  []string
+	NotifyErrs  bool
 	Wait        time.Duration
 	Log         zerolog.Logger
 }
@@ -106,6 +110,13 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", vol) })
 	opts.Log.Info().Str("pool", pool).Str("volume", vol).Msg("volume created")
 
+	if len(opts.NotifyURLs) > 0 {
+		if err := writeNotifyURLs(srv, pool, vol, opts.NotifyURLs); err != nil {
+			return rollback(err)
+		}
+		opts.Log.Info().Int("urls", len(opts.NotifyURLs)).Str("file", vol+"/"+notifyFile).Msg("notification URLs stored")
+	}
+
 	token, opID, err := createToken(srv, opts.Name, opts.Projects)
 	if err != nil {
 		return rollback(err)
@@ -124,6 +135,12 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	}
 	if opts.Events {
 		env["environment.BEACON_EVENTS"] = "true"
+	}
+	if len(opts.NotifyURLs) > 0 {
+		env["environment.BEACON_NOTIFY_URL_FILE"] = stateDir + "/" + notifyFile
+		if opts.NotifyErrs {
+			env["environment.BEACON_NOTIFY_ERRORS"] = "true"
+		}
 	}
 	op, err := srv.CreateInstance(api.InstancesPost{
 		Name: opts.Name,
@@ -392,6 +409,25 @@ func pushToken(srv incusclient.InstanceServer, name, token string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("push the token into %s: %w", name, err)
+	}
+	return nil
+}
+
+// writeNotifyURLs keeps the URLs, which hold tokens, out of the instance config.
+func writeNotifyURLs(srv incusclient.InstanceServer, pool, vol string, urls []string) error {
+	c, err := srv.GetStoragePoolVolumeFileSFTP(pool, "custom", vol)
+	if err != nil {
+		return fmt.Errorf("open volume %s: %w", vol, err)
+	}
+	defer c.Close()
+	f, err := c.OpenFile("/"+notifyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		return fmt.Errorf("create %s in %s: %w", notifyFile, vol, err)
+	}
+	_, err = f.Write([]byte(strings.Join(urls, "\n") + "\n"))
+	err = errors.Join(err, f.Close(), c.Chmod("/"+notifyFile, 0o400), c.Chown("/"+notifyFile, imageUID, imageUID))
+	if err != nil {
+		return fmt.Errorf("write %s in %s: %w", notifyFile, vol, err)
 	}
 	return nil
 }

@@ -90,6 +90,7 @@ type Serve struct {
 
 type Notify struct {
 	NotifyURLs    []string
+	NotifyURLFile string
 	NotifyCommand string
 	NotifyErrors  bool
 }
@@ -103,6 +104,8 @@ type Install struct {
 	APIURL      string
 	Wait        time.Duration
 	Events      bool
+	NotifyURLs  []string
+	NotifyErrs  bool
 }
 
 type Uninstall struct {
@@ -192,6 +195,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
 		fs.BoolVar(&c.Events, "events", false, "also check instances as soon as they are created, updated or rebuilt")
 		fs.Var((*urlsValue)(&c.NotifyURLs), "notify-url", "where to send notifications: an http(s) webhook, discord:// or slack://; repeat, or space-separate, for several")
+		fs.StringVar(&c.NotifyURLFile, "notify-url-file", "", "file of further --notify-url values, one per line, as install writes it")
 		fs.StringVar(&c.NotifyCommand, "notify-command", "", "program run per notification, with the JSON payload on stdin; arguments split on spaces, no shell")
 		fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when an instance's check starts failing")
 		cfg.Serve = c
@@ -203,8 +207,8 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			if c.Listen == "" {
 				errs = append(errs, errors.New("listen: must not be empty"))
 			}
-			if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyCommand == "" {
-				errs = append(errs, errors.New("notify-errors needs notify-url or notify-command"))
+			if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyURLFile == "" && c.NotifyCommand == "" {
+				errs = append(errs, errors.New("notify-errors needs notify-url, notify-url-file or notify-command"))
 			}
 			return errors.Join(errs...)
 		}
@@ -220,11 +224,16 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
 		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
 		fs.BoolVar(&c.Events, "events", false, "have the instance check instances as soon as they are created, updated or rebuilt")
+		fs.Var((*urlsValue)(&c.NotifyURLs), "notify-url", "where the instance sends notifications; stored in its state volume, not its config")
+		fs.BoolVar(&c.NotifyErrs, "notify-errors", false, "have the instance also notify when a check starts failing")
 		cfg.Install = c
 		validate = func() error {
 			errs := []error{c.validate()}
 			if c.Wait <= 0 {
 				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
+			}
+			if c.NotifyErrs && len(c.NotifyURLs) == 0 {
+				errs = append(errs, errors.New("notify-errors needs notify-url"))
 			}
 			return errors.Join(errs...)
 		}
