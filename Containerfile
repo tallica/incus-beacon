@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 RUN mkdir /out/state
 
 # busybox rather than scratch: health checks need wget, and incus exec a shell.
-FROM busybox:1.37-musl@sha256:f6a95d611e0a8780fabdb2aec43e31275b2720dfefa3e41b16835bfc42454478
+FROM busybox:1.38-musl@sha256:80e38f9a1b39188b8bdb28879178edb322a4402b081a9aedda1924609decd6f6
 ARG VERSION=dev COMMIT=
 LABEL org.opencontainers.image.title="incus-beacon" \
       org.opencontainers.image.description="Reports newer registry images for Incus OCI instances" \
