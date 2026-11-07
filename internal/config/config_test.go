@@ -25,8 +25,8 @@ func TestDefaultsPerCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := cfg.Serve
-	if s.Interval != 6*time.Hour || s.Listen != ":9153" || s.LogFormat != FormatConsole {
-		t.Errorf("serve defaults: interval %s, listen %q, log format %q", s.Interval, s.Listen, s.LogFormat)
+	if s.Interval != 6*time.Hour || s.Listen != ":9153" || s.LogFormat != FormatConsole || s.Events {
+		t.Errorf("serve defaults: interval %s, listen %q, log format %q, events %t", s.Interval, s.Listen, s.LogFormat, s.Events)
 	}
 	if s.LogColor != ColorAuto {
 		t.Errorf("log color %q, want auto", s.LogColor)
@@ -56,6 +56,24 @@ func TestFlagOverridesEnv(t *testing.T) {
 	}
 	if cfg.Serve.Interval != 2*time.Hour {
 		t.Errorf("interval %s, want the variable's 2h", cfg.Serve.Interval)
+	}
+}
+
+func TestEventsOn(t *testing.T) {
+	t.Parallel()
+	cfg, err := parse(t, map[string]string{"BEACON_EVENTS": "true"}, CmdServe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Serve.Events {
+		t.Error("BEACON_EVENTS=true left events off")
+	}
+	cfg, err = parse(t, nil, CmdInstall, "--events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Install.Events {
+		t.Error("install --events not set")
 	}
 }
 

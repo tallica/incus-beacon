@@ -1,8 +1,10 @@
 package incus
 
 import (
+	"context"
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/lxc/incus/v7/shared/api"
 )
@@ -71,5 +73,25 @@ func TestWriteRetriesOnceOnETagConflict(t *testing.T) {
 	f.conflicts = 2
 	if _, err := WriteStatus(t.Context(), f.connect(t), tg, Beacon{Status: "error", Error: "x"}); err == nil {
 		t.Error("two conflicts: want an error after one retry")
+	}
+}
+
+func TestWriteWaitsOutABusyInstance(t *testing.T) {
+	t.Parallel()
+	f, tg := writeFixture()
+	f.busy = 1
+	if _, err := WriteStatus(t.Context(), f.connect(t), tg, Beacon{Status: "current"}); err != nil {
+		t.Fatalf("busy once, as right after a launch: %v", err)
+	}
+	if f.puts != 1 {
+		t.Errorf("%d accepted PUTs, want 1", f.puts)
+	}
+
+	f, tg = writeFixture()
+	f.busy = 100
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := WriteStatus(ctx, f.connect(t), tg, Beacon{Status: "current"}); err == nil {
+		t.Error("busy until the deadline: want an error")
 	}
 }

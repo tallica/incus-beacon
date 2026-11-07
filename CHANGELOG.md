@@ -13,6 +13,12 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `serve --events` checks an instance within seconds of it being created,
+  changed or rebuilt, instead of waiting for the next interval;
+  `install --events` sets it up.
+
 ## [0.2.0] - 2026-11-07
 
 ### Added

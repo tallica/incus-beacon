@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strings"
@@ -40,7 +41,15 @@ type Target struct {
 	Policy    policy.Policy
 	PolicyErr error
 	Beacon    Beacon
+	Inputs    string // the config a check reads, to tell a real change from a status write
 }
+
+type Key struct {
+	Project  string
+	Instance string
+}
+
+func (t Target) Key() Key { return Key{Project: t.Project, Instance: t.Instance} }
 
 type ListOptions struct {
 	Projects []string
@@ -57,32 +66,15 @@ func Targets(ctx context.Context, srv incusclient.InstanceServer, opts ListOptio
 	sources := map[string]*api.ImageSource{}
 	var targets []Target
 	for i := range instances {
-		inst := &instances[i]
-		if opts.Instance != "" && inst.Name != opts.Instance {
-			continue
-		}
-		if !isOCI(inst.ExpandedConfig) {
-			continue
-		}
-		pol, polErr := policy.Parse(inst.ExpandedConfig, opts.WatchAll)
-		if !pol.Watched {
+		if opts.Instance != "" && instances[i].Name != opts.Instance {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		t := Target{
-			Project:   project(inst.Project),
-			Instance:  inst.Name,
-			Arch:      cmp.Or(inst.ExpandedConfig["image.architecture"], inst.Architecture),
-			BaseImage: inst.Config["volatile.base_image"],
-			Local:     !pulled(inst.ExpandedConfig),
-			Policy:    pol,
-			PolicyErr: polErr,
-			Beacon:    readBeacon(inst.Config),
+		if t, ok := target(srv, &instances[i], opts.WatchAll, sources); ok {
+			targets = append(targets, t)
 		}
-		t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
-		targets = append(targets, t)
 	}
 	slices.SortFunc(targets, func(a, b Target) int {
 		if c := strings.Compare(a.Project, b.Project); c != 0 {
@@ -91,6 +83,60 @@ func Targets(ctx context.Context, srv incusclient.InstanceServer, opts ListOptio
 		return strings.Compare(a.Instance, b.Instance)
 	})
 	return targets, nil
+}
+
+// TargetOf reads one instance; false means it is not a watched OCI container.
+func TargetOf(ctx context.Context, srv incusclient.InstanceServer, k Key, watchAll bool) (Target, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return Target{}, false, err
+	}
+	inst, _, err := srv.UseProject(k.Project).GetInstance(k.Instance)
+	if err != nil {
+		return Target{}, false, fmt.Errorf("get instance %s in project %s: %w", k.Instance, k.Project, err)
+	}
+	inst.Project = k.Project
+	t, ok := target(srv, inst, watchAll, map[string]*api.ImageSource{})
+	return t, ok, nil
+}
+
+func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, sources map[string]*api.ImageSource) (Target, bool) {
+	if !isOCI(inst.ExpandedConfig) {
+		return Target{}, false
+	}
+	pol, polErr := policy.Parse(inst.ExpandedConfig, watchAll)
+	if !pol.Watched {
+		return Target{}, false
+	}
+	t := Target{
+		Project:   project(inst.Project),
+		Instance:  inst.Name,
+		Arch:      cmp.Or(inst.ExpandedConfig["image.architecture"], inst.Architecture),
+		BaseImage: inst.Config["volatile.base_image"],
+		Local:     !pulled(inst.ExpandedConfig),
+		Policy:    pol,
+		PolicyErr: polErr,
+		Beacon:    readBeacon(inst.Config),
+		Inputs:    inputs(inst),
+	}
+	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
+	return t, true
+}
+
+// inputs covers every key a check may read, minus the ones beacon writes.
+func inputs(inst *api.Instance) string {
+	written := Beacon{}.keys()
+	var b strings.Builder
+	b.WriteString(inst.Architecture)
+	for _, k := range slices.Sorted(maps.Keys(inst.ExpandedConfig)) {
+		if _, ok := written[k]; ok {
+			continue
+		}
+		if k == "volatile.base_image" || k == RefFromCompose || strings.HasPrefix(k, "image.") ||
+			strings.HasPrefix(k, "user.beacon.") || strings.HasPrefix(k, "user.label.beacon.") {
+			fmt.Fprintf(&b, "\n%s=%s", k, inst.ExpandedConfig[k])
+		}
+	}
+	return b.String()
 }
 
 func listInstances(ctx context.Context, srv incusclient.InstanceServer, projects []string) ([]api.Instance, error) {

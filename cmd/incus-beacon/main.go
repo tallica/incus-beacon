@@ -171,23 +171,13 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 		return err
 	}
 	engine := check.New(reg, c.Concurrency, logger)
-	var srv incusclient.InstanceServer
+	conn := &incus.Conn{Options: connectOptions(c.Common)}
+	watchAll := c.Watch == config.WatchAll
+	seen := incus.Seen{}
 
-	cycle := func(ctx context.Context) (serve.Summary, error) {
-		if srv == nil {
-			s, err := incus.Connect(ctx, connectOptions(c.Common))
-			if err != nil {
-				return serve.Summary{}, err
-			}
-			srv = s
-		}
-		targets, err := incus.Targets(ctx, srv, incus.ListOptions{
-			Projects: c.Projects,
-			WatchAll: c.Watch == config.WatchAll,
-		})
-		if err != nil {
-			srv = nil
-			return serve.Summary{}, err
+	checkAndWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) serve.Summary {
+		for _, t := range targets {
+			seen.Record(t)
 		}
 		results := engine.Run(ctx, targets)
 		sum := serve.Summary{Targets: len(results)}
@@ -201,7 +191,44 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 			}
 		}
 		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger)
-		return sum, nil
+		return sum
+	}
+	cycle := func(ctx context.Context) (serve.Summary, error) {
+		srv, err := conn.Get(ctx)
+		if err != nil {
+			return serve.Summary{}, err
+		}
+		targets, err := incus.Targets(ctx, srv, incus.ListOptions{Projects: c.Projects, WatchAll: watchAll})
+		if err != nil {
+			conn.Drop()
+			return serve.Summary{}, err
+		}
+		return checkAndWrite(ctx, srv, targets), nil
+	}
+	targeted := func(ctx context.Context, keys []incus.Key) (serve.Summary, error) {
+		srv, err := conn.Get(ctx)
+		if err != nil {
+			return serve.Summary{}, err
+		}
+		var targets []incus.Target
+		for _, k := range keys {
+			t, ok, err := incus.TargetOf(ctx, srv, k, watchAll)
+			if err != nil {
+				logger.Debug().Err(err).Msg("instance not read") // deleted since the event, most often
+				continue
+			}
+			if ok && seen.Changed(t) {
+				targets = append(targets, t)
+			}
+		}
+		return checkAndWrite(ctx, srv, targets), nil
+	}
+
+	s := &serve.Server{Interval: c.Interval, Cycle: cycle, Log: logger}
+	if c.Events {
+		events := make(chan incus.Key, 256)
+		s.Events, s.Targeted = events, targeted
+		go incus.Follow(ctx, conn, c.Projects, events, logger)
 	}
 
 	ln, err := net.Listen("tcp", c.Listen)
@@ -209,7 +236,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 		return fmt.Errorf("listen: %w", err)
 	}
 	logger.Info().Str("listen", ln.Addr().String()).Stringer("interval", c.Interval).Msg("serving")
-	return (&serve.Server{Interval: c.Interval, Cycle: cycle, Log: logger}).Run(ctx, ln)
+	return s.Run(ctx, ln)
 }
 
 func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
@@ -248,6 +275,7 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 		APIURL:      c.APIURL,
 		Projects:    c.Projects,
 		Watch:       c.Watch,
+		Events:      c.Events,
 		Wait:        c.Wait,
 		Log:         logger,
 	})

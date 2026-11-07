@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/cliconfig"
@@ -154,4 +155,32 @@ func pinFingerprint(want string) func([][]byte, [][]*x509.Certificate) error {
 		}
 		return nil
 	}
+}
+
+// Conn shares one connection, made on first use, between goroutines.
+type Conn struct {
+	Options ConnectOptions
+
+	mu  sync.Mutex
+	srv incusclient.InstanceServer
+}
+
+// Get holds the lock while connecting so a one-time token is spent only once.
+func (c *Conn) Get(ctx context.Context) (incusclient.InstanceServer, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.srv == nil {
+		srv, err := Connect(ctx, c.Options)
+		if err != nil {
+			return nil, err
+		}
+		c.srv = srv
+	}
+	return c.srv, nil
+}
+
+func (c *Conn) Drop() {
+	c.mu.Lock()
+	c.srv = nil
+	c.mu.Unlock()
 }

@@ -24,18 +24,18 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Components
 
-| Package             | Job                                                                                                        | Depends on                        |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `cmd/incus-beacon`  | Subcommand dispatch (`check`, `status`, `serve`, `version`); builds the logger and wires the packages      | everything below                  |
-| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                               | stdlib                            |
-| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                  | zerolog                           |
-| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.beacon.*`  | Incus client, incus-compose trust |
-| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                               | Masterminds/semver                |
-| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff | oras-go                           |
-| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                               | Masterminds/semver                |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                | registry, semver, policy          |
-| `internal/report`   | Table and JSON rendering of results and status rows                                                        | check, incus                      |
-| `internal/serve`    | The interval loop with jitter, `/health` and `/ready`, graceful shutdown                                   | check, incus                      |
+| Package             | Job                                                                                                                                 | Depends on                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `cmd/incus-beacon`  | Subcommand dispatch (`check`, `status`, `serve`, `version`); builds the logger and wires the packages                               | everything below                  |
+| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                        | stdlib                            |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                           | zerolog                           |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.beacon.*`, follows the event stream | Incus client, incus-compose trust |
+| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                        | Masterminds/semver                |
+| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff                          | oras-go                           |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                        | Masterminds/semver                |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                         | registry, semver, policy          |
+| `internal/report`   | Table and JSON rendering of results and status rows                                                                                 | check, incus                      |
+| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health` and `/ready`, graceful shutdown                                 | check, incus                      |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
@@ -84,6 +84,19 @@ after a minute, doubling with each further failure up to the interval, so
 again after a failed listing, so a restarted daemon recovers without a restart
 here. `/ready` reflects the last cycle; what each endpoint answers is in
 [README.md](../README.md#endpoints).
+
+With `--events`, `serve` also follows the Incus event stream and checks an
+instance on its own as soon as it is created, updated or rebuilt. A rebuild
+comes only as a finished "Rebuilding instance" operation, not a lifecycle event.
+Events are gathered until two seconds pass without one, then checked in the same
+goroutine as the cycles, so the two never write one instance at once. An updated
+instance is checked only when a key the check reads has changed since its last
+check (`Target.Inputs`); beacon's own `user.beacon.*` writes come back as
+`instance-updated` events, and this is what keeps them from looping. A dropped
+stream reconnects with backoff from a second up to a minute; events missed
+meanwhile wait for the next cycle. Targeted checks leave `/ready` alone. A
+certificate restricted to some projects may open the all-projects stream and
+receives their events.
 
 ### Image ref resolution
 
@@ -151,7 +164,9 @@ Refs are normalised with Docker conventions: `nginx` becomes
   checked" key; that value lives in memory and on `/ready`.
 - **Writes touch the instance's local config, never the expanded config.**
   Writing the expanded config would copy profile keys onto the instance. Writes
-  are guarded by the instance ETag and retried once on a conflict.
+  are guarded by the instance ETag and retried once on a conflict, and wait
+  about 15 seconds at most while a start or stop holds the instance, as one does
+  right after a launch.
 - **Logs go to stderr and reports to stdout,** so `check --format json` can be
   piped. Credentials, trust tokens and private keys are never logged.
 - **A failed check keeps the last known `user.beacon.latest`.** It sets

@@ -83,6 +83,7 @@ type Serve struct {
 	Registry
 	Interval time.Duration
 	Listen   string
+	Events   bool
 }
 
 // Install binds only the log, remote and watch settings of Common.
@@ -93,6 +94,7 @@ type Install struct {
 	StoragePool string
 	APIURL      string
 	Wait        time.Duration
+	Events      bool
 }
 
 type Uninstall struct {
@@ -180,6 +182,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindRegistry(fs, &c.Registry)
 		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
+		fs.BoolVar(&c.Events, "events", false, "also check instances as soon as they are created, updated or rebuilt")
 		cfg.Serve = c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
@@ -202,6 +205,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.StoragePool, "storage-pool", "", "pool for the state volume (default: the default profile's root pool)")
 		fs.StringVar(&c.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
 		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
+		fs.BoolVar(&c.Events, "events", false, "have the instance check instances as soon as they are created, updated or rebuilt")
 		cfg.Install = c
 		validate = func() error {
 			errs := []error{c.validate()}

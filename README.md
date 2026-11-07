@@ -52,6 +52,7 @@ From a machine whose `incus` CLI has a remote with full access to the server:
 ```sh
 incus-beacon install --remote <remote>
 # or, limited to the projects it watches: ... --project default,apps
+# add --events to check new and rebuilt instances at once, not on the interval
 ```
 
 In the remote's current project it creates a volume `incus-beacon-state` owned
@@ -176,6 +177,7 @@ often needed:
 | `--project`                                | Project to watch, or several comma-separated; all visible ones by default   |
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |
+| `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`     |
 | `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default  |
 | `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)       |
 | `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`   |

@@ -14,9 +14,6 @@ not work. An idea that needs more than a paragraph gets its own file in
       lazyincus instance and image panels, and leave `user.beacon.*` out of its
       config fingerprint as `user.healthcheck.*` already is, so beacon writes
       don't read as drift.
-- [ ] **Check new instances right away** — follow `instance-created` and image
-      changes through the Incus event stream (incus-compose `ievent`) rather
-      than waiting up to a full interval.
 
 ## Later
 

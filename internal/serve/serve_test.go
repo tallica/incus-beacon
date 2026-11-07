@@ -8,11 +8,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/tallica/incus-beacon/internal/incus"
 )
 
 func ready(t *testing.T, s *Server) (int, readiness) {
@@ -212,5 +216,48 @@ func TestRetrySoonerAfterError(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if n := cycles.Load(); n != 2 {
 		t.Errorf("%d cycles; after a success the next should wait the full interval", n)
+	}
+}
+
+func TestEventsRunOneTargetedCheck(t *testing.T) {
+	t.Parallel()
+	events := make(chan incus.Key, 4)
+	calls := make(chan []incus.Key, 4)
+	s := &Server{
+		Interval: time.Hour, Log: zerolog.Nop(), Events: events, Settle: 20 * time.Millisecond,
+		Cycle: func(context.Context) (Summary, error) { return Summary{}, nil },
+		Targeted: func(_ context.Context, keys []incus.Key) (Summary, error) {
+			calls <- keys
+			return Summary{Targets: len(keys)}, nil
+		},
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = s.Run(ctx, ln) }()
+
+	web, api := incus.Key{Project: "apps", Instance: "web"}, incus.Key{Project: "apps", Instance: "api"}
+	events <- web
+	events <- api
+	events <- web
+	select {
+	case keys := <-calls:
+		slices.SortFunc(keys, func(a, b incus.Key) int { return strings.Compare(a.Instance, b.Instance) })
+		if !slices.Equal(keys, []incus.Key{api, web}) {
+			t.Errorf("targeted check got %v, want api and web once each", keys)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no targeted check within 5s")
+	}
+	select {
+	case keys := <-calls:
+		t.Errorf("a second targeted check for %v; one burst should give one", keys)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if _, r := ready(t, s); r.Cycles != 1 {
+		t.Errorf("/ready counts %d cycles, want 1: targeted checks are not cycles", r.Cycles)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
@@ -19,6 +21,14 @@ func (b Beacon) keys() map[string]string {
 	}
 }
 
+// Incus sends this, with no status code, while a start or stop holds the instance.
+const busyText = "Instance is busy running"
+
+const (
+	busyRetry    = 500 * time.Millisecond
+	busyMaxRetry = 8 * time.Second
+)
+
 // WriteStatus skips the API when b is unchanged; an empty value removes a key.
 func WriteStatus(ctx context.Context, srv incusclient.InstanceServer, t Target, b Beacon) (bool, error) {
 	if b == t.Beacon {
@@ -26,14 +36,25 @@ func WriteStatus(ctx context.Context, srv incusclient.InstanceServer, t Target, 
 	}
 	project := srv.UseProject(t.Project)
 	var err error
-	for range 2 {
+	conflicts, wait := 0, busyRetry
+	for {
 		if err = ctx.Err(); err != nil {
 			return false, err
 		}
 		err = writeOnce(project, t.Instance, b)
-		if !api.StatusErrorCheck(err, http.StatusPreconditionFailed) {
+		if api.StatusErrorCheck(err, http.StatusPreconditionFailed) && conflicts == 0 {
+			conflicts++
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), busyText) || wait > busyMaxRetry {
 			break
 		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(wait):
+		}
+		wait *= 2
 	}
 	if err != nil {
 		return false, fmt.Errorf("write status on %s/%s: %w", t.Project, t.Instance, err)

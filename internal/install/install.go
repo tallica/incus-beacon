@@ -33,6 +33,7 @@ type Options struct {
 	APIURL      string
 	Projects    []string
 	Watch       string
+	Events      bool
 	Wait        time.Duration
 	Log         zerolog.Logger
 }
@@ -120,6 +121,9 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	}
 	if opts.Watch != "" && opts.Watch != "all" {
 		env["environment.BEACON_WATCH"] = opts.Watch
+	}
+	if opts.Events {
+		env["environment.BEACON_EVENTS"] = "true"
 	}
 	op, err := srv.CreateInstance(api.InstancesPost{
 		Name: opts.Name,

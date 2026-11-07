@@ -199,6 +199,7 @@ func TestInstall(t *testing.T) {
 	f.projects = []string{"apps"}
 	o := opts()
 	o.Projects = []string{"apps"}
+	o.Events = true
 	if err := Install(context.Background(), f, o); err != nil {
 		t.Fatal(err)
 	}
@@ -214,6 +215,7 @@ func TestInstall(t *testing.T) {
 		"environment.BEACON_INCUS":      "https://192.168.1.10:8443",
 		"environment.BEACON_TOKEN_FILE": tokenFile,
 		"environment.BEACON_PROJECT":    "apps",
+		"environment.BEACON_EVENTS":     "true",
 	}
 	for k, v := range wantEnv {
 		if inst.Config[k] != v {
