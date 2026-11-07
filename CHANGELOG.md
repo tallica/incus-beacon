@@ -13,6 +13,12 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `install` now makes the instance track `semver` when its image has a version
+  tag, so it reports newer releases of itself; `--track digest` keeps the old
+  behaviour.
+
 ## [0.4.0] - 2026-11-07
 
 ### Added

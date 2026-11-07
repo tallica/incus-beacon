@@ -162,10 +162,12 @@ Refs are normalised with Docker conventions: `nginx` becomes
   `/run/secrets/token` so it never sits in the instance config, starts it and
   polls the trust store until a certificate of that name appears. A failure
   before the start undoes what it created; after the start the instance stays,
-  because its log explains the failure. Incus accepts a token restricted to a
-  project that doesn't exist, so the projects are checked first. The name is
-  refused when a certificate already has it, since `uninstall` removes
-  certificates by that name, along with unredeemed tokens.
+  because its log explains the failure. The instance is set to `track=semver`
+  when its image tag is a version, since it runs a `major.minor` tag that digest
+  tracking would never move past. Incus accepts a token restricted to a project
+  that doesn't exist, so the projects are checked first. The name is refused
+  when a certificate already has it, since `uninstall` removes certificates by
+  that name, along with unredeemed tokens.
 - **From a host (CLI):** an `incus` CLI remote (`--remote`, or the CLI's
   default), which reuses that remote's certificates or local socket.
 

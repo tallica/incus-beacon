@@ -104,6 +104,7 @@ type Install struct {
 	APIURL      string
 	Wait        time.Duration
 	Events      bool
+	Track       string
 	NotifyURLs  []string
 	NotifyErrs  bool
 }
@@ -224,6 +225,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
 		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
 		fs.BoolVar(&c.Events, "events", false, "have the instance check instances as soon as they are created, updated or rebuilt")
+		fs.StringVar(&c.Track, "track", "", "how the instance follows its own image: digest or semver (default: semver for a version tag, else digest)")
 		fs.Var((*urlsValue)(&c.NotifyURLs), "notify-url", "where the instance sends notifications; stored in its state volume, not its config")
 		fs.BoolVar(&c.NotifyErrs, "notify-errors", false, "have the instance also notify when a check starts failing")
 		cfg.Install = c
@@ -231,6 +233,9 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			errs := []error{c.validate()}
 			if c.Wait <= 0 {
 				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
+			}
+			if c.Track != "" && c.Track != "digest" && c.Track != "semver" {
+				errs = append(errs, fmt.Errorf("track %q: must be digest or semver", c.Track))
 			}
 			if c.NotifyErrs && len(c.NotifyURLs) == 0 {
 				errs = append(errs, errors.New("notify-errors needs notify-url"))

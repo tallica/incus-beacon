@@ -16,6 +16,10 @@ import (
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
+
+	"github.com/tallica/incus-beacon/internal/policy"
+	"github.com/tallica/incus-beacon/internal/registry"
+	"github.com/tallica/incus-beacon/internal/semver"
 )
 
 const (
@@ -36,6 +40,7 @@ type Options struct {
 	Projects    []string
 	Watch       string
 	Events      bool
+	Track       string
 	NotifyURLs  []string
 	NotifyErrs  bool
 	Wait        time.Duration
@@ -53,6 +58,19 @@ func DefaultImage(version string) (image string, released bool) {
 		return imageRepo + ":" + m[1] + "." + m[2], true
 	}
 	return imageRepo + ":latest", false
+}
+
+// trackFor picks semver only for a version tag: latest and digests have none to compare.
+func trackFor(track, image string) string {
+	if track != "" {
+		return track
+	}
+	if ref, err := registry.ParseRef(image); err == nil {
+		if _, ok := semver.Parse(ref.Tag); ok {
+			return policy.TrackSemver
+		}
+	}
+	return policy.TrackDigest
 }
 
 // Install undoes what it created if a step before the start fails.
@@ -136,6 +154,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if opts.Events {
 		env["environment.BEACON_EVENTS"] = "true"
 	}
+	env["user.beacon.track"] = trackFor(opts.Track, opts.Image)
 	if len(opts.NotifyURLs) > 0 {
 		env["environment.BEACON_NOTIFY_URL_FILE"] = stateDir + "/" + notifyFile
 		if opts.NotifyErrs {

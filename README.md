@@ -54,6 +54,7 @@ incus-beacon install --remote <remote>
 # or, limited to the projects it watches: ... --project default,apps
 # or, living in the apps project: ... --remote <remote>:apps
 # add --events to check new and rebuilt instances at once, not on the interval
+# add --track digest to report only rebuilds of the instance's own tag
 # add --notify-url <url> (repeatable) and --notify-errors for notifications
 ```
 
@@ -61,7 +62,9 @@ In the remote's current project, or the one after the colon, it creates a volume
 `incus-beacon-state` owned by uid 65534, a one-time trust token (restricted to
 `--project` when given) and an instance `incus-beacon` from
 `ghcr.io/tallica/incus-beacon` at this version's `major.minor`. The token
-reaches the instance as a file, not as config. The instance dials
+reaches the instance as a file, not as config. The instance gets
+`user.beacon.track=semver` when the image tag is a version, so it also reports
+newer releases of itself; `--track` overrides that. The instance dials
 `core.https_address`, or the address of its bridge when Incus listens on all
 addresses; `--api-url` overrides that. `install` waits until the instance has
 joined, then removes the spent token file. `incus-beacon uninstall` removes the

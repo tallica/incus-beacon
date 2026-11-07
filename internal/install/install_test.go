@@ -266,6 +266,7 @@ func TestInstall(t *testing.T) {
 		"environment.BEACON_TOKEN_FILE": tokenFile,
 		"environment.BEACON_PROJECT":    "apps",
 		"environment.BEACON_EVENTS":     "true",
+		"user.beacon.track":             "semver",
 	}
 	for k, v := range wantEnv {
 		if inst.Config[k] != v {
@@ -444,6 +445,24 @@ func TestUninstallFindsInstanceInAnotherProject(t *testing.T) {
 	}
 	if !slices.Contains(f.calls, "delete instance incus-beacon") || len(f.certs) != 0 {
 		t.Errorf("calls %v, certs %v: want the instance and certificate gone", f.calls, f.certs)
+	}
+}
+
+func TestTrackFor(t *testing.T) {
+	t.Parallel()
+	tests := []struct{ track, image, want string }{
+		{"", "ghcr.io/tallica/incus-beacon:0.4", "semver"},
+		{"", "ghcr.io/tallica/incus-beacon:v1.2.3-alpine", "semver"},
+		{"", "ghcr.io/tallica/incus-beacon:latest", "digest"},
+		{"", "ghcr.io/tallica/incus-beacon", "digest"},
+		{"", "ghcr.io/tallica/incus-beacon@sha256:" + strings.Repeat("a", 64), "digest"},
+		{"digest", "ghcr.io/tallica/incus-beacon:0.4", "digest"},
+		{"semver", "ghcr.io/tallica/incus-beacon:latest", "semver"},
+	}
+	for _, tt := range tests {
+		if got := trackFor(tt.track, tt.image); got != tt.want {
+			t.Errorf("trackFor(%q, %q) = %q, want %q", tt.track, tt.image, got, tt.want)
+		}
 	}
 }
 

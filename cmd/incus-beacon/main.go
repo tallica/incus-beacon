@@ -320,6 +320,7 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 		Projects:    c.Projects,
 		Watch:       c.Watch,
 		Events:      c.Events,
+		Track:       c.Track,
 		NotifyURLs:  c.NotifyURLs,
 		NotifyErrs:  c.NotifyErrs,
 		Wait:        c.Wait,
