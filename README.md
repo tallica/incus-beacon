@@ -82,17 +82,23 @@ certificate the Incus server trusts.
    incus start beacon
    ```
 
-   A host directory as a disk device should work too (to verify; the ownership
-   needed depends on the instance's idmap):
-
-   ```sh
-   incus config device add beacon certs disk source=/path/to/certs path=/certs readonly=true
-   ```
-
 4. Check it: `incus exec beacon -- wget -q -O - http://127.0.0.1:9153/ready`, or
-   `curl http://<beacon-ip>:9153/ready` from another host.
+   `curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
+   network, such as the Incus host.
 
-With incus-compose the same settings go into a service:
+With incus-compose the same settings go into a service. It mounts the volume, a
+directory on the Incus host, with `shift=true`, which needs idmapped mount
+support in the host's kernel and file system (Linux 5.15 or later). As root on
+the Incus host, give the files to uid 65534:
+
+```sh
+chown -R 65534:65534 /path/to/certs
+chmod 0500 /path/to/certs && chmod 0400 /path/to/certs/*
+```
+
+Against a remote Incus, every incus-compose command needs
+`--allow-remote-mounts`. incus-compose's healthd sidecar runs the healthcheck
+and records the result in `user.healthcheck.status`:
 
 ```yaml
 services:

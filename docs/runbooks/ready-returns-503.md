@@ -18,6 +18,9 @@ The last cycle could not list instances, so it checked nothing. Usually one of:
   added, or was removed.
 - `project …: not found, or this certificate may not use it`: `--project` names
   a project that doesn't exist, or one the certificate is not restricted to.
+- `client key: open …: permission denied`: the key file is on a host directory
+  the container's uid can't read; own it by uid 65534 as the
+  [README](../../README.md#run-it-on-incus) shows.
 - `connection refused` or a timeout: Incus isn't listening on that address
   (`core.https_address`), or a firewall is in the way.
 
