@@ -20,10 +20,6 @@ not work. An idea that needs more than a paragraph gets its own file in
 - [ ] **incus-compose token without `.env`** — needs an incus-compose feature
       that puts a trust token into `/run/secrets/token`; beacon already reads
       that path through `--token-file`.
-- [ ] **Clearer reason for a 401 from Docker Hub** — it answers 401 to anonymous
-      requests for a repository that doesn't exist, so a typo in an image reads
-      "registry auth failed"; say "not found, or no access" when no credentials
-      were sent.
 - [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
       or recreate on the newer image, health-gate, and roll back; opt-in per
       instance.

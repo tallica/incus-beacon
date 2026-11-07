@@ -262,6 +262,8 @@ func reason(err error) string {
 		return "rate limited until " + rl.Until.UTC().Format(time.RFC3339)
 	case errors.Is(err, registry.ErrAuth):
 		return "registry auth failed"
+	case errors.Is(err, registry.ErrNoAccess):
+		return "not found, or private: no registry credentials"
 	case errors.Is(err, registry.ErrNotFound):
 		return "tag not found"
 	case errors.Is(err, context.DeadlineExceeded):

@@ -33,6 +33,8 @@ const (
 var (
 	ErrAuth     = errors.New("registry auth")
 	ErrNotFound = errors.New("not found")
+	// ErrNoAccess: no credentials sent, and registries refuse a private and a missing repository alike.
+	ErrNoAccess = errors.New("not found, or no access")
 )
 
 type Options struct {
@@ -95,7 +97,7 @@ func (c *Client) Head(ctx context.Context, ref Ref) (string, error) {
 	defer cancel()
 	desc, err := c.repo(ref).Resolve(ctx, ref.Reference())
 	if err != nil {
-		return "", classify(ref, err)
+		return "", c.classify(ctx, ref, err)
 	}
 	return desc.Digest.String(), nil
 }
@@ -108,7 +110,7 @@ func (c *Client) Resolve(ctx context.Context, ref Ref, platform Platform) (Image
 		return repo.FetchReference(ctx, ref.Reference())
 	})
 	if err != nil {
-		return Image{}, classify(ref, err)
+		return Image{}, c.classify(ctx, ref, err)
 	}
 	img := Image{Digest: desc.Digest.String(), ManifestDigest: desc.Digest.String()}
 
@@ -127,7 +129,7 @@ func (c *Client) Resolve(ctx context.Context, ref Ref, platform Platform) (Image
 			return m, rc, err
 		})
 		if err != nil {
-			return Image{}, classify(ref, err)
+			return Image{}, c.classify(ctx, ref, err)
 		}
 		img.ManifestDigest = desc.Digest.String()
 	case ocispec.MediaTypeImageManifest, mediaTypeDockerManifest:
@@ -161,7 +163,7 @@ func (c *Client) Tags(ctx context.Context, ref Ref) ([]string, error) {
 		return nil
 	})
 	if err != nil && !errors.Is(err, errEnoughTags) {
-		return nil, classify(ref, err)
+		return nil, c.classify(ctx, ref, err)
 	}
 	return tags, nil
 }
@@ -223,7 +225,15 @@ func selectPlatform(manifests []ocispec.Descriptor, p Platform) (ocispec.Descrip
 	return ocispec.Descriptor{}, false
 }
 
-func classify(ref Ref, err error) error {
+func (c *Client) refused(ctx context.Context, ref Ref) error {
+	cred, err := c.cred(context.WithoutCancel(ctx), apiHost(ref.Registry))
+	if err == nil && cred == auth.EmptyCredential {
+		return ErrNoAccess
+	}
+	return ErrAuth
+}
+
+func (c *Client) classify(ctx context.Context, ref Ref, err error) error {
 	var rl *RateLimitError
 	if errors.As(err, &rl) {
 		return rl
@@ -232,13 +242,13 @@ func classify(ref Ref, err error) error {
 	if errors.As(err, &resp) {
 		switch resp.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return fmt.Errorf("%s: %w", ref, ErrAuth)
+			return fmt.Errorf("%s: %w", ref, c.refused(ctx, ref))
 		case http.StatusNotFound:
 			return fmt.Errorf("%s: %w", ref, ErrNotFound)
 		}
 	}
 	if errors.Is(err, auth.ErrBasicCredentialNotFound) {
-		return fmt.Errorf("%s: %w", ref, ErrAuth)
+		return fmt.Errorf("%s: %w", ref, ErrNoAccess)
 	}
 	if errors.Is(err, errdef.ErrNotFound) {
 		return fmt.Errorf("%s: %w", ref, ErrNotFound)

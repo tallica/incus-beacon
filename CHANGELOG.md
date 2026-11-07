@@ -22,6 +22,11 @@ get an entry.
 - `install --notify-url` sets up notifications, keeping the URLs in the state
   volume rather than the instance config.
 
+### Fixed
+
+- A mistyped or private image with no registry credentials now reads "not found,
+  or private: no registry credentials", not "registry auth failed".
+
 ## [0.3.0] - 2026-11-07
 
 ### Added
