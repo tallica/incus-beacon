@@ -45,6 +45,7 @@ type Common struct {
 	LogColor  string
 
 	Remote            string
+	RemoteProject     string
 	Incus             string
 	ClientCert        string
 	ClientKey         string
@@ -197,7 +198,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 	case CmdInstall:
 		c := &Install{}
 		bindLog(fs, &c.Common)
-		bindRemote(fs, &c.Common)
+		bindRemoteProject(fs, &c.Common)
 		fs.Var((*csvValue)(&c.Projects), "project", "project to watch, and to restrict the certificate to; comma-separate several (default: all)")
 		fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
 		bindInstance(fs, &c.Name)
@@ -217,7 +218,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 	case CmdUninstall:
 		c := &Uninstall{Common: Common{Watch: WatchAll}}
 		bindLog(fs, &c.Common)
-		bindRemote(fs, &c.Common)
+		bindRemoteProject(fs, &c.Common)
 		bindInstance(fs, &c.Name)
 		cfg.Uninstall = c
 		validate = func() error { return c.validate() }
@@ -270,7 +271,12 @@ func bindLog(fs *flag.FlagSet, c *Common) {
 }
 
 func bindRemote(fs *flag.FlagSet, c *Common) {
-	fs.StringVar(&c.Remote, "remote", "", "incus CLI remote to use (default: the CLI's default remote)")
+	fs.Var(&remoteValue{c: c}, "remote", "incus CLI `remote` to use (default: the CLI's default remote)")
+}
+
+// bindRemoteProject also takes <remote>:<project>, the project the instance lives in.
+func bindRemoteProject(fs *flag.FlagSet, c *Common) {
+	fs.Var(&remoteValue{c: c, project: true}, "remote", "incus CLI `remote[:project]` to use, the project being where the instance lives (default: the CLI's default remote and its current project)")
 }
 
 func bindInstance(fs *flag.FlagSet, name *string) {
@@ -377,5 +383,33 @@ func (c *csvValue) Set(v string) error {
 			*c = append(*c, p)
 		}
 	}
+	return nil
+}
+
+type remoteValue struct {
+	c       *Common
+	project bool
+}
+
+func (r *remoteValue) String() string {
+	switch {
+	case r.c == nil:
+		return ""
+	case r.c.RemoteProject == "":
+		return r.c.Remote
+	}
+	return r.c.Remote + ":" + r.c.RemoteProject
+}
+
+func (r *remoteValue) Set(v string) error {
+	name, project, found := strings.Cut(v, ":")
+	switch {
+	case !found:
+	case !r.project:
+		return errors.New("a project is only taken by install and uninstall; --project picks the projects to watch")
+	case name == "" || project == "":
+		return errors.New("want <remote>:<project>, with both parts")
+	}
+	r.c.Remote, r.c.RemoteProject = name, project
 	return nil
 }

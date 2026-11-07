@@ -170,6 +170,17 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 	var errs []error
 	pool := ""
 	inst, _, err := srv.GetInstance(name)
+	if notFound(err) {
+		p, perr := projectOf(srv, name)
+		if perr != nil {
+			return perr
+		}
+		if p != "" {
+			log.Info().Str("instance", name).Str("project", p).Msg("found in another project")
+			srv = srv.UseProject(p)
+			inst, _, err = srv.GetInstance(name)
+		}
+	}
 	switch {
 	case err == nil:
 		pool = inst.Devices[stateDev]["pool"]
@@ -217,6 +228,20 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// projectOf finds the project of the instance called name, "" when there is none.
+func projectOf(srv incusclient.InstanceServer, name string) (string, error) {
+	insts, err := srv.GetInstancesAllProjects(api.InstanceTypeAny)
+	if err != nil {
+		return "", fmt.Errorf("list instances: %w", err)
+	}
+	for _, inst := range insts {
+		if inst.Name == name {
+			return inst.Project, nil
+		}
+	}
+	return "", nil
 }
 
 // checkFree refuses a taken name: uninstall removes certificates by name.

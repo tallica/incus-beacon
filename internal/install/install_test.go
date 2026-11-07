@@ -23,6 +23,7 @@ type fake struct {
 	httpsAddress string
 	projects     []string
 	instances    map[string]*api.Instance
+	elsewhere    map[string]*api.Instance          // in other projects, until UseProject picks one
 	volumes      map[string]api.StorageVolumesPost // pool/name
 	certs        []api.Certificate
 	tokenOps     map[string]api.CertificatesPost
@@ -48,7 +49,15 @@ func newFake() *fake {
 
 var errNotFound = api.StatusErrorf(http.StatusNotFound, "not found")
 
-func (f *fake) UseProject(string) incusclient.InstanceServer { return f }
+func (f *fake) UseProject(p string) incusclient.InstanceServer {
+	for name, inst := range f.elsewhere {
+		if inst.Project == p {
+			f.instances[name] = inst
+			delete(f.elsewhere, name)
+		}
+	}
+	return f
+}
 
 func (f *fake) GetServer() (*api.Server, string, error) {
 	return &api.Server{ServerPut: api.ServerPut{Config: map[string]string{"core.https_address": f.httpsAddress}}}, "", nil
@@ -77,6 +86,17 @@ func (f *fake) GetInstance(name string) (*api.Instance, string, error) {
 		return inst, "", nil
 	}
 	return nil, "", errNotFound
+}
+
+func (f *fake) GetInstancesAllProjects(api.InstanceType) ([]api.Instance, error) {
+	all := make([]api.Instance, 0, len(f.elsewhere)+len(f.instances))
+	for _, inst := range f.elsewhere {
+		all = append(all, *inst)
+	}
+	for _, inst := range f.instances {
+		all = append(all, *inst)
+	}
+	return all, nil
 }
 
 func (f *fake) GetCertificates() ([]api.Certificate, error) { return f.certs, nil }
@@ -344,6 +364,19 @@ func TestUninstallNothingThere(t *testing.T) {
 	t.Parallel()
 	if err := Uninstall(context.Background(), newFake(), "incus-beacon", zerolog.Nop()); err != nil {
 		t.Errorf("err %v", err)
+	}
+}
+
+func TestUninstallFindsInstanceInAnotherProject(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.elsewhere = map[string]*api.Instance{"incus-beacon": {Name: "incus-beacon", Project: "apps", StatusCode: api.Stopped}}
+	f.certs = []api.Certificate{{Name: "incus-beacon", Fingerprint: "mine"}}
+	if err := Uninstall(context.Background(), f, "incus-beacon", zerolog.Nop()); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(f.calls, "delete instance incus-beacon") || len(f.certs) != 0 {
+		t.Errorf("calls %v, certs %v: want the instance and certificate gone", f.calls, f.certs)
 	}
 }
 

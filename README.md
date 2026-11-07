@@ -52,21 +52,25 @@ From a machine whose `incus` CLI has a remote with full access to the server:
 ```sh
 incus-beacon install --remote <remote>
 # or, limited to the projects it watches: ... --project default,apps
+# or, living in the apps project: ... --remote <remote>:apps
 # add --events to check new and rebuilt instances at once, not on the interval
 ```
 
-In the remote's current project it creates a volume `incus-beacon-state` owned
-by uid 65534, a one-time trust token (restricted to `--project` when given) and
-an instance `incus-beacon` from `ghcr.io/tallica/incus-beacon` at this version's
-`major.minor`. The token reaches the instance as a file, not as config. The
-instance dials `core.https_address`, or the address of its bridge when Incus
-listens on all addresses; `--api-url` overrides that. `install` waits until the
-instance has joined, then removes the spent token file. `incus-beacon uninstall`
-removes the instance, its volume and its certificate.
+In the remote's current project, or the one after the colon, it creates a volume
+`incus-beacon-state` owned by uid 65534, a one-time trust token (restricted to
+`--project` when given) and an instance `incus-beacon` from
+`ghcr.io/tallica/incus-beacon` at this version's `major.minor`. The token
+reaches the instance as a file, not as config. The instance dials
+`core.https_address`, or the address of its bridge when Incus listens on all
+addresses; `--api-url` overrides that. `install` waits until the instance has
+joined, then removes the spent token file. `incus-beacon uninstall` removes the
+instance, its volume and its certificate, finding the instance in whichever
+project it is in.
 
 Check it: `incus exec incus-beacon -- wget -q -O - http://127.0.0.1:9153/ready`,
 or `curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
-network, such as the Incus host.
+network, such as the Incus host. Add `--project <project>` to `incus exec` when
+it lives in another project.
 
 #### By hand
 
@@ -170,6 +174,7 @@ often needed:
 | Flag                                       | Purpose                                                                     |
 | ------------------------------------------ | --------------------------------------------------------------------------- |
 | `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`    |
+| `--remote <remote>:<project>`              | Also the project `install` puts the instance in                             |
 | `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                        |
 | `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)           |
 | `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir  |

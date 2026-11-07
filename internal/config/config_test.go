@@ -241,3 +241,41 @@ func TestInstallFlags(t *testing.T) {
 		t.Errorf("uninstall: %+v, %v", cfg.Uninstall, err)
 	}
 }
+
+func TestRemoteProject(t *testing.T) {
+	t.Parallel()
+	for _, cmd := range []string{CmdInstall, CmdUninstall} {
+		cfg, err := parse(t, nil, cmd, "--remote", "r:apps")
+		if err != nil {
+			t.Fatalf("%s: %v", cmd, err)
+		}
+		var c Common
+		if cfg.Install != nil {
+			c = cfg.Install.Common
+		} else {
+			c = cfg.Uninstall.Common
+		}
+		if c.Remote != "r" || c.RemoteProject != "apps" {
+			t.Errorf("%s: remote %q, project %q", cmd, c.Remote, c.RemoteProject)
+		}
+	}
+	cfg, err := parse(t, map[string]string{"BEACON_REMOTE": "r:apps"}, CmdInstall)
+	if err != nil || cfg.Install.Remote != "r" || cfg.Install.RemoteProject != "apps" {
+		t.Errorf("from env: %+v, %v", cfg, err)
+	}
+	cfg, err = parse(t, nil, CmdInstall, "--remote", "r")
+	if err != nil || cfg.Install.Remote != "r" || cfg.Install.RemoteProject != "" {
+		t.Errorf("plain remote: %+v, %v", cfg, err)
+	}
+	for _, v := range []string{"r:", ":apps", ":"} {
+		if _, err := parse(t, nil, CmdInstall, "--remote", v); !errors.Is(err, ErrUsage) {
+			t.Errorf("install --remote %q: err = %v, want a usage error", v, err)
+		}
+	}
+	for _, cmd := range []string{CmdCheck, CmdStatus, CmdServe} {
+		_, err := parse(t, nil, cmd, "--remote", "r:apps")
+		if !errors.Is(err, ErrUsage) || !strings.Contains(err.Error(), "--project") {
+			t.Errorf("%s --remote r:apps: err = %v, want a usage error pointing at --project", cmd, err)
+		}
+	}
+}

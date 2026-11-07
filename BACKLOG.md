@@ -17,9 +17,6 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Later
 
-- [ ] **Install into another project** — `install` puts the instance in the
-      remote's current project; a flag would pick another, under a new name
-      since `--project` already means the watched projects.
 - [ ] **incus-compose token without `.env`** — needs an incus-compose feature
       that puts a trust token into `/run/secrets/token`; beacon already reads
       that path through `--token-file`.

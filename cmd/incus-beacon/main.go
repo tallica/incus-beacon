@@ -264,7 +264,7 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 				Msg("unreleased build: the image may be older than this installer; give --image to choose")
 		}
 	}
-	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, UserAgent: userAgent()})
+	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
 	if err != nil {
 		return err
 	}
@@ -282,7 +282,7 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 }
 
 func runUninstall(ctx context.Context, c *config.Uninstall, logger zerolog.Logger) error {
-	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, UserAgent: userAgent()})
+	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
 	if err != nil {
 		return err
 	}

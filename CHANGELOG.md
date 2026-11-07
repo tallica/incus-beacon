@@ -18,6 +18,9 @@ get an entry.
 - `serve --events` checks an instance within seconds of it being created,
   changed or rebuilt, instead of waiting for the next interval;
   `install --events` sets it up.
+- `install --remote <remote>:<project>` puts the instance in that project
+  instead of the remote's current one; `uninstall` finds the instance in any
+  project.
 
 ## [0.2.0] - 2026-11-07
 

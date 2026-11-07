@@ -21,6 +21,7 @@ import (
 
 type ConnectOptions struct {
 	Remote            string
+	RemoteProject     string // replaces the remote's current project
 	URL               string
 	ClientCert        string
 	ClientKey         string
@@ -34,7 +35,7 @@ type ConnectOptions struct {
 // Connect uses URL with a given, saved or token-enrolled certificate, else a CLI remote.
 func Connect(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServer, error) {
 	if opts.URL == "" {
-		return connectRemote(opts.Remote)
+		return connectRemote(opts.Remote, opts.RemoteProject)
 	}
 	if opts.ClientCert != "" {
 		cert, err := os.ReadFile(opts.ClientCert)
@@ -97,7 +98,7 @@ func dial(ctx context.Context, url string, cert, key []byte, fingerprint, userAg
 	return srv, nil
 }
 
-func connectRemote(name string) (incusclient.InstanceServer, error) {
+func connectRemote(name, project string) (incusclient.InstanceServer, error) {
 	conf, err := cliconfig.LoadConfig("")
 	if err != nil {
 		return nil, fmt.Errorf("load incus CLI config: %w", err)
@@ -116,7 +117,16 @@ func connectRemote(name string) (incusclient.InstanceServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to remote %q: %w", name, err)
 	}
-	return srv, trusted(srv)
+	if err := trusted(srv); err != nil {
+		return nil, err
+	}
+	if project == "" {
+		return srv, nil
+	}
+	if _, _, err := srv.GetProject(project); err != nil {
+		return nil, fmt.Errorf("project %s on remote %q: %w", project, name, err)
+	}
+	return srv.UseProject(project), nil
 }
 
 var errUntrusted = errors.New("the server doesn't trust this client certificate")
