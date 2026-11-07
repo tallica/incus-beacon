@@ -23,6 +23,10 @@ not work. An idea that needs more than a paragraph gets its own file in
 - [ ] **`install --notify-url` without the URL in instance config** — today an
       installed beacon takes it through `environment.BEACON_NOTIFY_URL`, which
       anyone who can read the instance sees.
+- [ ] **Clearer reason for a 401 from Docker Hub** — it answers 401 to anonymous
+      requests for a repository that doesn't exist, so a typo in an image reads
+      "registry auth failed"; say "not found, or no access" when no credentials
+      were sent.
 - [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
       or recreate on the newer image, health-gate, and roll back; opt-in per
       instance.
