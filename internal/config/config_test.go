@@ -111,6 +111,8 @@ func TestUsageErrors(t *testing.T) {
 		{"token without incus", nil, []string{CmdServe, "--token", "t", "--state-dir", "/path/to/state"}, "token needs incus"},
 		{"token without state dir", map[string]string{"BEACON_TOKEN": "t"}, []string{CmdServe, "--incus", "https://example.com:8443"}, "token needs state-dir"},
 		{"token and cert", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--token", "t", "--state-dir", "/s", "--client-cert", "c", "--client-key", "k"}, "token and client-cert"},
+		{"token and token file", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--state-dir", "/s", "--token", "t", "--token-file", "/f"}, "token and token-file"},
+		{"token file without state dir", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--token-file", "/f"}, "token needs state-dir"},
 		{"bad env value", map[string]string{"BEACON_CONCURRENCY": "many"}, []string{CmdCheck}, "BEACON_CONCURRENCY"},
 	}
 	for _, tt := range tests {
@@ -196,9 +198,28 @@ func commonOf(cfg *Config) Common {
 
 func TestNoUnimplementedFlags(t *testing.T) {
 	t.Parallel()
-	for _, f := range []string{"--token-file", "--notify-url", "--webhook-url", "--notify-errors"} {
+	for _, f := range []string{"--notify-url", "--webhook-url", "--notify-errors"} {
 		if _, err := parse(t, nil, CmdServe, f+"=x"); !errors.Is(err, ErrUsage) {
 			t.Errorf("%s: err = %v, want a usage error until the feature lands", f, err)
 		}
+	}
+}
+
+func TestInstallFlags(t *testing.T) {
+	t.Parallel()
+	cfg, err := parse(t, nil, CmdInstall, "--remote", "r", "--project", "default,apps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Install
+	if c.Name != "incus-beacon" || c.Wait != time.Minute || c.Remote != "r" || !slices.Equal(c.Projects, []string{"default", "apps"}) {
+		t.Errorf("install config %+v", c)
+	}
+	if _, err := parse(t, nil, CmdInstall, "--client-cert", "c"); !errors.Is(err, ErrUsage) {
+		t.Errorf("install took a connection flag it doesn't use: err %v", err)
+	}
+	cfg, err = parse(t, nil, CmdUninstall, "--name", "b")
+	if err != nil || cfg.Uninstall.Name != "b" {
+		t.Errorf("uninstall: %+v, %v", cfg.Uninstall, err)
 	}
 }

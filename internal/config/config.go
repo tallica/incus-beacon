@@ -12,20 +12,24 @@ import (
 )
 
 const (
-	CmdCheck   = "check"
-	CmdStatus  = "status"
-	CmdServe   = "serve"
-	CmdVersion = "version"
+	CmdCheck     = "check"
+	CmdStatus    = "status"
+	CmdServe     = "serve"
+	CmdInstall   = "install"
+	CmdUninstall = "uninstall"
+	CmdVersion   = "version"
 )
 
 // Commands lists the subcommands in the order usage shows them.
-var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdVersion}
+var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdInstall, CmdUninstall, CmdVersion}
 
 var summaries = map[string]string{
-	CmdCheck:   "check registries for newer images and print what can be updated",
-	CmdStatus:  "show the update status already recorded on instances",
-	CmdServe:   "run checks on an interval and record results",
-	CmdVersion: "print the version",
+	CmdCheck:     "check registries for newer images and print what can be updated",
+	CmdStatus:    "show the update status already recorded on instances",
+	CmdServe:     "run checks on an interval and record results",
+	CmdInstall:   "create a serve instance on Incus that joins with a trust token",
+	CmdUninstall: "remove that instance, its volume and its certificate",
+	CmdVersion:   "print the version",
 }
 
 // ErrUsage marks errors caused by how the command was invoked.
@@ -46,6 +50,7 @@ type Common struct {
 	ClientKey         string
 	ServerFingerprint string
 	Token             string
+	TokenFile         string
 	StateDir          string
 
 	Projects []string
@@ -80,12 +85,29 @@ type Serve struct {
 	Listen   string
 }
 
+// Install binds only the log, remote and watch settings of Common.
+type Install struct {
+	Common
+	Name        string
+	Image       string
+	StoragePool string
+	APIURL      string
+	Wait        time.Duration
+}
+
+type Uninstall struct {
+	Common
+	Name string
+}
+
 // Config sets at most one command field; none for version.
 type Config struct {
-	Command string
-	Check   *Check
-	Status  *Status
-	Serve   *Serve
+	Command   string
+	Check     *Check
+	Status    *Status
+	Serve     *Serve
+	Install   *Install
+	Uninstall *Uninstall
 }
 
 const (
@@ -169,6 +191,32 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			}
 			return errors.Join(errs...)
 		}
+	case CmdInstall:
+		c := &Install{}
+		bindLog(fs, &c.Common)
+		bindRemote(fs, &c.Common)
+		fs.Var((*csvValue)(&c.Projects), "project", "project to watch, and to restrict the certificate to; comma-separate several (default: all)")
+		fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
+		bindInstance(fs, &c.Name)
+		fs.StringVar(&c.Image, "image", "", "image to run (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
+		fs.StringVar(&c.StoragePool, "storage-pool", "", "pool for the state volume (default: the default profile's root pool)")
+		fs.StringVar(&c.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
+		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
+		cfg.Install = c
+		validate = func() error {
+			errs := []error{c.validate()}
+			if c.Wait <= 0 {
+				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
+			}
+			return errors.Join(errs...)
+		}
+	case CmdUninstall:
+		c := &Uninstall{Common: Common{Watch: WatchAll}}
+		bindLog(fs, &c.Common)
+		bindRemote(fs, &c.Common)
+		bindInstance(fs, &c.Name)
+		cfg.Uninstall = c
+		validate = func() error { return c.validate() }
 	case CmdVersion:
 		validate = func() error { return nil }
 	default:
@@ -211,17 +259,29 @@ func EnvName(flagName string) string {
 	return "BEACON_" + strings.ToUpper(strings.ReplaceAll(flagName, "-", "_"))
 }
 
-func bindCommon(fs *flag.FlagSet, c *Common) {
+func bindLog(fs *flag.FlagSet, c *Common) {
 	fs.StringVar(&c.LogLevel, "log-level", "info", "log level: debug, info, warn or error")
 	fs.StringVar(&c.LogFormat, "log-format", FormatConsole, "log format: console or json")
 	fs.StringVar(&c.LogColor, "log-color", ColorAuto, "console log colour: auto (on a terminal), never or always")
+}
 
+func bindRemote(fs *flag.FlagSet, c *Common) {
 	fs.StringVar(&c.Remote, "remote", "", "incus CLI remote to use (default: the CLI's default remote)")
+}
+
+func bindInstance(fs *flag.FlagSet, name *string) {
+	fs.StringVar(name, "name", "incus-beacon", "instance name; also names its volume and certificate")
+}
+
+func bindCommon(fs *flag.FlagSet, c *Common) {
+	bindLog(fs, c)
+	bindRemote(fs, c)
 	fs.StringVar(&c.Incus, "incus", "", "Incus API URL, e.g. https://192.168.1.10:8443")
 	fs.StringVar(&c.ClientCert, "client-cert", "", "client certificate file for --incus")
 	fs.StringVar(&c.ClientKey, "client-key", "", "client key file for --incus")
 	fs.StringVar(&c.ServerFingerprint, "server-fingerprint", "", "expected server certificate fingerprint")
 	fs.StringVar(&c.Token, "token", "", "one-time trust token for --incus; enrolls a certificate into --state-dir")
+	fs.StringVar(&c.TokenFile, "token-file", "", "file holding the --token, read only when enrolling")
 	fs.StringVar(&c.StateDir, "state-dir", "", "directory keeping the certificate --token enrolled")
 
 	fs.Var((*csvValue)(&c.Projects), "project", "project to watch; comma-separate several (default: all)")
@@ -247,7 +307,10 @@ func (c *Common) validate() error {
 	if c.Remote != "" && c.Incus != "" {
 		errs = append(errs, errors.New("remote and incus are mutually exclusive"))
 	}
-	if c.Token != "" {
+	if c.Token != "" && c.TokenFile != "" {
+		errs = append(errs, errors.New("token and token-file are mutually exclusive"))
+	}
+	if c.Token != "" || c.TokenFile != "" {
 		if c.Incus == "" {
 			errs = append(errs, errors.New("token needs incus"))
 		}

@@ -18,6 +18,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/config"
 	"github.com/tallica/incus-beacon/internal/incus"
+	"github.com/tallica/incus-beacon/internal/install"
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/report"
@@ -69,6 +70,10 @@ func commonOf(cfg *config.Config) config.Common {
 		return cfg.Check.Common
 	case cfg.Status != nil:
 		return cfg.Status.Common
+	case cfg.Install != nil:
+		return cfg.Install.Common
+	case cfg.Uninstall != nil:
+		return cfg.Uninstall.Common
 	default:
 		return cfg.Serve.Common
 	}
@@ -84,6 +89,10 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 		err = runServe(ctx, cfg.Serve, logger)
 	case config.CmdStatus:
 		err = runStatus(ctx, cfg.Status, stdout)
+	case config.CmdInstall:
+		err = runInstall(ctx, cfg.Install, logger)
+	case config.CmdUninstall:
+		err = runUninstall(ctx, cfg.Uninstall, logger)
 	default:
 		logger.Error().Msg("unknown command")
 		return exitUsage
@@ -217,6 +226,40 @@ func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
 	return report.WriteStatus(stdout, c.Format, report.StatusRows(targets, c.OnlyUpdates))
 }
 
+func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) error {
+	image := c.Image
+	if image == "" {
+		var released bool
+		image, released = install.DefaultImage(version.Version)
+		if !released {
+			logger.Warn().Str("version", version.Version).Str("image", image).
+				Msg("unreleased build: the image may be older than this installer; give --image to choose")
+		}
+	}
+	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, UserAgent: userAgent()})
+	if err != nil {
+		return err
+	}
+	return install.Install(ctx, srv, install.Options{
+		Name:        c.Name,
+		Image:       image,
+		StoragePool: c.StoragePool,
+		APIURL:      c.APIURL,
+		Projects:    c.Projects,
+		Watch:       c.Watch,
+		Wait:        c.Wait,
+		Log:         logger,
+	})
+}
+
+func runUninstall(ctx context.Context, c *config.Uninstall, logger zerolog.Logger) error {
+	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, UserAgent: userAgent()})
+	if err != nil {
+		return err
+	}
+	return install.Uninstall(ctx, srv, c.Name, logger)
+}
+
 func connectOptions(c config.Common) incus.ConnectOptions {
 	return incus.ConnectOptions{
 		Remote:            c.Remote,
@@ -225,6 +268,7 @@ func connectOptions(c config.Common) incus.ConnectOptions {
 		ClientKey:         c.ClientKey,
 		ServerFingerprint: c.ServerFingerprint,
 		Token:             c.Token,
+		TokenFile:         c.TokenFile,
 		StateDir:          c.StateDir,
 		UserAgent:         userAgent(),
 	}

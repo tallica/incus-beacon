@@ -54,7 +54,15 @@ func loadState(dir string) (state, error) {
 
 // enroll has Incus trust a new certificate, pinned by the token's fingerprint.
 func enroll(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServer, error) {
-	token := strings.TrimSpace(opts.Token)
+	token := opts.Token
+	if opts.TokenFile != "" {
+		b, err := os.ReadFile(opts.TokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("token file: %w", err)
+		}
+		token = string(b)
+	}
+	token = strings.TrimSpace(token)
 	tok, err := localtls.CertificateTokenDecode(token)
 	if err != nil {
 		return nil, fmt.Errorf("trust token: %w", err)

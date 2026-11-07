@@ -47,6 +47,28 @@ default  cache     current           docker.io/library/redis:7.4   -
 
 ### Run it on Incus
 
+From a machine whose `incus` CLI has a remote with full access to the server:
+
+```sh
+incus-beacon install --remote <remote>
+# or, limited to the projects it watches: ... --project default,apps
+```
+
+In the remote's current project it creates a volume `incus-beacon-state` owned
+by uid 65534, a one-time trust token (restricted to `--project` when given) and
+an instance `incus-beacon` from `ghcr.io/tallica/incus-beacon` at this version's
+`major.minor`. The token reaches the instance as a file, not as config. The
+instance dials `core.https_address`, or the address of its bridge when Incus
+listens on all addresses; `--api-url` overrides that. `install` waits until the
+instance has joined, then removes the spent token file. `incus-beacon uninstall`
+removes the instance, its volume and its certificate.
+
+Check it: `incus exec incus-beacon -- wget -q -O - http://127.0.0.1:9153/ready`,
+or `curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
+network, such as the Incus host.
+
+#### By hand
+
 The image runs `serve` as uid 65534, listens on port 9153 and keeps its client
 certificate in `/var/lib/incus-beacon`. It joins Incus with a one-time trust
 token, which also carries the server's fingerprint for pinning.
@@ -74,9 +96,7 @@ token, which also carries the server's fingerprint for pinning.
    The first start redeems the token; later starts reuse the saved certificate,
    and the spent token left in the config is no longer usable.
 
-3. Check it: `incus exec beacon -- wget -q -O - http://127.0.0.1:9153/ready`, or
-   `curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
-   network, such as the Incus host.
+3. Check it as above, with `beacon` as the instance name.
 
 A certificate made by hand works too: give `BEACON_CLIENT_CERT`,
 `BEACON_CLIENT_KEY` and `BEACON_SERVER_FINGERPRINT` (from
@@ -132,12 +152,14 @@ chmod 0500 /path/to/certs && chmod 0400 /path/to/certs/*
 incus-beacon <command> [flags]
 ```
 
-| Command   | What it does                                                                                  |
-| --------- | --------------------------------------------------------------------------------------------- |
-| `check`   | Checks registries and prints what can be updated; `--write` records it on the instances       |
-| `status`  | Prints what is recorded on the instances, without asking any registry                         |
-| `serve`   | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` |
-| `version` | Prints the version                                                                            |
+| Command     | What it does                                                                                  |
+| ----------- | --------------------------------------------------------------------------------------------- |
+| `check`     | Checks registries and prints what can be updated; `--write` records it on the instances       |
+| `status`    | Prints what is recorded on the instances, without asking any registry                         |
+| `serve`     | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` |
+| `install`   | Creates a `serve` instance on Incus that joins with a trust token                             |
+| `uninstall` | Removes that instance, its volume and its certificate                                         |
+| `version`   | Prints the version                                                                            |
 
 `incus-beacon <command> -h` lists every flag. Each flag can also be set with an
 environment variable named after it: `--server-fingerprint` is
@@ -150,6 +172,7 @@ often needed:
 | `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                        |
 | `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)           |
 | `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir  |
+| `--token-file`                             | Read the token from a file instead, as `install` sets up                    |
 | `--project`                                | Project to watch, or several comma-separated; all visible ones by default   |
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |

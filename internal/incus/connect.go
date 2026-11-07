@@ -25,6 +25,7 @@ type ConnectOptions struct {
 	ClientKey         string
 	ServerFingerprint string
 	Token             string
+	TokenFile         string
 	StateDir          string
 	UserAgent         string
 }
@@ -59,10 +60,10 @@ func Connect(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServ
 			return nil, err
 		}
 	}
-	if opts.Token != "" {
+	if opts.Token != "" || opts.TokenFile != "" {
 		return enroll(ctx, opts)
 	}
-	return nil, errors.New("--incus needs --client-cert and --client-key, or --token and --state-dir")
+	return nil, errors.New("--incus needs --client-cert and --client-key, or --token (or --token-file) and --state-dir")
 }
 
 func connectTrusted(ctx context.Context, url string, cert, key []byte, fingerprint, userAgent string) (incusclient.InstanceServer, error) {
