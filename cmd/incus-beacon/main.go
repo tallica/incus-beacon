@@ -2,7 +2,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -228,13 +227,22 @@ func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
 }
 
 func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) error {
+	image := c.Image
+	if image == "" {
+		var released bool
+		image, released = install.DefaultImage(version.Version)
+		if !released {
+			logger.Warn().Str("version", version.Version).Str("image", image).
+				Msg("unreleased build: the image may be older than this installer; give --image to choose")
+		}
+	}
 	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, UserAgent: userAgent()})
 	if err != nil {
 		return err
 	}
 	return install.Install(ctx, srv, install.Options{
 		Name:        c.Name,
-		Image:       cmp.Or(c.Image, install.DefaultImage(version.Version)),
+		Image:       image,
 		StoragePool: c.StoragePool,
 		APIURL:      c.APIURL,
 		Projects:    c.Projects,

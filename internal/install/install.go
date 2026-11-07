@@ -42,12 +42,12 @@ func VolumeName(name string) string { return name + "-state" }
 
 var release = regexp.MustCompile(`^v?(\d+)\.(\d+)\.\d+$`)
 
-// DefaultImage follows the installer's own major.minor; a dev build gets latest.
-func DefaultImage(version string) string {
+// DefaultImage follows the installer's major.minor; a dev build gets latest.
+func DefaultImage(version string) (image string, released bool) {
 	if m := release.FindStringSubmatch(version); m != nil {
-		return imageRepo + ":" + m[1] + "." + m[2]
+		return imageRepo + ":" + m[1] + "." + m[2], true
 	}
-	return imageRepo + ":latest"
+	return imageRepo + ":latest", false
 }
 
 // Install undoes what it created if a step before the start fails.

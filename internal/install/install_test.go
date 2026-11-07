@@ -353,8 +353,9 @@ func TestDefaultImage(t *testing.T) {
 		"v0.1.2-3-gabc123-dirty": "ghcr.io/tallica/incus-beacon:latest",
 		"dev":                    "ghcr.io/tallica/incus-beacon:latest",
 	} {
-		if got := DefaultImage(v); got != want {
-			t.Errorf("DefaultImage(%q) = %s, want %s", v, got, want)
+		got, released := DefaultImage(v)
+		if got != want || released == strings.HasSuffix(want, ":latest") {
+			t.Errorf("DefaultImage(%q) = %s, %t; want %s", v, got, released, want)
 		}
 	}
 }
