@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-07
+
 ### Added
 
 - `serve` answers `/metrics` for Prometheus: instances by status, cycle results
@@ -95,7 +97,8 @@ get an entry.
 - Release archives carry THIRD_PARTY_NOTICES.md with the licence and NOTICE text
   of every module the binary links, not only direct dependencies.
 
-[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.3.0...master
+[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.4.0...master
+[0.4.0]: https://github.com/tallica/incus-beacon/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tallica/incus-beacon/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tallica/incus-beacon/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/tallica/incus-beacon/compare/v0.1.1...v0.1.2
