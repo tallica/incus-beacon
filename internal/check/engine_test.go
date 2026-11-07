@@ -235,6 +235,7 @@ func TestRegistryErrors(t *testing.T) {
 	}{
 		{&registry.RateLimitError{Host: "registry-1.docker.io", Until: until}, "rate limited until 2026-11-04T18:00:00Z"},
 		{registry.ErrAuth, "registry auth failed"},
+		{registry.ErrNoAccess, "not found, or private: no registry credentials"},
 		{registry.ErrNotFound, "tag not found"},
 		{context.DeadlineExceeded, "registry timeout"},
 	}

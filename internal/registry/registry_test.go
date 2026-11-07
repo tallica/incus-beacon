@@ -126,8 +126,11 @@ func TestAuthFromConfigJSON(t *testing.T) {
 	f.add("private/app", "1", m)
 	ref := mustRef(t, f.host+"/private/app:1")
 
-	if _, err := newTestClient(t, "").Head(t.Context(), ref); !errors.Is(err, ErrAuth) {
-		t.Errorf("anonymous: err %v, want ErrAuth", err)
+	if _, err := newTestClient(t, "").Head(t.Context(), ref); !errors.Is(err, ErrNoAccess) {
+		t.Errorf("anonymous: err %v, want ErrNoAccess", err)
+	}
+	if _, err := newTestClient(t, writeAuthFile(t, f.host, "user:wrong")).Head(t.Context(), ref); !errors.Is(err, ErrAuth) {
+		t.Errorf("wrong password: err %v, want ErrAuth", err)
 	}
 	c := newTestClient(t, writeAuthFile(t, f.host, "user:secret"))
 	head, err := c.Head(t.Context(), ref)
