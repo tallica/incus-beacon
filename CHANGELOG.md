@@ -19,6 +19,7 @@ get an entry.
   trust token it creates; `uninstall` removes it again.
 - `--token-file` reads the trust token from a file, keeping it out of the
   instance config.
+- `serve` logs its version, commit and build date when it starts.
 
 ### Fixed
 

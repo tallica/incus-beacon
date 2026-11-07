@@ -161,6 +161,7 @@ func writeResults(ctx context.Context, srv incusclient.InstanceServer, results [
 }
 
 func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error {
+	logger.Info().Str("version", version.String()).Msg("incus-beacon")
 	reg, err := registry.New(registry.Options{
 		AuthFile:  c.RegistryAuthFile,
 		Timeout:   c.Timeout,
