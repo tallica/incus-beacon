@@ -6,8 +6,9 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 ## Principles
 
 - **Report, don't act.** v0.1 only detects newer images and records them. It
-  never stops, rebuilds or recreates an instance. The only thing it changes on
-  Incus is its own `user.beacon.*` keys.
+  never stops, rebuilds or recreates an instance it watches. `check` and `serve`
+  change only their own `user.beacon.*` keys; `install` and `uninstall` create
+  and remove only beacon's own instance, volume and certificate.
 - **Incus is the state.** The beacon keeps no database. What it last concluded
   about an instance is stored on that instance, so a restarted or replaced
   container picks up where the last one left off. Lazyincus and the `incus` CLI
@@ -121,7 +122,18 @@ Refs are normalised with Docker conventions: `nginx` becomes
   before redeeming, because a token is spent once, even when Incus then refuses
   the certificate: an unwritable state dir must fail while the token is still
   good. The certificate is backdated an hour, since Incus refuses one that isn't
-  valid yet by its own clock.
+  valid yet by its own clock. `--token-file` reads the token only when
+  enrolling, so the file may be gone afterwards.
+- **Installed (`install`):** the installer plays incus-compose's part for
+  ic-healthd. Over its own trusted remote it creates the state volume, a token
+  named after the instance and the instance, pushes the token to
+  `/run/secrets/token` so it never sits in the instance config, starts it and
+  polls the trust store until a certificate of that name appears. A failure
+  before the start undoes what it created; after the start the instance stays,
+  because its log explains the failure. Incus accepts a token restricted to a
+  project that doesn't exist, so the projects are checked first. The name is
+  refused when a certificate already has it, since `uninstall` removes
+  certificates by that name, along with unredeemed tokens.
 - **From a host (CLI):** an `incus` CLI remote (`--remote`, or the CLI's
   default), which reuses that remote's certificates or local socket.
 

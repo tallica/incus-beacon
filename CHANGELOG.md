@@ -13,6 +13,13 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `incus-beacon install` sets up `serve` on Incus in one command, joining with a
+  trust token it creates; `uninstall` removes it again.
+- `--token-file` reads the trust token from a file, keeping it out of the
+  instance config.
+
 ### Fixed
 
 - `incus-beacon version` in the container image shows the commit date, as the

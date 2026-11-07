@@ -201,3 +201,22 @@ func TestGenerateCertIsBackdated(t *testing.T) {
 		t.Errorf("NotBefore %s, want an hour before %s", pair.Leaf.NotBefore, now)
 	}
 }
+
+func TestEnrollWithTokenFile(t *testing.T) {
+	t.Parallel()
+	ts := newTrustServer(t)
+	file := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(file, []byte(ts.token()+"\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	opts := ConnectOptions{URL: ts.URL, TokenFile: file, StateDir: dir}
+	if _, err := Connect(context.Background(), opts); err != nil {
+		t.Fatalf("enroll: %v", err)
+	}
+	// Once enrolled the file is not read again, so it may be gone.
+	opts.TokenFile = filepath.Join(t.TempDir(), "missing")
+	if _, err := Connect(context.Background(), opts); err != nil {
+		t.Fatalf("reconnect without the file: %v", err)
+	}
+}
