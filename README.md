@@ -157,14 +157,14 @@ chmod 0500 /path/to/certs && chmod 0400 /path/to/certs/*
 incus-beacon <command> [flags]
 ```
 
-| Command     | What it does                                                                                  |
-| ----------- | --------------------------------------------------------------------------------------------- |
-| `check`     | Checks registries and prints what can be updated; `--write` records it on the instances       |
-| `status`    | Prints what is recorded on the instances, without asking any registry                         |
-| `serve`     | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` |
-| `install`   | Creates a `serve` instance on Incus that joins with a trust token                             |
-| `uninstall` | Removes that instance, its volume and its certificate                                         |
-| `version`   | Prints the version                                                                            |
+| Command     | What it does                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| `check`     | Checks registries and prints what can be updated; `--write` records it on the instances                  |
+| `status`    | Prints what is recorded on the instances, without asking any registry                                    |
+| `serve`     | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` `/metrics` |
+| `install`   | Creates a `serve` instance on Incus that joins with a trust token                                        |
+| `uninstall` | Removes that instance, its volume and its certificate                                                    |
+| `version`   | Prints the version                                                                                       |
 
 `incus-beacon <command> -h` lists every flag. Each flag can also be set with an
 environment variable named after it: `--server-fingerprint` is
@@ -224,10 +224,26 @@ They change only when a value does, so a quiet check leaves no trace in
 
 `serve` answers on `--listen` (`:9153`):
 
-| Path      | Answers                                                                                  |
-| --------- | ---------------------------------------------------------------------------------------- |
-| `/health` | 200 while the process runs                                                               |
-| `/ready`  | 200 once the last cycle finished without error, else 503; JSON with that cycle's summary |
+| Path       | Answers                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| `/health`  | 200 while the process runs                                                               |
+| `/ready`   | 200 once the last cycle finished without error, else 503; JSON with that cycle's summary |
+| `/metrics` | Prometheus metrics, below                                                                |
+
+| Metric                                           | Type      | Labels                   | Meaning                                                          |
+| ------------------------------------------------ | --------- | ------------------------ | ---------------------------------------------------------------- |
+| `incus_beacon_instances`                         | gauge     | `status`                 | Watched instances by status, as of each one's latest check       |
+| `incus_beacon_cycles_total`                      | counter   | `result`                 | Full check cycles, `success` or `failure`                        |
+| `incus_beacon_last_success_timestamp_seconds`    | gauge     |                          | When the last successful cycle finished; 0 before the first      |
+| `incus_beacon_cycle_duration_seconds`            | gauge     |                          | How long the last cycle took                                     |
+| `incus_beacon_status_writes_total`               | counter   | `result`                 | `user.beacon.*` writes, `written` or `failed`                    |
+| `incus_beacon_registry_requests_total`           | counter   | `host`, `method`, `code` | Registry requests by HTTP status, or `error` when none came back |
+| `incus_beacon_registry_request_duration_seconds` | histogram | `host`                   | Time to a registry's response headers                            |
+| `incus_beacon_build_info`                        | gauge     | `version`                | Always 1                                                         |
+
+Targeted checks from `--events` update `incus_beacon_instances` too; an instance
+deleted since is counted until the next cycle. Requests held back by a
+registry's rate limit are never sent, so they are not counted.
 
 ## Documentation
 

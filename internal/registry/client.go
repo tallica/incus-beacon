@@ -16,6 +16,8 @@ import (
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
 	"oras.land/oras-go/v2/registry/remote/errcode"
+
+	"github.com/tallica/incus-beacon/internal/metrics"
 )
 
 const (
@@ -38,6 +40,7 @@ type Options struct {
 	AuthFile  string
 	Timeout   time.Duration
 	UserAgent string
+	Metrics   *metrics.Set // nil records nothing
 }
 
 type Client struct {
@@ -66,8 +69,12 @@ func New(opts Options) (*Client, error) {
 	if opts.UserAgent != "" {
 		header.Set("User-Agent", opts.UserAgent)
 	}
+	transport := http.DefaultTransport
+	if opts.Metrics != nil {
+		transport = newObserver(transport, opts.Metrics)
+	}
 	return &Client{
-		http:    &http.Client{Transport: newLimiter(http.DefaultTransport)},
+		http:    &http.Client{Transport: newLimiter(transport)},
 		cache:   auth.NewCache(),
 		cred:    credentials.Credential(store),
 		header:  header,

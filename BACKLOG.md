@@ -32,8 +32,6 @@ not work. An idea that needs more than a paragraph gets its own file in
 - [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
       or recreate on the newer image, health-gate, and roll back; opt-in per
       instance.
-- [ ] **Prometheus metrics** — counts by status, registry latency and errors on
-      `/metrics` for people who already run a dashboard.
 - [ ] **Per-registry credentials and mirrors in instance keys** — for setups
       where one docker `config.json` isn't enough.
 - [ ] **Cooldown** — report a new tag only once it is a set age, so a broken

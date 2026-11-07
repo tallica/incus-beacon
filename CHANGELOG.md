@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `serve` answers `/metrics` for Prometheus: instances by status, cycle results
+  and timing, status writes, and registry requests and latency by host.
+
 ## [0.3.0] - 2026-11-07
 
 ### Added

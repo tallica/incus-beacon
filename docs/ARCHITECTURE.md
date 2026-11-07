@@ -29,13 +29,14 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `cmd/incus-beacon`  | Subcommand dispatch (`check`, `status`, `serve`, `version`); builds the logger and wires the packages                               | everything below                  |
 | `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                        | stdlib                            |
 | `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                           | zerolog                           |
+| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                       | stdlib                            |
 | `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.beacon.*`, follows the event stream | Incus client, incus-compose trust |
 | `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                        | Masterminds/semver                |
-| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff                          | oras-go                           |
+| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics         | oras-go, metrics                  |
 | `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                        | Masterminds/semver                |
 | `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                         | registry, semver, policy          |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                                                 | check, incus                      |
-| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health` and `/ready`, graceful shutdown                                 | check, incus                      |
+| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                     | check, incus, metrics             |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the

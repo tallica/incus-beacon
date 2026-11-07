@@ -16,6 +16,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/incus"
 )
 
@@ -260,4 +261,81 @@ func TestEventsRunOneTargetedCheck(t *testing.T) {
 	if _, r := ready(t, s); r.Cycles != 1 {
 		t.Errorf("/ready counts %d cycles, want 1: targeted checks are not cycles", r.Cycles)
 	}
+}
+
+func scrape(t *testing.T, s *Server) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/metrics %d", rec.Code)
+	}
+	return rec.Body.String()
+}
+
+func wantLines(t *testing.T, body string, lines ...string) {
+	t.Helper()
+	for _, l := range lines {
+		if !strings.Contains(body, l+"\n") {
+			t.Errorf("missing %q in\n%s", l, body)
+		}
+	}
+}
+
+func TestMetrics(t *testing.T) {
+	t.Parallel()
+	web, api, db := incus.Key{Project: "apps", Instance: "web"}, incus.Key{Project: "apps", Instance: "api"}, incus.Key{Project: "apps", Instance: "db"}
+	fail := false
+	s := &Server{
+		Interval: time.Hour, Log: zerolog.Nop(),
+		Cycle: func(context.Context) (Summary, error) {
+			if fail {
+				return Summary{}, errors.New("incus unreachable")
+			}
+			return Summary{Written: 2, Statuses: map[incus.Key]check.Status{
+				web: check.Current, api: check.UpdateAvailable,
+			}}, nil
+		},
+		Targeted: func(context.Context, []incus.Key) (Summary, error) {
+			return Summary{Failed: 1, Statuses: map[incus.Key]check.Status{
+				web: check.Error, db: check.Unknown,
+			}}, nil
+		},
+	}
+	wantLines(t, scrape(t, s),
+		`incus_beacon_cycles_total{result="success"} 0`,
+		`incus_beacon_instances{status="current"} 0`,
+		`incus_beacon_last_success_timestamp_seconds 0`,
+	)
+
+	s.runCycle(t.Context())
+	s.runTargeted(t.Context(), []incus.Key{web, db})
+	wantLines(t, scrape(t, s),
+		`incus_beacon_cycles_total{result="success"} 1`,
+		`incus_beacon_instances{status="current"} 0`,
+		`incus_beacon_instances{status="update-available"} 1`,
+		`incus_beacon_instances{status="error"} 1`,
+		`incus_beacon_instances{status="unknown"} 1`,
+		`incus_beacon_status_writes_total{result="written"} 2`,
+		`incus_beacon_status_writes_total{result="failed"} 1`,
+	)
+
+	fail = true
+	s.runCycle(t.Context())
+	body := scrape(t, s)
+	wantLines(t, body,
+		`incus_beacon_cycles_total{result="failure"} 1`,
+		`incus_beacon_instances{status="update-available"} 1`,
+	)
+	if strings.Contains(body, "incus_beacon_last_success_timestamp_seconds 0\n") {
+		t.Error("a failed cycle reset the last success time")
+	}
+
+	fail = false
+	s.runCycle(t.Context())
+	wantLines(t, scrape(t, s),
+		`incus_beacon_instances{status="current"} 1`,
+		`incus_beacon_instances{status="error"} 0`,
+		`incus_beacon_instances{status="unknown"} 0`,
+	)
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/install"
 	"github.com/tallica/incus-beacon/internal/log"
+	"github.com/tallica/incus-beacon/internal/metrics"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/report"
 	"github.com/tallica/incus-beacon/internal/serve"
@@ -162,10 +163,14 @@ func writeResults(ctx context.Context, srv incusclient.InstanceServer, results [
 
 func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error {
 	logger.Info().Str("version", version.String()).Msg("incus-beacon")
+	set := &metrics.Set{}
+	set.Gauge("incus_beacon_build_info", "Always 1; the version label is the running build.", "version").
+		Set(1, version.Version)
 	reg, err := registry.New(registry.Options{
 		AuthFile:  c.RegistryAuthFile,
 		Timeout:   c.Timeout,
 		UserAgent: userAgent(),
+		Metrics:   set,
 	})
 	if err != nil {
 		return err
@@ -180,8 +185,9 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 			seen.Record(t)
 		}
 		results := engine.Run(ctx, targets)
-		sum := serve.Summary{Targets: len(results)}
+		sum := serve.Summary{Targets: len(results), Statuses: map[incus.Key]check.Status{}}
 		for i := range results {
+			sum.Statuses[results[i].Target.Key()] = results[i].Status
 			switch results[i].Status {
 			case check.UpdateAvailable:
 				sum.Updates++
@@ -224,7 +230,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 		return checkAndWrite(ctx, srv, targets), nil
 	}
 
-	s := &serve.Server{Interval: c.Interval, Cycle: cycle, Log: logger}
+	s := &serve.Server{Interval: c.Interval, Cycle: cycle, Log: logger, Metrics: set}
 	if c.Events {
 		events := make(chan incus.Key, 256)
 		s.Events, s.Targeted = events, targeted

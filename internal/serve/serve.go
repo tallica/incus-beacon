@@ -16,7 +16,9 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/incus"
+	"github.com/tallica/incus-beacon/internal/metrics"
 )
 
 type Summary struct {
@@ -27,6 +29,8 @@ type Summary struct {
 	Errors   int       `json:"errors"`
 	Written  int       `json:"written"`
 	Failed   int       `json:"failed_writes"`
+
+	Statuses map[incus.Key]check.Status `json:"-"`
 }
 
 type Cycle func(ctx context.Context) (Summary, error)
@@ -44,10 +48,56 @@ type Server struct {
 	Targeted Targeted
 	Settle   time.Duration // quiet time before a targeted check; defaultSettle when zero
 
-	mu      sync.Mutex
-	cycles  int
-	last    *Summary
-	lastErr string
+	Metrics *metrics.Set // served on /metrics; a set of its own when nil
+
+	once     sync.Once
+	m        serverMetrics
+	mu       sync.Mutex
+	cycles   int
+	last     *Summary
+	lastErr  string
+	statuses map[incus.Key]check.Status
+}
+
+type serverMetrics struct {
+	cycles      *metrics.Counter
+	duration    *metrics.Gauge
+	lastSuccess *metrics.Gauge
+	instances   *metrics.Gauge
+	writes      *metrics.Counter
+}
+
+var statuses = []check.Status{check.Current, check.UpdateAvailable, check.Error, check.Unknown}
+
+func (s *Server) instruments() *serverMetrics {
+	s.once.Do(func() {
+		if s.Metrics == nil {
+			s.Metrics = &metrics.Set{}
+		}
+		set := s.Metrics
+		s.m = serverMetrics{
+			cycles: set.Counter("incus_beacon_cycles_total",
+				"Full check cycles by result: success, or failure when listing instances failed.", "result"),
+			duration: set.Gauge("incus_beacon_cycle_duration_seconds",
+				"How long the last full check cycle took."),
+			lastSuccess: set.Gauge("incus_beacon_last_success_timestamp_seconds",
+				"Unix time the last successful full check cycle finished; 0 before the first."),
+			instances: set.Gauge("incus_beacon_instances",
+				"Watched instances by status, as of each one's latest check.", "status"),
+			writes: set.Counter("incus_beacon_status_writes_total",
+				"user.beacon.* writes by result: written, or failed.", "result"),
+		}
+		for _, r := range []string{"success", "failure"} {
+			s.m.cycles.Add(0, r)
+		}
+		for _, r := range []string{"written", "failed"} {
+			s.m.writes.Add(0, r)
+		}
+		for _, st := range statuses {
+			s.m.instances.Set(0, string(st))
+		}
+	})
+	return &s.m
 }
 
 const (
@@ -133,6 +183,17 @@ func (s *Server) runCycle(ctx context.Context) (failed bool) {
 	}
 	s.mu.Unlock()
 
+	m := s.instruments()
+	m.duration.Set(sum.Finished.Sub(sum.Started).Seconds())
+	if err != nil {
+		m.cycles.Add(1, "failure")
+	} else {
+		m.cycles.Add(1, "success")
+		m.lastSuccess.Set(float64(sum.Finished.UnixMilli()) / 1000)
+		s.recordStatuses(sum.Statuses, true)
+	}
+	s.recordWrites(sum)
+
 	ev := s.Log.Info()
 	if err != nil {
 		ev = s.Log.Error().Err(err)
@@ -152,6 +213,10 @@ func (s *Server) runTargeted(ctx context.Context, keys []incus.Key) {
 	if ctx.Err() != nil {
 		return
 	}
+	if err == nil {
+		s.recordStatuses(sum.Statuses, false)
+	}
+	s.recordWrites(sum)
 	ev := s.Log.Info()
 	switch {
 	case err != nil:
@@ -162,6 +227,30 @@ func (s *Server) runTargeted(ctx context.Context, keys []incus.Key) {
 	ev.Int("instances", len(keys)).Int("targets", sum.Targets).Int("updates", sum.Updates).
 		Int("errors", sum.Errors).Int("written", sum.Written).Int("failed_writes", sum.Failed).
 		Stringer("took", time.Since(started).Round(time.Millisecond)).Msg("targeted check done")
+}
+
+// recordStatuses replaces the known statuses after a full cycle and merges a targeted check in.
+func (s *Server) recordStatuses(got map[incus.Key]check.Status, full bool) {
+	s.mu.Lock()
+	if full || s.statuses == nil {
+		s.statuses = map[incus.Key]check.Status{}
+	}
+	maps.Copy(s.statuses, got)
+	counts := map[check.Status]int{}
+	for _, st := range s.statuses {
+		counts[st]++
+	}
+	s.mu.Unlock()
+	m := s.instruments()
+	for _, st := range statuses {
+		m.instances.Set(float64(counts[st]), string(st))
+	}
+}
+
+func (s *Server) recordWrites(sum Summary) {
+	m := s.instruments()
+	m.writes.Add(float64(sum.Written), "written")
+	m.writes.Add(float64(sum.Failed), "failed")
 }
 
 // jittered spreads d by ±10% for r in [0, 1).
@@ -177,7 +266,9 @@ type readiness struct {
 }
 
 func (s *Server) Handler() http.Handler {
+	s.instruments()
 	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", s.Metrics.Handler())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
