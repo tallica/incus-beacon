@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- `incus-beacon version` in the container image shows the commit date, as the
+  release binaries do, instead of an empty one.
+
 ## [0.1.2] - 2026-11-07
 
 ### Added

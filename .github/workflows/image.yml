@@ -33,6 +33,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch
+      # The commit date, as GoReleaser stamps the release binaries.
+      - id: date
+        run: echo "date=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -45,3 +48,4 @@ jobs:
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ github.sha }}
+            DATE=${{ steps.date.outputs.date }}
