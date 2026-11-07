@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -169,6 +170,7 @@ var factories = map[string]Factory{
 
 type Options struct {
 	URLs    []string
+	URLFile string // more URLs, one per line; # starts a comment
 	Command string
 	Client  *http.Client  // http.DefaultClient when nil
 	Timeout time.Duration // per notifier and message; defaultTimeout when zero
@@ -199,7 +201,15 @@ func New(opts Options) (*Sender, error) {
 	}
 	s := &Sender{timeout: cmp.Or(opts.Timeout, defaultTimeout), log: opts.Log}
 	var errs []error
-	for i, raw := range opts.URLs {
+	urls := opts.URLs
+	if opts.URLFile != "" {
+		more, err := readURLs(opts.URLFile)
+		if err != nil {
+			return nil, fmt.Errorf("notify-url-file: %w", err)
+		}
+		urls = append(slices.Clone(urls), more...)
+	}
+	for i, raw := range urls {
 		t, err := parse(raw, client)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("notify-url #%d: %w", i+1, err))
@@ -227,6 +237,20 @@ func New(opts Options) (*Sender, error) {
 		}
 	}
 	return s, nil
+}
+
+func readURLs(path string) ([]string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var urls []string
+	for line := range strings.Lines(string(b)) {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			urls = append(urls, strings.Fields(line)...)
+		}
+	}
+	return urls, nil
 }
 
 func parse(raw string, client *http.Client) (target, error) {

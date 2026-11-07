@@ -19,6 +19,8 @@ get an entry.
   and timing, status writes, and registry requests and latency by host.
 - `serve --notify-url` sends a message to a webhook, Discord or Slack when an
   instance gets an update; `--notify-command` runs any program instead.
+- `install --notify-url` sets up notifications, keeping the URLs in the state
+  volume rather than the instance config.
 
 ## [0.3.0] - 2026-11-07
 

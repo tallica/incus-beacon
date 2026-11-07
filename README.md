@@ -54,6 +54,7 @@ incus-beacon install --remote <remote>
 # or, limited to the projects it watches: ... --project default,apps
 # or, living in the apps project: ... --remote <remote>:apps
 # add --events to check new and rebuilt instances at once, not on the interval
+# add --notify-url <url> (repeatable) and --notify-errors for notifications
 ```
 
 In the remote's current project, or the one after the colon, it creates a volume
@@ -299,10 +300,19 @@ printf '%s' "$p" | jq -r .message |
 `server` is the Incus server's own name (`server_name`, the member in a
 cluster). A failed check adds `"reason"`. A message that fails to send is logged
 and counted in `incus_beacon_notifications_total`, and not sent again. Webhook
-URLs are secrets: logs name only the scheme and host. On an installed instance
-they go in its config, which anyone who can read the instance can see:
-`incus config set incus-beacon environment.BEACON_NOTIFY_URL=<url>`, then
-restart it.
+URLs are secrets: logs name only the scheme and host.
+
+`--notify-url-file` reads more URLs, one per line, with `#` comments. That is
+how `install --notify-url` sets them up: it writes `notify-urls` into the state
+volume (mode 0400, uid 65534), so the URLs stay out of the instance config and
+survive a rebuild. To change them later, edit a local file and push it, then
+restart the instance:
+
+```sh
+incus storage volume file push --uid 65534 --gid 65534 --mode 0400 \
+  notify-urls <pool> incus-beacon-state/notify-urls
+incus restart incus-beacon
+```
 
 ## Documentation
 

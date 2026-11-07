@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
+	"github.com/pkg/sftp"
 	"github.com/rs/zerolog"
 )
 
@@ -33,6 +35,7 @@ type fake struct {
 	failCreate   error
 	joins        bool // the instance redeems its token when started
 	calls        []string
+	volumeFS     sftp.Handlers // every volume's files, in memory
 }
 
 func newFake() *fake {
@@ -44,7 +47,34 @@ func newFake() *fake {
 		files:        map[string]incusclient.InstanceFileArgs{},
 		fileData:     map[string]string{},
 		joins:        true,
+		volumeFS:     sftp.InMemHandler(),
 	}
+}
+
+func (f *fake) GetStoragePoolVolumeFileSFTP(_, _, vol string) (*sftp.Client, error) {
+	f.calls = append(f.calls, "sftp "+vol)
+	server, client := net.Pipe()
+	go func() { _ = sftp.NewRequestServer(server, f.volumeFS).Serve() }()
+	return sftp.NewClientPipe(client, client)
+}
+
+func (f *fake) readVolumeFile(t *testing.T, path string) string {
+	t.Helper()
+	c, err := f.GetStoragePoolVolumeFileSFTP("", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	r, err := c.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 var errNotFound = api.StatusErrorf(http.StatusNotFound, "not found")
@@ -256,6 +286,43 @@ func TestInstall(t *testing.T) {
 	}
 	if !slices.Contains(f.calls, "delete file "+tokenFile) {
 		t.Error("spent token file not removed")
+	}
+}
+
+func TestInstallStoresNotifyURLsInTheVolume(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	o := opts()
+	o.NotifyURLs = []string{"https://example.com/hook", "slack://hooks.example.com/services/T0K3N"}
+	o.NotifyErrs = true
+	if err := Install(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.readVolumeFile(t, "/"+notifyFile), "https://example.com/hook\nslack://hooks.example.com/services/T0K3N\n"; got != want {
+		t.Errorf("volume file %q, want %q", got, want)
+	}
+	cfg := f.instances["incus-beacon"].Config
+	if cfg["environment.BEACON_NOTIFY_URL_FILE"] != stateDir+"/"+notifyFile || cfg["environment.BEACON_NOTIFY_ERRORS"] != "true" {
+		t.Errorf("config %v", cfg)
+	}
+	for k, v := range cfg {
+		if strings.Contains(v, "T0K3N") {
+			t.Errorf("%s holds a notification URL", k)
+		}
+	}
+	if i, j := slices.Index(f.calls, "sftp incus-beacon-state"), slices.Index(f.calls, "create instance incus-beacon"); i < 0 || i > j {
+		t.Errorf("calls %v, want the file written before the instance exists", f.calls)
+	}
+
+	f = newFake()
+	if err := Install(context.Background(), f, opts()); err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "sftp") }) {
+		t.Error("volume opened with no notification URLs")
+	}
+	if _, ok := f.instances["incus-beacon"].Config["environment.BEACON_NOTIFY_URL_FILE"]; ok {
+		t.Error("URL file set with no notification URLs")
 	}
 }
 

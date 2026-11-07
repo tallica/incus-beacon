@@ -280,6 +280,29 @@ func TestBadURLsFailAtStart(t *testing.T) {
 	}
 }
 
+func TestURLFile(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "notify-urls")
+	body := "# team chat\nslack://hooks.example.com/services/x\n\n  https://example.com/hook  \n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := New(Options{URLs: []string{"discord://discord.example.com/api/webhooks/1/x"}, URLFile: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := make([]string, 0, len(s.targets))
+	for _, tg := range s.targets {
+		kinds = append(kinds, tg.kind)
+	}
+	if want := "discord slack webhook"; strings.Join(kinds, " ") != want {
+		t.Errorf("notifiers %q, want %q", kinds, want)
+	}
+	if _, err := New(Options{URLFile: filepath.Join(t.TempDir(), "missing")}); err == nil || !strings.Contains(err.Error(), "notify-url-file") {
+		t.Errorf("missing file: %v", err)
+	}
+}
+
 func TestCommand(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
