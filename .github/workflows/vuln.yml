@@ -1,6 +1,7 @@
 name: vuln
 
 # Weekly as well as from CI: an advisory can land with nothing here changing.
+# The image job covers what govulncheck cannot: the busybox base.
 # The schedule has to live in this repo; it only fires where it is declared.
 on:
   schedule:
@@ -13,3 +14,23 @@ permissions:
 jobs:
   govulncheck:
     uses: "tallica/workflows/.github/workflows/govulncheck.yml@v1"
+
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - id: tag
+        run: echo "tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName | ltrimstr("v")')" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ github.token }}
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
