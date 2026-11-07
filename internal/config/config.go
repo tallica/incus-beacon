@@ -45,6 +45,8 @@ type Common struct {
 	ClientCert        string
 	ClientKey         string
 	ServerFingerprint string
+	Token             string
+	StateDir          string
 
 	Projects []string
 	Watch    string
@@ -219,6 +221,8 @@ func bindCommon(fs *flag.FlagSet, c *Common) {
 	fs.StringVar(&c.ClientCert, "client-cert", "", "client certificate file for --incus")
 	fs.StringVar(&c.ClientKey, "client-key", "", "client key file for --incus")
 	fs.StringVar(&c.ServerFingerprint, "server-fingerprint", "", "expected server certificate fingerprint")
+	fs.StringVar(&c.Token, "token", "", "one-time trust token for --incus; enrolls a certificate into --state-dir")
+	fs.StringVar(&c.StateDir, "state-dir", "", "directory keeping the certificate --token enrolled")
 
 	fs.Var((*csvValue)(&c.Projects), "project", "project to watch; comma-separate several (default: all)")
 	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
@@ -242,6 +246,17 @@ func (c *Common) validate() error {
 	}
 	if c.Remote != "" && c.Incus != "" {
 		errs = append(errs, errors.New("remote and incus are mutually exclusive"))
+	}
+	if c.Token != "" {
+		if c.Incus == "" {
+			errs = append(errs, errors.New("token needs incus"))
+		}
+		if c.StateDir == "" {
+			errs = append(errs, errors.New("token needs state-dir"))
+		}
+		if c.ClientCert != "" {
+			errs = append(errs, errors.New("token and client-cert are mutually exclusive"))
+		}
 	}
 	return errors.Join(errs...)
 }

@@ -18,6 +18,11 @@ The last cycle could not list instances, so it checked nothing. Usually one of:
   added, or was removed.
 - `project …: not found, or this certificate may not use it`: `--project` names
   a project that doesn't exist, or one the certificate is not restricted to.
+- `redeem trust token: …`: the token was already spent, expired or revoked. Make
+  a new one with `incus config trust add incus-beacon --quiet`, set it with
+  `incus config set beacon environment.BEACON_TOKEN=<token>` and restart.
+- `state: …: permission denied`: `--state-dir` isn't writable by uid 65534;
+  attach a volume created with `initial.uid=65534 initial.gid=65534`.
 - `client key: open …: permission denied`: the key file is on a host directory
   the container's uid can't read; own it by uid 65534 as the
   [README](../../README.md#run-it-on-incus) shows.

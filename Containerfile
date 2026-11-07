@@ -14,6 +14,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
         -X github.com/tallica/incus-beacon/internal/version.Commit=$COMMIT \
         -X github.com/tallica/incus-beacon/internal/version.Date=$DATE" \
       -o /out/incus-beacon ./cmd/incus-beacon
+RUN mkdir /out/state
 
 # busybox rather than scratch: health checks need wget, and incus exec a shell.
 FROM busybox:1.37-musl
@@ -27,8 +28,10 @@ LABEL org.opencontainers.image.title="incus-beacon" \
 COPY --from=build /out/incus-beacon /usr/local/bin/incus-beacon
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY LICENSE THIRD_PARTY_NOTICES.md IMAGE_NOTICES.md /usr/share/doc/incus-beacon/
+COPY --from=build --chown=65534:65534 /out/state /var/lib/incus-beacon
 # Incus gives an OCI container a pty, which would colour its console log.
 ENV BEACON_LOG_COLOR=never
+ENV BEACON_STATE_DIR=/var/lib/incus-beacon
 USER 65534:65534
 EXPOSE 9153
 HEALTHCHECK --interval=1m --timeout=5s --start-period=1m --start-interval=5s \

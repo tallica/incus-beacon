@@ -113,9 +113,15 @@ Refs are normalised with Docker conventions: `nginx` becomes
 
 - **Over HTTPS (a container, or any host):** `--incus` with `--client-cert` and
   `--client-key`, a certificate the server already trusts.
-  `--server-fingerprint` pins the server's self-signed certificate. Joining with
-  a one-time trust token instead, as ic-healthd does, is on the
-  [backlog](../BACKLOG.md).
+  `--server-fingerprint` pins the server's self-signed certificate.
+- **With a trust token (the container default):** `--token` and `--state-dir`,
+  as ic-healthd does. The first run generates a certificate, redeems the token
+  with it and saves the pair and the token's server fingerprint in the state
+  dir; later runs use those and never touch the token. The files are staged
+  before redeeming, because a token is spent once, even when Incus then refuses
+  the certificate: an unwritable state dir must fail while the token is still
+  good. The certificate is backdated an hour, since Incus refuses one that isn't
+  valid yet by its own clock.
 - **From a host (CLI):** an `incus` CLI remote (`--remote`, or the CLI's
   default), which reuses that remote's certificates or local socket.
 
