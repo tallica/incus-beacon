@@ -35,6 +35,7 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics         | oras-go, metrics                  |
 | `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                        | Masterminds/semver                |
 | `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                         | registry, semver, policy          |
+| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                         | metrics                           |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                                                 | check, incus                      |
 | `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                     | check, incus, metrics             |
 
@@ -73,7 +74,8 @@ network.
    4. A current tag that isn't a version (`latest`) is an error under
       `track=semver`.
 6. **Write results.** Write status keys only where a value changed.
-   Notifications on these changes are on the [backlog](../BACKLOG.md).
+7. **Notify** about the changes that were written (see
+   [Notifications](#notifications)).
 
 ### Serving
 
@@ -98,6 +100,22 @@ stream reconnects with backoff from a second up to a minute; events missed
 meanwhile wait for the next cycle. Targeted checks leave `/ready` alone. A
 certificate restricted to some projects may open the all-projects stream and
 receives their events.
+
+### Notifications
+
+The written `user.beacon.*` keys are the dedupe state: a change is sent only for
+an instance whose write succeeded, by comparing the keys before and after. So a
+restarted beacon never repeats a message, and nothing else needs storing. The
+cost is that a failed send is not retried; the next one comes with the next
+change. Which changes count is in [README.md](../README.md#notifications);
+recoveries stay quiet because the update or fix that caused them was someone's
+own action.
+
+Full cycles and targeted checks both notify, so `--events` reports an update
+within seconds too. Every notifier gets each message in turn, with its own 30 s
+timeout, in the cycle goroutine. A notifier is chosen by URL scheme, and every
+URL is checked when `serve` starts, so a typo stops it then rather than at the
+first update.
 
 ### Image ref resolution
 

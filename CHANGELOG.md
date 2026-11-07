@@ -17,6 +17,8 @@ get an entry.
 
 - `serve` answers `/metrics` for Prometheus: instances by status, cycle results
   and timing, status writes, and registry requests and latency by host.
+- `serve --notify-url` sends a message to a webhook, Discord or Slack when an
+  instance gets an update; `--notify-command` runs any program instead.
 
 ## [0.3.0] - 2026-11-07
 

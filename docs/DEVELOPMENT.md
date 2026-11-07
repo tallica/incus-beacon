@@ -35,6 +35,18 @@ The `internal/` packages and their jobs are listed in
 | `make fmt-check`                | Fails if Prettier would change anything; `make lint` checks Go    |
 | `make release-notes TAG=vX.Y.Z` | Print a version's CHANGELOG section                               |
 
+## Adding a notifier
+
+A `--notify-url` scheme maps to a `notify.Factory` in the `factories` map in
+`internal/notify/notify.go`. The factory gets the URL with its scheme turned
+into `https`, and returns a `Notifier`; an HTTP service usually only shapes the
+message into its JSON and calls `postJSON`, as `slack` does in
+`internal/notify/http.go` (chat services pass a `style` with their bold and code
+markup; code keeps refs from becoming links). Never put the URL in an error or a
+log line: tokens live in its path. Test it against `httptest.NewTLSServer`, add
+a row to the table in [README.md](../README.md#notifications), and a CHANGELOG
+line.
+
 ## Testing
 
 `make test` needs no Incus daemon or network. Incus access is tested against a
