@@ -85,6 +85,13 @@ type Serve struct {
 	Interval time.Duration
 	Listen   string
 	Events   bool
+	Notify
+}
+
+type Notify struct {
+	NotifyURLs    []string
+	NotifyCommand string
+	NotifyErrors  bool
 }
 
 // Install binds only the log, remote and watch settings of Common.
@@ -184,6 +191,9 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
 		fs.BoolVar(&c.Events, "events", false, "also check instances as soon as they are created, updated or rebuilt")
+		fs.Var((*urlsValue)(&c.NotifyURLs), "notify-url", "where to send notifications: an http(s) webhook, discord:// or slack://; repeat, or space-separate, for several")
+		fs.StringVar(&c.NotifyCommand, "notify-command", "", "program run per notification, with the JSON payload on stdin; arguments split on spaces, no shell")
+		fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when an instance's check starts failing")
 		cfg.Serve = c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
@@ -192,6 +202,9 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			}
 			if c.Listen == "" {
 				errs = append(errs, errors.New("listen: must not be empty"))
+			}
+			if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyCommand == "" {
+				errs = append(errs, errors.New("notify-errors needs notify-url or notify-command"))
 			}
 			return errors.Join(errs...)
 		}
@@ -383,6 +396,16 @@ func (c *csvValue) Set(v string) error {
 			*c = append(*c, p)
 		}
 	}
+	return nil
+}
+
+// urlsValue appends: a repeated flag adds URLs, and spaces separate them in one value.
+type urlsValue []string
+
+func (u *urlsValue) String() string { return strings.Join(*u, " ") }
+
+func (u *urlsValue) Set(v string) error {
+	*u = append(*u, strings.Fields(v)...)
 	return nil
 }
 

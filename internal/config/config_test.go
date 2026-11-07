@@ -132,6 +132,8 @@ func TestUsageErrors(t *testing.T) {
 		{"token and token file", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--state-dir", "/s", "--token", "t", "--token-file", "/f"}, "token and token-file"},
 		{"token file without state dir", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--token-file", "/f"}, "token needs state-dir"},
 		{"bad env value", map[string]string{"BEACON_CONCURRENCY": "many"}, []string{CmdCheck}, "BEACON_CONCURRENCY"},
+		{"notify errors alone", nil, []string{CmdServe, "--notify-errors"}, "notify-errors needs"},
+		{"notify on check", nil, []string{CmdCheck, "--notify-url", "https://example.com"}, "not defined"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -214,12 +216,26 @@ func commonOf(cfg *Config) Common {
 	}
 }
 
-func TestNoUnimplementedFlags(t *testing.T) {
+func TestNotifyFlags(t *testing.T) {
 	t.Parallel()
-	for _, f := range []string{"--notify-url", "--webhook-url", "--notify-errors"} {
-		if _, err := parse(t, nil, CmdServe, f+"=x"); !errors.Is(err, ErrUsage) {
-			t.Errorf("%s: err = %v, want a usage error until the feature lands", f, err)
-		}
+	cfg, err := parse(t, nil, CmdServe, "--notify-url", "https://example.com/a", "--notify-url", "discord://example.com/b  slack://example.com/c",
+		"--notify-command", "/path/to/notify --to ops", "--notify-errors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := cfg.Serve.Notify
+	if want := []string{"https://example.com/a", "discord://example.com/b", "slack://example.com/c"}; !slices.Equal(n.NotifyURLs, want) {
+		t.Errorf("urls %q, want %q", n.NotifyURLs, want)
+	}
+	if n.NotifyCommand != "/path/to/notify --to ops" || !n.NotifyErrors {
+		t.Errorf("notify %+v", n)
+	}
+	cfg, err = parse(t, map[string]string{"BEACON_NOTIFY_URL": "https://example.com/a slack://example.com/c"}, CmdServe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Serve.NotifyURLs) != 2 {
+		t.Errorf("BEACON_NOTIFY_URL gave %q, want two URLs", cfg.Serve.NotifyURLs)
 	}
 }
 

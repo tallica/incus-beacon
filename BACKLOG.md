@@ -20,15 +20,13 @@ not work. An idea that needs more than a paragraph gets its own file in
 - [ ] **incus-compose token without `.env`** — needs an incus-compose feature
       that puts a trust token into `/run/secrets/token`; beacon already reads
       that path through `--token-file`.
-- [ ] **Notifications** — tell people when an instance gets an update or a check
-      starts failing, once per change. The written `user.beacon.*` keys are the
-      dedupe state: notify only for instances whose write succeeded, and group
-      one cycle's changes into one message. Open: how to send.
-      [shoutrrr](https://github.com/nicholas-fedor/shoutrrr) (MIT) covers email,
-      Slack, ntfy, Telegram and more behind one `--notify-url`, but roughly
-      doubles the binary (about 13 to 25 MB) and adds many linked modules. A
-      JSON `--webhook-url`, maybe with hand-written ntfy and SMTP, stays small
-      but covers less.
+- [ ] **`install --notify-url` without the URL in instance config** — today an
+      installed beacon takes it through `environment.BEACON_NOTIFY_URL`, which
+      anyone who can read the instance sees.
+- [ ] **Clearer reason for a 401 from Docker Hub** — it answers 401 to anonymous
+      requests for a repository that doesn't exist, so a typo in an image reads
+      "registry auth failed"; say "not found, or no access" when no credentials
+      were sent.
 - [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
       or recreate on the newer image, health-gate, and roll back; opt-in per
       instance.
@@ -42,6 +40,10 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Not planned
 
+- **shoutrrr for notifications** — roughly doubles the binary (about 13 to 25
+  MB) and adds many linked modules; built-in senders plus `--notify-command`
+  cover the rest. Go plugins can't load into a static `CGO_ENABLED=0` binary, so
+  it can't be optional at run time either (2026-11-07).
 - **Copying the lazyincus upstream-check code** — the maintainer chose a fresh
   implementation; lazyincus stays a reference (2026-11-04).
 - **Unix-socket-only access to Incus** — unproven inside OCI containers and

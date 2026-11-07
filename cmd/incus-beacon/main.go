@@ -21,6 +21,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/install"
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/metrics"
+	"github.com/tallica/incus-beacon/internal/notify"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/report"
 	"github.com/tallica/incus-beacon/internal/serve"
@@ -130,7 +131,7 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	failed := 0
 	if c.Write {
 		var written int
-		written, failed = writeResults(ctx, srv, results, logger)
+		written, failed = writeResults(ctx, srv, results, logger, nil)
 		logger.Info().Int("written", written).Int("unchanged", len(results)-written-failed).
 			Int("failed", failed).Msg("status recorded")
 	}
@@ -144,11 +145,14 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 }
 
 // writeResults goes on after a failed write so the report still covers all.
-func writeResults(ctx context.Context, srv incusclient.InstanceServer, results []check.Result, logger zerolog.Logger) (written, failed int) {
+func writeResults(ctx context.Context, srv incusclient.InstanceServer, results []check.Result, logger zerolog.Logger,
+	onWrite func(t incus.Target, next incus.Beacon),
+) (written, failed int) {
 	now := time.Now()
 	for i := range results {
 		r := &results[i]
-		changed, err := incus.WriteStatus(ctx, srv, r.Target, check.Beacon(*r, now))
+		next := check.Beacon(*r, now)
+		changed, err := incus.WriteStatus(ctx, srv, r.Target, next)
 		if err != nil {
 			logger.Warn().Err(err).Str("project", r.Target.Project).Str("instance", r.Target.Instance).Msg("status not recorded")
 			failed++
@@ -156,6 +160,9 @@ func writeResults(ctx context.Context, srv incusclient.InstanceServer, results [
 		}
 		if changed {
 			written++
+			if onWrite != nil {
+				onWrite(r.Target, next)
+			}
 		}
 	}
 	return written, failed
@@ -176,6 +183,15 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 		return err
 	}
 	engine := check.New(reg, c.Concurrency, logger)
+	sender, err := notify.New(notify.Options{
+		URLs:    c.NotifyURLs,
+		Command: c.NotifyCommand,
+		Metrics: set,
+		Log:     logger,
+	})
+	if err != nil {
+		return err
+	}
 	conn := &incus.Conn{Options: connectOptions(c.Common)}
 	watchAll := c.Watch == config.WatchAll
 	seen := incus.Seen{}
@@ -196,7 +212,15 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 			case check.Current, check.Unknown:
 			}
 		}
-		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger)
+		var changes []notify.Transition
+		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger, func(t incus.Target, next incus.Beacon) {
+			if notify.Notable(t.Beacon, next, c.NotifyErrors) {
+				changes = append(changes, notify.NewTransition(t, next))
+			}
+		})
+		if len(changes) > 0 {
+			sender.Notify(ctx, notify.Batch{Server: serverName(srv, logger), Transitions: changes})
+		}
 		return sum
 	}
 	cycle := func(ctx context.Context) (serve.Summary, error) {
@@ -243,6 +267,16 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	}
 	logger.Info().Str("listen", ln.Addr().String()).Stringer("interval", c.Interval).Msg("serving")
 	return s.Run(ctx, ln)
+}
+
+// serverName names the Incus server in notifications; a cluster gives the member.
+func serverName(srv incusclient.InstanceServer, logger zerolog.Logger) string {
+	s, _, err := srv.GetServer()
+	if err != nil {
+		logger.Debug().Err(err).Msg("server name not read")
+		return ""
+	}
+	return s.Environment.ServerName
 }
 
 func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {

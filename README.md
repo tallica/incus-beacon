@@ -183,6 +183,7 @@ often needed:
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |
 | `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`     |
+| `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                         |
 | `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default  |
 | `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)       |
 | `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`   |
@@ -239,11 +240,69 @@ They change only when a value does, so a quiet check leaves no trace in
 | `incus_beacon_status_writes_total`               | counter   | `result`                 | `user.beacon.*` writes, `written` or `failed`                    |
 | `incus_beacon_registry_requests_total`           | counter   | `host`, `method`, `code` | Registry requests by HTTP status, or `error` when none came back |
 | `incus_beacon_registry_request_duration_seconds` | histogram | `host`                   | Time to a registry's response headers                            |
+| `incus_beacon_notifications_total`               | counter   | `notifier`, `result`     | Messages per notifier kind, `sent` or `failed`                   |
 | `incus_beacon_build_info`                        | gauge     | `version`                | Always 1                                                         |
 
 Targeted checks from `--events` update `incus_beacon_instances` too; an instance
 deleted since is counted until the next cycle. Requests held back by a
 registry's rate limit are never sent, so they are not counted.
+
+### Notifications
+
+`serve` sends a message when an instance gets an update, or a newer one, and,
+with `--notify-errors`, when its check starts failing. Each change is sent once,
+and the changes one check finds go in one message. An update applied, or a check
+that recovers, sends nothing.
+
+`--notify-url` can be repeated, or hold several URLs separated by spaces, as
+`BEACON_NOTIFY_URL` does:
+
+| URL                                      | Sends                                                     |
+| ---------------------------------------- | --------------------------------------------------------- |
+| `https://example.com/hook`, or `http://` | The JSON payload below, as a POST                         |
+| `discord://discord.com/api/webhooks/<…>` | A Discord message: the webhook URL with `discord://`      |
+| `slack://hooks.slack.com/services/<…>`   | A Slack message: the incoming webhook URL with `slack://` |
+
+`--notify-command` runs a program for each message, with the payload below on
+stdin. It is split on spaces and run without a shell; a non-zero exit is logged.
+Use it for any other service, for instance ntfy, with
+`--notify-command "/usr/local/bin/notify-ntfy https://ntfy.sh/<topic>"`. This
+script needs `jq` and `curl`, which the published image doesn't have:
+
+```sh
+#!/bin/sh
+# notify-ntfy <topic URL>: send the title and message to an ntfy topic
+p=$(cat)
+printf '%s' "$p" | jq -r .message |
+  curl -fsS -H "Title: $(printf '%s' "$p" | jq -r .title)" --data-binary @- "$1"
+```
+
+```json
+{
+  "time": "2026-11-07T12:00:00Z",
+  "server": "node1",
+  "title": "incus-beacon on node1: 1 update available",
+  "message": "• web (default): nginx:1.27 → 1.31",
+  "transitions": [
+    {
+      "project": "default",
+      "instance": "web",
+      "image": "docker.io/library/nginx:1.27",
+      "status": "update-available",
+      "previous_status": "current",
+      "latest": "1.31"
+    }
+  ]
+}
+```
+
+`server` is the Incus server's own name (`server_name`, the member in a
+cluster). A failed check adds `"reason"`. A message that fails to send is logged
+and counted in `incus_beacon_notifications_total`, and not sent again. Webhook
+URLs are secrets: logs name only the scheme and host. On an installed instance
+they go in its config, which anyone who can read the instance can see:
+`incus config set incus-beacon environment.BEACON_NOTIFY_URL=<url>`, then
+restart it.
 
 ## Documentation
 
