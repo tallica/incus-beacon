@@ -83,19 +83,9 @@ A certificate made by hand works too: give `BEACON_CLIENT_CERT`,
 `incus info | grep certificate_fingerprint`) instead of the token, and push the
 files in with `incus file push … --uid 65534 --gid 65534 --mode 0400`.
 
-With incus-compose the same settings go into a service. It mounts the volume, a
-directory on the Incus host, with `shift=true`, which needs idmapped mount
-support in the host's kernel and file system (Linux 5.15 or later). As root on
-the Incus host, give the files to uid 65534:
-
-```sh
-chown -R 65534:65534 /path/to/certs
-chmod 0500 /path/to/certs && chmod 0400 /path/to/certs/*
-```
-
-Against a remote Incus, every incus-compose command needs
-`--allow-remote-mounts`. incus-compose's healthd sidecar runs the healthcheck
-and records the result in `user.healthcheck.status`:
+With incus-compose the same settings go into a service, and a named volume keeps
+the certificate. incus-compose's healthd sidecar runs the healthcheck and
+records the result in `user.healthcheck.status`:
 
 ```yaml
 services:
@@ -103,14 +93,37 @@ services:
     image: ghcr.io/tallica/incus-beacon:0.1
     environment:
       BEACON_INCUS: https://<incus-host>:8443
-      BEACON_SERVER_FINGERPRINT: <fingerprint>
-      BEACON_CLIENT_CERT: /certs/client.crt
-      BEACON_CLIENT_KEY: /certs/client.key
+      BEACON_TOKEN: ${BEACON_TOKEN}
     volumes:
-      - /path/to/certs:/certs:ro
+      - state:/var/lib/incus-beacon
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9153/ready"]
       interval: 1m
+
+volumes:
+  state:
+```
+
+Put the token in `.env` next to `compose.yaml`, then start it:
+
+```sh
+echo "BEACON_TOKEN=$(incus config trust add incus-beacon --quiet)" > .env
+incus-compose up -d
+```
+
+A token restricted with `--restricted --projects` needs the project to exist, so
+run `incus-compose up --no-start` before creating it.
+
+A hand-made certificate can be mounted from a directory on the Incus host
+instead, with `BEACON_CLIENT_CERT`, `BEACON_CLIENT_KEY` and
+`BEACON_SERVER_FINGERPRINT` in place of the token. incus-compose mounts it with
+`shift=true`, which needs idmapped mount support in the host's kernel and file
+system (Linux 5.15 or later), and every command against a remote Incus needs
+`--allow-remote-mounts`. As root on the Incus host, give the files to uid 65534:
+
+```sh
+chown -R 65534:65534 /path/to/certs
+chmod 0500 /path/to/certs && chmod 0400 /path/to/certs/*
 ```
 
 ## Usage
