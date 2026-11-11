@@ -14,15 +14,27 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Seen remembers the Inputs of each checked instance; one goroutine owns it.
-type Seen map[Key]string
+// Seen remembers each checked instance's Inputs and status keys; one goroutine owns it.
+type Seen map[Key]seen
 
-func (s Seen) Changed(t Target) bool {
-	in, ok := s[t.Key()]
-	return !ok || in != t.Inputs
+type seen struct {
+	inputs string
+	beacon Beacon
 }
 
-func (s Seen) Record(t Target) { s[t.Key()] = t.Inputs }
+func (s Seen) Changed(t Target) bool {
+	v, ok := s[t.Key()]
+	return !ok || v.inputs != t.Inputs || v.beacon != t.Beacon
+}
+
+func (s Seen) Record(t Target) { s[t.Key()] = seen{inputs: t.Inputs, beacon: t.Beacon} }
+
+func (s Seen) Wrote(k Key, b Beacon) {
+	if v, ok := s[k]; ok {
+		v.beacon = b
+		s[k] = v
+	}
+}
 
 // Incus sends a rebuild only as an operation, under this description.
 const rebuildDescription = "Rebuilding instance"

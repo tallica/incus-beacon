@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- With `--events`, `serve` restores status keys at once on an instance recreated
+  from the same config, such as by `incus-compose up --recreate`.
+
 ## [0.5.0] - 2026-11-11
 
 ### Added

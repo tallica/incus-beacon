@@ -94,12 +94,14 @@ comes only as a finished "Rebuilding instance" operation, not a lifecycle event.
 Events are gathered until two seconds pass without one, then checked in the same
 goroutine as the cycles, so the two never write one instance at once. An updated
 instance is checked only when a key the check reads has changed since its last
-check (`Target.Inputs`); beacon's own `user.incus-beacon.*` writes come back as
-`instance-updated` events, and this is what keeps them from looping. A dropped
-stream reconnects with backoff from a second up to a minute; events missed
-meanwhile wait for the next cycle. Targeted checks leave `/ready` alone. A
-certificate restricted to some projects may open the all-projects stream and
-receives their events.
+check (`Target.Inputs`), or its status keys differ from the ones beacon last
+left there; beacon's own `user.incus-beacon.*` writes come back as
+`instance-updated` events, and this is what keeps them from looping. The status
+comparison catches an instance recreated from the same config, which has the
+same inputs but none of the status keys. A dropped stream reconnects with
+backoff from a second up to a minute; events missed meanwhile wait for the next
+cycle. Targeted checks leave `/ready` alone. A certificate restricted to some
+projects may open the all-projects stream and receives their events.
 
 ### Notifications
 

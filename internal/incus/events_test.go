@@ -146,9 +146,21 @@ func TestTargetOfAndSeen(t *testing.T) {
 	set("user.incus-beacon.status", "current")
 	set("user.incus-beacon.since", "2026-11-07T10:00:00Z")
 	t2, _, _ := TargetOf(t.Context(), srv, db, true)
+	if !seen.Changed(t2) {
+		t.Error("status keys beacon did not write did not count as a change")
+	}
+	seen.Wrote(db, Beacon{Status: "current", Since: "2026-11-07T10:00:00Z"})
 	if seen.Changed(t2) {
 		t.Error("a status write counted as a change")
 	}
+	seen.Record(t2)
+	set("user.incus-beacon.status", "")
+	set("user.incus-beacon.since", "")
+	if recreated, _, _ := TargetOf(t.Context(), srv, db, true); !seen.Changed(recreated) {
+		t.Error("status keys gone, as after a recreate, did not count as a change")
+	}
+	set("user.incus-beacon.status", "current")
+	set("user.incus-beacon.since", "2026-11-07T10:00:00Z")
 	set("volatile.base_image", fpMissing)
 	t3, _, _ := TargetOf(t.Context(), srv, db, true)
 	if !seen.Changed(t3) {

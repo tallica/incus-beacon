@@ -220,6 +220,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 		}
 		var changes []notify.Transition
 		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger, func(t incus.Target, next incus.Beacon) {
+			seen.Wrote(t.Key(), next)
 			if notify.Notable(t.Beacon, next, c.NotifyErrors) {
 				changes = append(changes, notify.NewTransition(t, next))
 			}
