@@ -1,4 +1,4 @@
-// Package policy reads the user-set user.beacon.* and label keys.
+// Package policy reads the user-set user.incus-beacon.* and label keys.
 package policy
 
 import (
@@ -17,6 +17,16 @@ const (
 	TrackSemver = "semver"
 )
 
+// Key prefixes, newest first; the user.beacon. forms are read until 0.7.
+const (
+	Prefix            = "user.incus-beacon."
+	LabelPrefix       = "user.label.incus-beacon."
+	LegacyPrefix      = "user.beacon."
+	LegacyLabelPrefix = "user.label.beacon."
+)
+
+var names = []string{"enable", "image", "track", "constraint", "include", "exclude"}
+
 type Policy struct {
 	Watched    bool
 	Image      string
@@ -26,12 +36,27 @@ type Policy struct {
 	Exclude    *regexp.Regexp
 }
 
-// Key falls back to the incus-compose label form user.label.beacon.<name>.
+// Key falls back to the incus-compose label form, then to the old names.
 func Key(config map[string]string, name string) string {
-	if v := config["user.beacon."+name]; v != "" {
-		return v
+	for _, p := range []string{Prefix, LabelPrefix, LegacyPrefix, LegacyLabelPrefix} {
+		if v := config[p+name]; v != "" {
+			return v
+		}
 	}
-	return config["user.label.beacon."+name]
+	return ""
+}
+
+// Legacy lists the policy keys config sets under their old names.
+func Legacy(config map[string]string) []string {
+	var keys []string
+	for _, p := range []string{LegacyPrefix, LegacyLabelPrefix} {
+		for _, n := range names {
+			if config[p+n] != "" {
+				keys = append(keys, p+n)
+			}
+		}
+	}
+	return keys
 }
 
 // Parse still sets Watched on error, so a bad policy is reported, not hidden.

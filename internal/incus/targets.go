@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	RefFromBeacon       = "user.beacon.image"
+	RefFromBeacon       = policy.Prefix + "image"
 	RefFromCompose      = "user.image_alias"
 	RefFromUpdateSource = "update_source"
 	RefFromImageKeys    = "image.description"
@@ -45,8 +45,11 @@ type Target struct {
 
 	Policy    policy.Policy
 	PolicyErr error
+	Legacy    []string // policy keys set under their old names
 	Beacon    Beacon
-	Inputs    string // the config a check reads, to tell a real change from a status write
+	// LegacyStatus is set while the status keys still use their old names.
+	LegacyStatus bool
+	Inputs       string // the config a check reads, to tell a real change from a status write
 }
 
 type Key struct {
@@ -120,13 +123,14 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 		Local:     !pulled(inst.ExpandedConfig),
 		Policy:    pol,
 		PolicyErr: polErr,
-		Beacon:    readBeacon(inst.Config),
+		Legacy:    policy.Legacy(inst.ExpandedConfig),
 		Inputs:    inputs(inst),
 		ImageRef:  imageKeysRef(inst.ExpandedConfig),
 
 		ComposeProject: inst.ExpandedConfig["user.label.incus-compose.project"],
 		ComposeService: inst.ExpandedConfig["user.label.incus-compose.service"],
 	}
+	t.Beacon, t.LegacyStatus = readBeacon(inst.Config)
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
 	return t, true
 }
@@ -134,6 +138,9 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 // inputs covers every key a check may read, minus the ones beacon writes.
 func inputs(inst *api.Instance) string {
 	written := Beacon{}.keys()
+	for _, k := range legacyStatusKeys() {
+		written[k] = ""
+	}
 	var b strings.Builder
 	b.WriteString(inst.Architecture)
 	for _, k := range slices.Sorted(maps.Keys(inst.ExpandedConfig)) {
@@ -141,7 +148,8 @@ func inputs(inst *api.Instance) string {
 			continue
 		}
 		if k == "volatile.base_image" || k == RefFromCompose || strings.HasPrefix(k, "image.") ||
-			strings.HasPrefix(k, "user.beacon.") || strings.HasPrefix(k, "user.label.beacon.") {
+			strings.HasPrefix(k, policy.Prefix) || strings.HasPrefix(k, policy.LabelPrefix) ||
+			strings.HasPrefix(k, policy.LegacyPrefix) || strings.HasPrefix(k, policy.LegacyLabelPrefix) {
 			fmt.Fprintf(&b, "\n%s=%s", k, inst.ExpandedConfig[k])
 		}
 	}
@@ -198,14 +206,21 @@ func project(name string) string {
 }
 
 // readBeacon reads the local config: beacon keys are never set from profiles.
-func readBeacon(config map[string]string) Beacon {
-	return Beacon{
-		Status:  config["user.beacon.status"],
-		Current: config["user.beacon.current"],
-		Latest:  config["user.beacon.latest"],
-		Error:   config["user.beacon.error"],
-		Since:   config["user.beacon.since"],
+func readBeacon(config map[string]string) (b Beacon, legacy bool) {
+	for _, k := range legacyStatusKeys() {
+		legacy = legacy || config[k] != ""
 	}
+	prefix := policy.Prefix
+	if legacy && config[prefix+"status"] == "" {
+		prefix = policy.LegacyPrefix
+	}
+	return Beacon{
+		Status:  config[prefix+"status"],
+		Current: config[prefix+"current"],
+		Latest:  config[prefix+"latest"],
+		Error:   config[prefix+"error"],
+		Since:   config[prefix+"since"],
+	}, legacy
 }
 
 // resolveRef follows docs/ARCHITECTURE.md#image-ref-resolution.

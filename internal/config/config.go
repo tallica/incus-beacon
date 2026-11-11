@@ -185,7 +185,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindRegistry(fs, &c.Registry)
 		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
-		fs.BoolVar(&c.Write, "write", false, "also record results in user.beacon.* keys")
+		fs.BoolVar(&c.Write, "write", false, "also record results in user.incus-beacon.* keys")
 		cfg.Check = c
 		validate = func() error {
 			return errors.Join(c.Common.validate(), c.Registry.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))

@@ -154,7 +154,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if opts.Events {
 		env["environment.BEACON_EVENTS"] = "true"
 	}
-	env["user.beacon.track"] = trackFor(opts.Track, opts.Image)
+	env[policy.Prefix+"track"] = trackFor(opts.Track, opts.Image)
 	if len(opts.NotifyURLs) > 0 {
 		env["environment.BEACON_NOTIFY_URL_FILE"] = stateDir + "/" + notifyFile
 		if opts.NotifyErrs {

@@ -269,7 +269,7 @@ func TestInstall(t *testing.T) {
 		"environment.BEACON_TOKEN_FILE": tokenFile,
 		"environment.BEACON_PROJECT":    "apps",
 		"environment.BEACON_EVENTS":     "true",
-		"user.beacon.track":             "semver",
+		"user.incus-beacon.track":       "semver",
 	}
 	for k, v := range wantEnv {
 		if inst.Config[k] != v {

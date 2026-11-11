@@ -64,23 +64,23 @@ bin/incus-beacon check --remote <remote> --format json --log-level debug
 ```
 
 `serve --watch opt-in` connects, lists and serves `/health` and `/ready` but
-watches nothing until an instance sets `user.beacon.enable=true`, so it is a
-safe way to try the daemon on a real remote:
+watches nothing until an instance sets `user.incus-beacon.enable=true`, so it is
+a safe way to try the daemon on a real remote:
 
 ```sh
 bin/incus-beacon serve --remote <remote> --watch opt-in --interval 1m --listen 127.0.0.1:9153
 curl 127.0.0.1:9153/ready
 ```
 
-`check --write` changes `user.beacon.*` keys on instances, and each change emits
-an `instance-updated` event. Try it on a throwaway project first:
+`check --write` changes `user.incus-beacon.*` keys on instances, and each change
+emits an `instance-updated` event. Try it on a throwaway project first:
 
 ```sh
 incus project create beacon-test
 incus launch docker:nginx:1.27 web --project beacon-test
-incus config set web user.beacon.track=semver --project beacon-test
+incus config set web user.incus-beacon.track=semver --project beacon-test
 bin/incus-beacon check --remote <remote> --project beacon-test --write
-incus config show web --project beacon-test | grep user.beacon
+incus config show web --project beacon-test | grep user.incus-beacon
 ```
 
 ## Go targets

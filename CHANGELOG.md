@@ -13,6 +13,12 @@ get an entry.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** instance keys are now `user.incus-beacon.*` and
+  `user.label.incus-beacon.*`; the old `user.beacon.*` names are still read,
+  with a warning, until 0.7.
+
 ### Added
 
 - `install` now makes the instance track `semver` when its image has a version

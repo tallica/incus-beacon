@@ -10,12 +10,16 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Next
 
-- [ ] **lazyincus integration** — show `user.beacon.status` and `latest` in the
-      lazyincus instance and image panels, and leave `user.beacon.*` out of its
-      config fingerprint as `user.healthcheck.*` already is, so beacon writes
-      don't read as drift.
+- [ ] **lazyincus integration** — show `user.incus-beacon.status` and `latest`
+      in the lazyincus instance and image panels, and leave
+      `user.incus-beacon.*` out of its config fingerprint as
+      `user.healthcheck.*` already is, so beacon writes don't read as drift.
 
 ## Later
+
+- [ ] **Stop reading the `user.beacon.*` names in 0.7** — remove the legacy
+      prefixes from `internal/policy` and the status-key migration in
+      `internal/incus`, and the README sentence that names them.
 
 - [ ] **incus-compose token without `.env`** — needs an incus-compose feature
       that puts a trust token into `/run/secrets/token`; beacon already reads

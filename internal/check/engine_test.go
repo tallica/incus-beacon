@@ -117,7 +117,7 @@ func TestDigest(t *testing.T) {
 		t.Errorf("rebuilt tag: %+v", r)
 	}
 	if r := res[2]; r.Status != Current {
-		t.Errorf("local image with user.beacon.image: %+v, want it checked", r)
+		t.Errorf("local image with user.incus-beacon.image: %+v, want it checked", r)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestSemver(t *testing.T) {
 	f.tags["docker.io/library/nginx"] = []string{"1.27.3-alpine", "1.27.4-alpine", "1.28.0", "1.28.0-alpine", "latest"}
 
 	constrained := target("pinned", "nginx:1.27.3-alpine", fpOld, policy.TrackSemver)
-	c, err := policyWith(map[string]string{"user.beacon.track": "semver", "user.beacon.constraint": "~1.27"})
+	c, err := policyWith(map[string]string{"user.incus-beacon.track": "semver", "user.incus-beacon.constraint": "~1.27"})
 	if err != nil {
 		t.Fatal(err)
 	}

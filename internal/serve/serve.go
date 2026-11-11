@@ -85,7 +85,7 @@ func (s *Server) instruments() *serverMetrics {
 			instances: set.Gauge("incus_beacon_instances",
 				"Watched instances by status, as of each one's latest check.", "status"),
 			writes: set.Counter("incus_beacon_status_writes_total",
-				"user.beacon.* writes by result: written, or failed.", "result"),
+				"user.incus-beacon.* writes by result: written, or failed.", "result"),
 		}
 		for _, r := range []string{"success", "failure"} {
 			s.m.cycles.Add(0, r)

@@ -131,6 +131,7 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	if err != nil {
 		return err
 	}
+	warnLegacy(logger, targets, nil)
 	results := check.New(reg, c.Concurrency, logger).Run(ctx, targets)
 	failed := 0
 	if c.Write {
@@ -228,6 +229,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 		}
 		return sum
 	}
+	warned := map[incus.Key]bool{} // only the cycle goroutine touches it
 	cycle := func(ctx context.Context) (serve.Summary, error) {
 		srv, err := conn.Get(ctx)
 		if err != nil {
@@ -238,6 +240,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 			conn.Drop()
 			return serve.Summary{}, err
 		}
+		warnLegacy(logger, targets, warned)
 		return checkAndWrite(ctx, srv, targets), nil
 	}
 	targeted := func(ctx context.Context, keys []incus.Key) (serve.Summary, error) {
@@ -272,6 +275,20 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	}
 	logger.Info().Str("listen", ln.Addr().String()).Stringer("interval", c.Interval).Msg("serving")
 	return s.Run(ctx, ln)
+}
+
+// warnLegacy names old-style keys; with warned, once per instance.
+func warnLegacy(logger zerolog.Logger, targets []incus.Target, warned map[incus.Key]bool) {
+	for _, t := range targets {
+		if len(t.Legacy) == 0 || warned[t.Key()] {
+			continue
+		}
+		if warned != nil {
+			warned[t.Key()] = true
+		}
+		logger.Warn().Str("project", t.Project).Str("instance", t.Instance).Strs("keys", t.Legacy).
+			Msg("old key names, read until 0.7: rename user.beacon.* to user.incus-beacon.*")
+	}
 }
 
 // serverName names the Incus server in notifications; a cluster gives the member.
