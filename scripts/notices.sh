@@ -8,14 +8,19 @@
 set -eu
 
 go_licenses=github.com/google/go-licenses/v2@v2.0.1
-# MPL-2.0: github.com/cyphar/filepath-securejoin, via the Incus client; its
-# MPL files stay available as source upstream.
-allowed=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Unlicense,MPL-2.0
-# Modules with no licence file that may be linked anyway, comma-separated as
-# the check names them; a comment above says why each one is fine.
+allowed=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Unlicense
+# Modules with no licence file that may be linked anyway, as module=licence,
+# comma-separated; a comment above says why each one is fine.
 # go-proto: its repo, github.com/rootless-containers/proto, is Apache-2.0
-# (COPYING at the root); the go-proto module ships no copy.
-unlicensed=github.com/rootless-containers/proto/go-proto
+# (COPYING at the root), as its files' headers say; the module ships no copy.
+unlicensed=github.com/rootless-containers/proto/go-proto=Apache-2.0
+# Modules whose licence go-licenses misreads, as module=licence=file, the file
+# relative to the module; a comment above says why each one is right.
+# filepath-securejoin, via the Incus client: go-licenses reads COPYING.md as
+# MPL-2.0, but it covers BSD-3-Clause and MPL-2.0 files alike, and the files
+# linked (doc.go, join.go, vfs.go, internal/consts) are BSD-3-Clause by their
+# SPDX headers. Re-check those when it's bumped.
+overrides=github.com/cyphar/filepath-securejoin=BSD-3-Clause=LICENSE.BSD
 out=THIRD_PARTY_NOTICES.md
 
 case "$#:${1-}" in
@@ -48,13 +53,29 @@ for os in $goos; do
 		exit 1
 	}
 done
-sort -u "$tmp/libs" | grep . >"$tmp/sorted" || true
+# Apply overrides=, and give each unlicensed= module its licence and a path
+# of its own, so that two of them don't share a section.
+sort -u "$tmp/libs" | grep . | awk -F '\t' -v OFS='\t' -v overrides="$overrides" -v unlicensed="$unlicensed" '
+	BEGIN {
+		n = split(overrides, list, ",")
+		for (i = 1; i <= n; i++)
+			if (split(list[i], f, "=") == 3) { lic[f[1]] = f[2]; file[f[1]] = f[3] }
+		n = split(unlicensed, list, ",")
+		for (i = 1; i <= n; i++)
+			if (split(list[i], f, "=") == 2) none[f[1]] = f[2]
+	}
+	$3 in lic { sub(/\/[^\/]*$/, "/" file[$3], $1); $2 = lic[$3] }
+	$2 == "Unknown" && $3 in none { $1 = "unlicensed:" $3; $2 = none[$3] }
+	{ print }' >"$tmp/sorted" || true
 
-bad=$(awk -F '\t' -v allowed=",$allowed," -v unlicensed=",$unlicensed," '
-	$2 == "Unknown" && index(unlicensed, "," $3 ",") { next }
-	index(allowed, "," $2 ",") == 0 { print "  " $3 ": " $2 }' "$tmp/sorted")
+bad=$(awk -F '\t' -v allowed=",$allowed," '
+	index(allowed, "," $2 ",") == 0 { print "  " $3 ": " $2; next }
+	$1 ~ /^unlicensed:/ || $1 in seen { next }
+	{ seen[$1] = 1 }
+	(getline line < $1) <= 0 { print "  " $3 ": no file at " $1 }
+	{ close($1) }' "$tmp/sorted")
 [ -z "$bad" ] || {
-	printf '%s\n' "$0: licences not allowed (see allowed= and unlicensed= in this script):" "$bad" >&2
+	printf '%s\n' "$0: licences not allowed or not found (see allowed=, unlicensed= and overrides= in this script):" "$bad" >&2
 	exit 1
 }
 
@@ -145,7 +166,7 @@ EOF
 		{
 			printf "\n## `%s` (%s)\n\n", $1, $3
 			if ((getline line < $2) <= 0) {
-				print "No licence file found."
+				print "The module has no licence file; the headers of its files name this licence."
 				next
 			}
 			close($2)
