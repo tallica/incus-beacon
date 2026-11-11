@@ -294,16 +294,21 @@ printf '%s' "$p" | jq -r .message |
       "image": "docker.io/library/nginx:1.27",
       "status": "update-available",
       "previous_status": "current",
-      "latest": "1.31"
+      "latest": "1.31",
+      "kind": "tag"
     }
   ]
 }
 ```
 
 `server` is the Incus server's own name (`server_name`, the member in a
-cluster). A failed check adds `"reason"`. A message that fails to send is logged
-and counted in `incus_beacon_notifications_total`, and not sent again. Webhook
-URLs are secrets: logs name only the scheme and host.
+cluster). An update's `kind` is `tag` for a newer tag, or `digest` for new
+layers under the same tag, as `latest` shows with `<tag>@sha256:…`.
+`compose_project` and `compose_service` name an incus-compose instance's stack
+and service, so a script can act on the right one. A failed check adds
+`"reason"` instead of `kind`. A message that fails to send is logged and counted
+in `incus_beacon_notifications_total`, and not sent again. Webhook URLs are
+secrets: logs name only the scheme and host.
 
 `--notify-url-file` reads more URLs, one per line, with `#` comments. That is
 how `install --notify-url` sets them up: it writes `notify-urls` into the state

@@ -50,6 +50,9 @@ func fixture() *fakeIncus {
 				"user.image_alias":  "docker.io/library/nginx:1.27",
 				"image.description": "docker.io/library/nginx (OCI)",
 				"image.id":          "library/nginx:1.28",
+
+				"user.label.incus-compose.project": "shop",
+				"user.label.incus-compose.service": "web",
 			}), nil),
 			instance("default", "db", oci(map[string]string{"volatile.base_image": fpPostgres}), nil),
 			instance("default", "db2", oci(map[string]string{"volatile.base_image": fpPostgres}), nil),
@@ -124,8 +127,11 @@ func TestTargetsAllProjects(t *testing.T) {
 			t.Errorf("%s: ref %q from %q, want %q from %q", r.name, tg.Ref, tg.RefSource, r.ref, r.from)
 		}
 	}
-	if w := byName["default/web"]; w.ImageRef != "docker.io/library/nginx:1.28" {
-		t.Errorf("default/web: image ref %q, want the image keys' tag beside the compose alias", w.ImageRef)
+	if w := byName["default/web"]; w.ImageRef != "docker.io/library/nginx:1.28" || w.ComposeProject != "shop" || w.ComposeService != "web" {
+		t.Errorf("default/web: image ref %q, compose %q/%q; want the image keys' tag and the compose labels", w.ImageRef, w.ComposeProject, w.ComposeService)
+	}
+	if a := byName["apps/api"]; a.ComposeProject != "" || a.ComposeService != "" {
+		t.Errorf("apps/api: compose %q/%q, want none", a.ComposeProject, a.ComposeService)
 	}
 	if b := byName["apps/built"]; !b.Local || b.Arch != "aarch64" {
 		t.Errorf("apps/built: local %t, arch %q; want local, arch from the instance", b.Local, b.Arch)

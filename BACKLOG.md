@@ -28,10 +28,6 @@ not work. An idea that needs more than a paragraph gets its own file in
       `docker-compose` manager opening PRs for newer tags, or beacon's webhook
       starting a Semaphore UI task (or a CI job) that runs `incus-compose up`.
       Both untested with incus-compose (to verify).
-- [ ] **Richer webhook payload** — `kind` (`digest` or `tag`), the `current`
-      ref, and `compose_project` and `compose_service` from the incus-compose
-      labels, so a task runner can automate digest updates and route tag updates
-      to a PR. Additive; no sender changes.
 - [ ] **Per-registry credentials and mirrors in instance keys** — for setups
       where one docker `config.json` isn't enough.
 - [ ] **Cooldown** — report a new tag only once it is a set age, so a broken

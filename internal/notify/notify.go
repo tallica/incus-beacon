@@ -22,6 +22,9 @@ import (
 const (
 	statusUpdate = "update-available"
 	statusError  = "error"
+
+	kindDigest = "digest" // the same tag on new layers
+	kindTag    = "tag"    // a newer tag
 )
 
 type Transition struct {
@@ -31,7 +34,11 @@ type Transition struct {
 	Status   string `json:"status"`
 	Previous string `json:"previous_status,omitempty"`
 	Latest   string `json:"latest,omitempty"`
+	Kind     string `json:"kind,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+
+	ComposeProject string `json:"compose_project,omitempty"`
+	ComposeService string `json:"compose_service,omitempty"`
 }
 
 // Notable follows docs/ARCHITECTURE.md#notifications.
@@ -53,8 +60,22 @@ func NewTransition(t incus.Target, next incus.Beacon) Transition {
 		Status:   next.Status,
 		Previous: t.Beacon.Status,
 		Latest:   next.Latest,
+		Kind:     kindOf(next),
 		Reason:   next.Error,
+
+		ComposeProject: t.ComposeProject,
+		ComposeService: t.ComposeService,
 	}
+}
+
+func kindOf(b incus.Beacon) string {
+	switch {
+	case b.Status != statusUpdate:
+		return ""
+	case strings.HasPrefix(b.Latest, tagOf(b.Current)+"@"):
+		return kindDigest
+	}
+	return kindTag
 }
 
 // Batch is what one check found worth sending.
@@ -89,7 +110,7 @@ func message(b Batch, st style) (title, body string) {
 		case t.Status != statusUpdate:
 			failing++
 			fmt.Fprintf(&w, " check failed: %s\n", t.Reason)
-		case strings.HasPrefix(t.Latest, tagOf(t.Image)+"@"):
+		case t.Kind == kindDigest:
 			updates++
 			w.WriteString(" rebuilt\n")
 		default:

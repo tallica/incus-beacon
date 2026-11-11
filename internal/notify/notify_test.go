@@ -48,9 +48,33 @@ func TestNotable(t *testing.T) {
 }
 
 var sample = []Transition{
-	{Project: "default", Instance: "web", Image: "docker.io/library/nginx:1.27", Status: "update-available", Previous: "current", Latest: "1.31"},
-	{Project: "apps", Instance: "api", Image: "ghcr.io/example/api:2", Status: "update-available", Latest: "2@sha256:bbbbbbbbbbbb"},
+	{Project: "default", Instance: "web", Image: "docker.io/library/nginx:1.27", Status: "update-available", Previous: "current", Latest: "1.31", Kind: "tag"},
+	{
+		Project: "apps", Instance: "api", Image: "ghcr.io/example/api:2", Status: "update-available", Latest: "2@sha256:bbbbbbbbbbbb", Kind: "digest",
+		ComposeProject: "apps", ComposeService: "api",
+	},
 	{Project: "apps", Instance: "db", Image: "docker.io/library/postgres:17", Status: "error", Previous: "current", Reason: "registry auth failed"},
+}
+
+func TestNewTransition(t *testing.T) {
+	t.Parallel()
+	compose := incus.Target{Project: "apps", Instance: "api-1", ComposeProject: "apps", ComposeService: "api"}
+	tests := []struct {
+		name   string
+		target incus.Target
+		next   incus.Beacon
+		kind   string
+	}{
+		{"digest", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "2@sha256:bbbbbbbbbbbb"}, "digest"},
+		{"tag", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "3"}, "tag"},
+		{"error", compose, incus.Beacon{Status: "error", Current: "ghcr.io/example/api:2", Error: "registry timeout"}, ""},
+	}
+	for _, tt := range tests {
+		got := NewTransition(tt.target, tt.next)
+		if got.Kind != tt.kind || got.ComposeProject != tt.target.ComposeProject || got.ComposeService != tt.target.ComposeService {
+			t.Errorf("%s: %+v, want kind %q and the compose labels", tt.name, got, tt.kind)
+		}
+	}
 }
 
 var batch = Batch{Server: "node1", Transitions: sample}
@@ -165,6 +189,18 @@ func TestWebhook(t *testing.T) {
 	}
 	if got.Title != sampleTitle || got.Server != "node1" || len(got.Transitions) != 3 || got.Time.IsZero() {
 		t.Errorf("payload %+v", got)
+	}
+	var raw struct {
+		Transitions []map[string]any `json:"transitions"`
+	}
+	if err := json.Unmarshal(r.body, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if api := raw.Transitions[0]; api["kind"] != "digest" || api["compose_project"] != "apps" || api["compose_service"] != "api" {
+		t.Errorf("api fields: %v", api)
+	}
+	if _, ok := raw.Transitions[1]["compose_service"]; ok {
+		t.Errorf("web, not a compose instance, has compose fields: %v", raw.Transitions[1])
 	}
 	if got.Transitions[2].Reason != "registry auth failed" || got.Transitions[1].Previous != "current" {
 		t.Errorf("transition fields lost: %+v", got.Transitions)

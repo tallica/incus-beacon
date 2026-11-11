@@ -39,6 +39,10 @@ type Target struct {
 	RefSource string
 	ImageRef  string // from the image keys, as launched or last rebuilt
 	Local     bool
+
+	ComposeProject string
+	ComposeService string
+
 	Policy    policy.Policy
 	PolicyErr error
 	Beacon    Beacon
@@ -119,6 +123,9 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 		Beacon:    readBeacon(inst.Config),
 		Inputs:    inputs(inst),
 		ImageRef:  imageKeysRef(inst.ExpandedConfig),
+
+		ComposeProject: inst.ExpandedConfig["user.label.incus-compose.project"],
+		ComposeService: inst.ExpandedConfig["user.label.incus-compose.service"],
 	}
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
 	return t, true
