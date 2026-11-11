@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-11
+
 ### Fixed
 
 - With `--events`, `serve` restores status keys at once on an instance recreated
@@ -130,7 +132,8 @@ get an entry.
 - Release archives carry THIRD_PARTY_NOTICES.md with the licence and NOTICE text
   of every module the binary links, not only direct dependencies.
 
-[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.5.0...master
+[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.5.1...master
+[0.5.1]: https://github.com/tallica/incus-beacon/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/tallica/incus-beacon/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/tallica/incus-beacon/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tallica/incus-beacon/compare/v0.2.0...v0.3.0
