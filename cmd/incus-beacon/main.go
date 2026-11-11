@@ -74,6 +74,8 @@ func commonOf(cfg *config.Config) config.Common {
 		return cfg.Status.Common
 	case cfg.Install != nil:
 		return cfg.Install.Common
+	case cfg.Upgrade != nil:
+		return cfg.Upgrade.Common
 	case cfg.Uninstall != nil:
 		return cfg.Uninstall.Common
 	default:
@@ -93,6 +95,8 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 		err = runStatus(ctx, cfg.Status, stdout)
 	case config.CmdInstall:
 		err = runInstall(ctx, cfg.Install, logger)
+	case config.CmdUpgrade:
+		err = runUpgrade(ctx, cfg.Upgrade, logger)
 	case config.CmdUninstall:
 		err = runUninstall(ctx, cfg.Uninstall, logger)
 	default:
@@ -299,15 +303,7 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 	if _, err := notify.New(notify.Options{URLs: c.NotifyURLs}); err != nil {
 		return err
 	}
-	image := c.Image
-	if image == "" {
-		var released bool
-		image, released = install.DefaultImage(version.Version)
-		if !released {
-			logger.Warn().Str("version", version.Version).Str("image", image).
-				Msg("unreleased build: the image may be older than this installer; give --image to choose")
-		}
-	}
+	image := imageFor(c.Image, logger)
 	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
 	if err != nil {
 		return err
@@ -325,6 +321,34 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 		NotifyErrs:  c.NotifyErrs,
 		Wait:        c.Wait,
 		Log:         logger,
+	})
+}
+
+// imageFor defaults to this build's own release line.
+func imageFor(image string, logger zerolog.Logger) string {
+	if image != "" {
+		return image
+	}
+	image, released := install.DefaultImage(version.Version)
+	if !released {
+		logger.Warn().Str("version", version.Version).Str("image", image).
+			Msg("unreleased build: the image may be older than this installer; give --image to choose")
+	}
+	return image
+}
+
+func runUpgrade(ctx context.Context, c *config.Upgrade, logger zerolog.Logger) error {
+	image := imageFor(c.Image, logger)
+	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
+	if err != nil {
+		return err
+	}
+	return install.Upgrade(ctx, srv, install.UpgradeOptions{
+		Name:  c.Name,
+		Image: image,
+		Force: c.Force,
+		Wait:  c.Wait,
+		Log:   logger,
 	})
 }
 

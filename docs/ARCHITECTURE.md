@@ -173,6 +173,16 @@ Refs are normalised with Docker conventions: `nginx` becomes
   that doesn't exist, so the projects are checked first. The name is refused
   when a certificate already has it, since `uninstall` removes certificates by
   that name, along with unredeemed tokens.
+- **Upgrading the installed instance (`upgrade`):** a rebuild, not a delete and
+  create, because it keeps the config `install` wrote, the state volume with the
+  certificate and the notification URLs, and the trust entry, so no new token is
+  needed. Readiness is the image's own `HEALTHCHECK` probe of `/ready`, run with
+  `incus exec`: it fails only when a cycle can't list instances, so a registry
+  outage doesn't roll back a good release. The rollback rebuilds from the old
+  `volatile.base_image` fingerprint, which Incus still caches at that point, so
+  it needs no registry. Verified on Incus 7.6 only; older servers keep the old
+  image's `oci.*` keys through a rebuild, harmless while the image's entrypoint
+  stays the same (to verify).
 - **From a host (CLI):** an `incus` CLI remote (`--remote`, or the CLI's
   default), which reuses that remote's certificates or local socket.
 

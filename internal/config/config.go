@@ -16,18 +16,20 @@ const (
 	CmdStatus    = "status"
 	CmdServe     = "serve"
 	CmdInstall   = "install"
+	CmdUpgrade   = "upgrade"
 	CmdUninstall = "uninstall"
 	CmdVersion   = "version"
 )
 
 // Commands lists the subcommands in the order usage shows them.
-var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdInstall, CmdUninstall, CmdVersion}
+var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdInstall, CmdUpgrade, CmdUninstall, CmdVersion}
 
 var summaries = map[string]string{
 	CmdCheck:     "check registries for newer images and print what can be updated",
 	CmdStatus:    "show the update status already recorded on instances",
 	CmdServe:     "run checks on an interval and record results",
 	CmdInstall:   "create a serve instance on Incus that joins with a trust token",
+	CmdUpgrade:   "rebuild that instance on a newer image, rolling back if it isn't ready",
 	CmdUninstall: "remove that instance, its volume and its certificate",
 	CmdVersion:   "print the version",
 }
@@ -109,6 +111,14 @@ type Install struct {
 	NotifyErrs  bool
 }
 
+type Upgrade struct {
+	Common
+	Name  string
+	Image string
+	Force bool
+	Wait  time.Duration
+}
+
 type Uninstall struct {
 	Common
 	Name string
@@ -121,6 +131,7 @@ type Config struct {
 	Status    *Status
 	Serve     *Serve
 	Install   *Install
+	Upgrade   *Upgrade
 	Uninstall *Uninstall
 }
 
@@ -239,6 +250,22 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			}
 			if c.NotifyErrs && len(c.NotifyURLs) == 0 {
 				errs = append(errs, errors.New("notify-errors needs notify-url"))
+			}
+			return errors.Join(errs...)
+		}
+	case CmdUpgrade:
+		c := &Upgrade{Common: Common{Watch: WatchAll}}
+		bindLog(fs, &c.Common)
+		bindRemoteProject(fs, &c.Common)
+		bindInstance(fs, &c.Name)
+		fs.StringVar(&c.Image, "image", "", "image to rebuild from (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
+		fs.BoolVar(&c.Force, "force", false, "allow an image older than the running one")
+		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
+		cfg.Upgrade = c
+		validate = func() error {
+			errs := []error{c.validate()}
+			if c.Wait <= 0 {
+				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
 			}
 			return errors.Join(errs...)
 		}

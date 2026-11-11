@@ -36,6 +36,9 @@ type fake struct {
 	joins        bool // the instance redeems its token when started
 	calls        []string
 	volumeFS     sftp.Handlers // every volume's files, in memory
+	snapshots    []string
+	rebuilds     []api.InstanceSource
+	ready        func(rebuilds int) bool // the /ready probe's answer after that many rebuilds
 }
 
 func newFake() *fake {
