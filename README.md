@@ -206,10 +206,12 @@ often needed:
 Set these on an instance, or on a profile, to change how it is watched. Each can
 also be given as `user.label.incus-beacon.<key>`, which is what an incus-compose
 `labels:` entry such as `incus-beacon.track: semver` becomes;
-`user.incus-beacon.<key>` wins when both are set. Before 0.5 the keys were
-`user.beacon.*` and `user.label.beacon.*`; those are still read, with a warning,
-until 0.7, and the status keys below move to the new names the next time an
-instance is written.
+`user.incus-beacon.<key>` wins when both are set. A key set on the instance
+itself is lost when the instance is recreated, as `incus-compose up --recreate`
+does; the label or a profile keeps it. Before 0.5 the keys were `user.beacon.*`
+and `user.label.beacon.*`; those are still read, with a warning, until 0.7, and
+the status keys below move to the new names the next time an instance is
+written.
 
 | Key                            | Values                       | Meaning                                                                  |
 | ------------------------------ | ---------------------------- | ------------------------------------------------------------------------ |
