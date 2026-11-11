@@ -23,12 +23,12 @@ Tell incus-beacon which ref to track. For a local image, only do this when the
 same layers were also pushed to that ref:
 
 ```sh
-incus config set <instance> user.beacon.image=docker.io/library/nginx:1.27
+incus config set <instance> user.incus-beacon.image=docker.io/library/nginx:1.27
 ```
 
 For `no base image fingerprint`, rebuild the instance from its image, which
 replaces its root filesystem: `incus rebuild <image> <instance>`. For an
-instance you don't want watched, set `user.beacon.enable=false`.
+instance you don't want watched, set `user.incus-beacon.enable=false`.
 
 ## Verify
 

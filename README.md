@@ -1,10 +1,10 @@
 # incus-beacon
 
 Watches OCI registries for newer images of your Incus OCI app containers and
-reports what can be updated: on the command line, and as `user.beacon.*` keys on
-each instance that lazyincus, incus-compose or the `incus` CLI can read. A
-lightweight, Incus-focused cousin of watchtower and diun. Automatic updates are
-planned; today it only reports.
+reports what can be updated: on the command line, and as `user.incus-beacon.*`
+keys on each instance that lazyincus, incus-compose or the `incus` CLI can read.
+A lightweight, Incus-focused cousin of watchtower and diun. Automatic updates
+are planned; today it only reports.
 
 ## Status
 
@@ -63,8 +63,8 @@ In the remote's current project, or the one after the colon, it creates a volume
 `--project` when given) and an instance `incus-beacon` from
 `ghcr.io/tallica/incus-beacon` at this version's `major.minor`. The token
 reaches the instance as a file, not as config. The instance gets
-`user.beacon.track=semver` when the image tag is a version, so it also reports
-newer releases of itself; `--track` overrides that. The instance dials
+`user.incus-beacon.track=semver` when the image tag is a version, so it also
+reports newer releases of itself; `--track` overrides that. The instance dials
 `core.https_address`, or the address of its bridge when Incus listens on all
 addresses; `--api-url` overrides that. `install` waits until the instance has
 joined, then removes the spent token file. `incus-beacon uninstall` removes the
@@ -204,18 +204,21 @@ often needed:
 ### Instance keys
 
 Set these on an instance, or on a profile, to change how it is watched. Each can
-also be given as `user.label.beacon.<key>`, which is what an incus-compose
-`labels:` entry such as `beacon.track: semver` becomes; `user.beacon.<key>` wins
-when both are set.
+also be given as `user.label.incus-beacon.<key>`, which is what an incus-compose
+`labels:` entry such as `incus-beacon.track: semver` becomes;
+`user.incus-beacon.<key>` wins when both are set. Before 0.5 the keys were
+`user.beacon.*` and `user.label.beacon.*`; those are still read, with a warning,
+until 0.7, and the status keys below move to the new names the next time an
+instance is written.
 
-| Key                      | Values                       | Meaning                                                                  |
-| ------------------------ | ---------------------------- | ------------------------------------------------------------------------ |
-| `user.beacon.enable`     | `true`, `false`              | Watch this instance or not, whatever `--watch` says                      |
-| `user.beacon.image`      | an image ref                 | The ref to track, when Incus doesn't know it or the image is local       |
-| `user.beacon.track`      | `digest` (default), `semver` | `digest` reports a rebuilt tag; `semver` also reports newer version tags |
-| `user.beacon.constraint` | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                             |
-| `user.beacon.include`    | a regex                      | With `semver`: only tags that match                                      |
-| `user.beacon.exclude`    | a regex                      | With `semver`: no tags that match                                        |
+| Key                            | Values                       | Meaning                                                                  |
+| ------------------------------ | ---------------------------- | ------------------------------------------------------------------------ |
+| `user.incus-beacon.enable`     | `true`, `false`              | Watch this instance or not, whatever `--watch` says                      |
+| `user.incus-beacon.image`      | an image ref                 | The ref to track, when Incus doesn't know it or the image is local       |
+| `user.incus-beacon.track`      | `digest` (default), `semver` | `digest` reports a rebuilt tag; `semver` also reports newer version tags |
+| `user.incus-beacon.constraint` | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                             |
+| `user.incus-beacon.include`    | a regex                      | With `semver`: only tags that match                                      |
+| `user.incus-beacon.exclude`    | a regex                      | With `semver`: no tags that match                                        |
 
 `semver` keeps the shape of the current tag: `1.27.3-alpine` only moves to newer
 `x.y.z-alpine` tags, and `1.27` only to newer `x.y` tags. A tag that is not a
@@ -223,13 +226,13 @@ version, such as `latest`, needs `digest`.
 
 incus-beacon writes these, and never any other key:
 
-| Key                   | Value                                                                   |
-| --------------------- | ----------------------------------------------------------------------- |
-| `user.beacon.status`  | `current`, `update-available`, `error` or `unknown`                     |
-| `user.beacon.current` | The image ref being tracked                                             |
-| `user.beacon.latest`  | The newer tag, or `<tag>@sha256:<12 hex>` when the same tag was rebuilt |
-| `user.beacon.error`   | Why the status is `error` or `unknown`; removed once that clears        |
-| `user.beacon.since`   | When the status or latest last changed (RFC 3339)                       |
+| Key                         | Value                                                                   |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `user.incus-beacon.status`  | `current`, `update-available`, `error` or `unknown`                     |
+| `user.incus-beacon.current` | The image ref being tracked                                             |
+| `user.incus-beacon.latest`  | The newer tag, or `<tag>@sha256:<12 hex>` when the same tag was rebuilt |
+| `user.incus-beacon.error`   | Why the status is `error` or `unknown`; removed once that clears        |
+| `user.incus-beacon.since`   | When the status or latest last changed (RFC 3339)                       |
 
 They change only when a value does, so a quiet check leaves no trace in
 `incus monitor`.
@@ -250,7 +253,7 @@ They change only when a value does, so a quiet check leaves no trace in
 | `incus_beacon_cycles_total`                      | counter   | `result`                 | Full check cycles, `success` or `failure`                        |
 | `incus_beacon_last_success_timestamp_seconds`    | gauge     |                          | When the last successful cycle finished; 0 before the first      |
 | `incus_beacon_cycle_duration_seconds`            | gauge     |                          | How long the last cycle took                                     |
-| `incus_beacon_status_writes_total`               | counter   | `result`                 | `user.beacon.*` writes, `written` or `failed`                    |
+| `incus_beacon_status_writes_total`               | counter   | `result`                 | `user.incus-beacon.*` writes, `written` or `failed`              |
 | `incus_beacon_registry_requests_total`           | counter   | `host`, `method`, `code` | Registry requests by HTTP status, or `error` when none came back |
 | `incus_beacon_registry_request_duration_seconds` | histogram | `host`                   | Time to a registry's response headers                            |
 | `incus_beacon_notifications_total`               | counter   | `notifier`, `result`     | Messages per notifier kind, `sent` or `failed`                   |

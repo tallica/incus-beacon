@@ -12,9 +12,9 @@ import (
 func writeFixture() (*fakeIncus, Target) {
 	f := &fakeIncus{instances: []api.Instance{
 		instance("default", "web", oci(map[string]string{
-			"user.beacon.status": "current",
-			"user.beacon.error":  "old reason",
-			"user.other":         "kept",
+			"user.incus-beacon.status": "current",
+			"user.incus-beacon.error":  "old reason",
+			"user.other":               "kept",
 		}), map[string]string{"user.from-profile": "not copied"}),
 	}}
 	t := Target{Project: "default", Instance: "web", Beacon: Beacon{Status: "current", Error: "old reason"}}
@@ -45,11 +45,11 @@ func TestWriteTouchesOnlyBeaconKeys(t *testing.T) {
 	}
 	got := f.instances[0].Config
 	want := maps.Clone(before)
-	delete(want, "user.beacon.error")
-	want["user.beacon.status"] = "update-available"
-	want["user.beacon.current"] = "ghcr.io/example/web:1"
-	want["user.beacon.latest"] = "2"
-	want["user.beacon.since"] = "2026-11-04T12:00:00Z"
+	delete(want, "user.incus-beacon.error")
+	want["user.incus-beacon.status"] = "update-available"
+	want["user.incus-beacon.current"] = "ghcr.io/example/web:1"
+	want["user.incus-beacon.latest"] = "2"
+	want["user.incus-beacon.since"] = "2026-11-04T12:00:00Z"
 	if !maps.Equal(got, want) {
 		t.Errorf("config after write:\n got %v\nwant %v", got, want)
 	}
@@ -93,5 +93,54 @@ func TestWriteWaitsOutABusyInstance(t *testing.T) {
 	defer cancel()
 	if _, err := WriteStatus(ctx, f.connect(t), tg, Beacon{Status: "current"}); err == nil {
 		t.Error("busy until the deadline: want an error")
+	}
+}
+
+func TestReadAndMigrateLegacyStatus(t *testing.T) {
+	t.Parallel()
+	old := map[string]string{
+		"user.beacon.status": "update-available",
+		"user.beacon.latest": "2",
+		"user.beacon.since":  "2026-11-04T12:00:00Z",
+	}
+	b, legacy := readBeacon(old)
+	if want := (Beacon{Status: "update-available", Latest: "2", Since: "2026-11-04T12:00:00Z"}); b != want || !legacy {
+		t.Fatalf("read %+v, legacy %v; want the old keys read", b, legacy)
+	}
+	mixed := maps.Clone(old)
+	mixed["user.incus-beacon.status"] = "current"
+	if b, legacy := readBeacon(mixed); b.Status != "current" || b.Latest != "" || !legacy {
+		t.Errorf("mixed: %+v, legacy %v; want only the new keys read, still marked legacy", b, legacy)
+	}
+
+	f := &fakeIncus{instances: []api.Instance{instance("default", "web", oci(maps.Clone(old)), nil)}}
+	tg := Target{Project: "default", Instance: "web", Beacon: b, LegacyStatus: true}
+	changed, err := WriteStatus(t.Context(), f.connect(t), tg, b)
+	if err != nil || !changed {
+		t.Fatalf("unchanged beacon under old names: changed %v, err %v; want a migrating write", changed, err)
+	}
+	got := f.instances[0].Config
+	for k := range old {
+		if _, ok := got[k]; ok {
+			t.Errorf("%s left after the write", k)
+		}
+	}
+	if got["user.incus-beacon.status"] != "update-available" || got["user.incus-beacon.since"] != "2026-11-04T12:00:00Z" {
+		t.Errorf("config %v, want the values under the new names, since kept", got)
+	}
+}
+
+func TestTargetOfLegacyKeys(t *testing.T) {
+	t.Parallel()
+	f := &fakeIncus{instances: []api.Instance{instance("default", "web", oci(map[string]string{
+		"user.beacon.status": "current",
+		"user.beacon.track":  "semver",
+	}), nil)}}
+	tg, ok, err := TargetOf(t.Context(), f.connect(t), Key{Project: "default", Instance: "web"}, true)
+	if err != nil || !ok {
+		t.Fatalf("ok %v, err %v", ok, err)
+	}
+	if !tg.LegacyStatus || tg.Beacon.Status != "current" || tg.Policy.Track != "semver" || len(tg.Legacy) != 1 || tg.Legacy[0] != "user.beacon.track" {
+		t.Errorf("target %+v, want the old keys read and both kinds marked legacy", tg)
 	}
 }

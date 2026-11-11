@@ -9,16 +9,28 @@ import (
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
+
+	"github.com/tallica/incus-beacon/internal/policy"
 )
+
+var statusNames = []string{"status", "current", "latest", "error", "since"}
 
 func (b Beacon) keys() map[string]string {
 	return map[string]string{
-		"user.beacon.status":  b.Status,
-		"user.beacon.current": b.Current,
-		"user.beacon.latest":  b.Latest,
-		"user.beacon.error":   b.Error,
-		"user.beacon.since":   b.Since,
+		policy.Prefix + "status":  b.Status,
+		policy.Prefix + "current": b.Current,
+		policy.Prefix + "latest":  b.Latest,
+		policy.Prefix + "error":   b.Error,
+		policy.Prefix + "since":   b.Since,
 	}
+}
+
+func legacyStatusKeys() []string {
+	keys := make([]string, 0, len(statusNames))
+	for _, n := range statusNames {
+		keys = append(keys, policy.LegacyPrefix+n)
+	}
+	return keys
 }
 
 // Incus sends this, with no status code, while a start or stop holds the instance.
@@ -29,9 +41,9 @@ const (
 	busyMaxRetry = 8 * time.Second
 )
 
-// WriteStatus skips the API when b is unchanged; an empty value removes a key.
+// WriteStatus skips the API when b is unchanged and under the new names; "" removes a key.
 func WriteStatus(ctx context.Context, srv incusclient.InstanceServer, t Target, b Beacon) (bool, error) {
-	if b == t.Beacon {
+	if b == t.Beacon && !t.LegacyStatus {
 		return false, nil
 	}
 	project := srv.UseProject(t.Project)
@@ -70,6 +82,9 @@ func writeOnce(srv incusclient.InstanceServer, name string, b Beacon) error {
 	put := inst.Writable()
 	if put.Config == nil {
 		put.Config = map[string]string{}
+	}
+	for _, k := range legacyStatusKeys() {
+		delete(put.Config, k)
 	}
 	for k, v := range b.keys() {
 		if v == "" {

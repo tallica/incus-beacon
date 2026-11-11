@@ -143,8 +143,8 @@ func TestTargetOfAndSeen(t *testing.T) {
 			}
 		}
 	}
-	set("user.beacon.status", "current")
-	set("user.beacon.since", "2026-11-07T10:00:00Z")
+	set("user.incus-beacon.status", "current")
+	set("user.incus-beacon.since", "2026-11-07T10:00:00Z")
 	t2, _, _ := TargetOf(t.Context(), srv, db, true)
 	if seen.Changed(t2) {
 		t.Error("a status write counted as a change")

@@ -32,8 +32,8 @@ file instead: see the "Updating compose stacks" item in
 
 ## What
 
-Opt-in per instance with `user.beacon.update=auto`. `notify`, the default, keeps
-today's report-only behaviour.
+Opt-in per instance with `user.incus-beacon.update=auto`. `notify`, the default,
+keeps today's report-only behaviour.
 
 1. Refuse unless the Incus server is 7.6.0 or later (see "Depends on").
 2. Back up the custom volumes with volume snapshots or a copy. Not an instance

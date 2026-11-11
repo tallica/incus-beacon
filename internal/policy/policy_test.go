@@ -19,18 +19,42 @@ func TestDefaults(t *testing.T) {
 func TestUserKeyBeatsLabel(t *testing.T) {
 	t.Parallel()
 	p, err := Parse(map[string]string{
-		"user.beacon.image":       "example.com/a:1",
-		"user.label.beacon.image": "example.com/b:1",
-		"user.label.beacon.track": "semver",
+		"user.incus-beacon.image":       "example.com/a:1",
+		"user.label.incus-beacon.image": "example.com/b:1",
+		"user.label.incus-beacon.track": "semver",
 	}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p.Image != "example.com/a:1" {
-		t.Errorf("image %q, want the user.beacon key", p.Image)
+		t.Errorf("image %q, want the user.incus-beacon key", p.Image)
 	}
 	if p.Track != TrackSemver {
 		t.Errorf("track %q, want the label's semver", p.Track)
+	}
+}
+
+func TestLegacyNames(t *testing.T) {
+	t.Parallel()
+	cfg := map[string]string{
+		"user.incus-beacon.image":   "example.com/new:1",
+		"user.beacon.image":         "example.com/old:1",
+		"user.label.beacon.track":   "semver",
+		"user.beacon.status":        "current", // written by beacon, not a policy key
+		"user.label.beacon.unknown": "x",
+	}
+	p, err := Parse(cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Image != "example.com/new:1" || p.Track != TrackSemver {
+		t.Errorf("policy %+v, want the new image name to win and the old label read", p)
+	}
+	if got, want := strings.Join(Legacy(cfg), " "), "user.beacon.image user.label.beacon.track"; got != want {
+		t.Errorf("legacy %q, want %q", got, want)
+	}
+	if got := Legacy(map[string]string{"user.incus-beacon.track": "semver"}); got != nil {
+		t.Errorf("legacy %q with only new names", got)
 	}
 }
 
@@ -49,7 +73,7 @@ func TestWatch(t *testing.T) {
 	for _, tt := range tests {
 		cfg := map[string]string{}
 		if tt.enable != "" {
-			cfg["user.beacon.enable"] = tt.enable
+			cfg["user.incus-beacon.enable"] = tt.enable
 		}
 		p, err := Parse(cfg, tt.watchAll)
 		if err != nil {
@@ -73,7 +97,7 @@ func TestErrors(t *testing.T) {
 		{"constraint", "~>>1", "constraint"},
 	}
 	for _, tt := range tests {
-		p, err := Parse(map[string]string{"user.beacon." + tt.key: tt.value}, true)
+		p, err := Parse(map[string]string{"user.incus-beacon." + tt.key: tt.value}, true)
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s=%q: err %v, want it to mention %q", tt.key, tt.value, err, tt.want)
 		}
@@ -86,8 +110,8 @@ func TestErrors(t *testing.T) {
 func TestRegexes(t *testing.T) {
 	t.Parallel()
 	p, err := Parse(map[string]string{
-		"user.beacon.include": `^1\.`,
-		"user.beacon.exclude": `-rc`,
+		"user.incus-beacon.include": `^1\.`,
+		"user.incus-beacon.exclude": `-rc`,
 	}, true)
 	if err != nil {
 		t.Fatal(err)

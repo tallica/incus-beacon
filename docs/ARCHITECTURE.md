@@ -7,8 +7,8 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 - **Report, don't act.** v0.1 only detects newer images and records them. It
   never stops, rebuilds or recreates an instance it watches. `check` and `serve`
-  change only their own `user.beacon.*` keys; `install` and `uninstall` create
-  and remove only beacon's own instance, volume and certificate.
+  change only their own `user.incus-beacon.*` keys; `install` and `uninstall`
+  create and remove only beacon's own instance, volume and certificate.
 - **Incus is the state.** The beacon keeps no database. What it last concluded
   about an instance is stored on that instance, so a restarted or replaced
   container picks up where the last one left off. Lazyincus and the `incus` CLI
@@ -24,20 +24,20 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Components
 
-| Package             | Job                                                                                                                                 | Depends on                        |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `cmd/incus-beacon`  | Subcommand dispatch (`check`, `status`, `serve`, `version`); builds the logger and wires the packages                               | everything below                  |
-| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                        | stdlib                            |
-| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                           | zerolog                           |
-| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                       | stdlib                            |
-| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.beacon.*`, follows the event stream | Incus client, incus-compose trust |
-| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                        | Masterminds/semver                |
-| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics         | oras-go, metrics                  |
-| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                        | Masterminds/semver                |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                         | registry, semver, policy          |
-| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                         | metrics                           |
-| `internal/report`   | Table and JSON rendering of results and status rows                                                                                 | check, incus                      |
-| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                     | check, incus, metrics             |
+| Package             | Job                                                                                                                                       | Depends on                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `cmd/incus-beacon`  | Subcommand dispatch (`check`, `status`, `serve`, `version`); builds the logger and wires the packages                                     | everything below                  |
+| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                            |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                                 | zerolog                           |
+| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                            |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust |
+| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                |
+| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                  |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy          |
+| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                           |
+| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                      |
+| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics             |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
@@ -94,7 +94,7 @@ comes only as a finished "Rebuilding instance" operation, not a lifecycle event.
 Events are gathered until two seconds pass without one, then checked in the same
 goroutine as the cycles, so the two never write one instance at once. An updated
 instance is checked only when a key the check reads has changed since its last
-check (`Target.Inputs`); beacon's own `user.beacon.*` writes come back as
+check (`Target.Inputs`); beacon's own `user.incus-beacon.*` writes come back as
 `instance-updated` events, and this is what keeps them from looping. A dropped
 stream reconnects with backoff from a second up to a minute; events missed
 meanwhile wait for the next cycle. Targeted checks leave `/ready` alone. A
@@ -103,13 +103,13 @@ receives their events.
 
 ### Notifications
 
-The written `user.beacon.*` keys are the dedupe state: a change is sent only for
-an instance whose write succeeded, by comparing the keys before and after. So a
-restarted beacon never repeats a message, and nothing else needs storing. The
-cost is that a failed send is not retried; the next one comes with the next
-change. Which changes count is in [README.md](../README.md#notifications);
-recoveries stay quiet because the update or fix that caused them was someone's
-own action.
+The written `user.incus-beacon.*` keys are the dedupe state: a change is sent
+only for an instance whose write succeeded, by comparing the keys before and
+after. So a restarted beacon never repeats a message, and nothing else needs
+storing. The cost is that a failed send is not retried; the next one comes with
+the next change. Which changes count is in
+[README.md](../README.md#notifications); recoveries stay quiet because the
+update or fix that caused them was someone's own action.
 
 Full cycles and targeted checks both notify, so `--events` reports an update
 within seconds too. Every notifier gets each message in turn, with its own 30 s
@@ -123,13 +123,13 @@ Incus describes every image it pulls from a registry as
 `<registry>/<repo> (OCI)` (`client/oci_images.go`, unchanged since OCI support
 arrived in Incus 6.3). Any other OCI image was built or imported locally, so no
 registry holds its layers and no lookup could match them: it is `unknown`, with
-the reason "not pulled from a registry", unless `user.beacon.image` names a ref
-to check anyway. An image made with `incus publish`, or a pulled image exported
-and imported again, keeps no `image.*` keys, and an instance created from it is
-not an OCI instance, so it is not watched at all. Otherwise, the first source
-that yields a ref wins:
+the reason "not pulled from a registry", unless `user.incus-beacon.image` names
+a ref to check anyway. An image made with `incus publish`, or a pulled image
+exported and imported again, keeps no `image.*` keys, and an instance created
+from it is not an OCI instance, so it is not watched at all. Otherwise, the
+first source that yields a ref wins:
 
-1. `user.beacon.image`, or `user.label.beacon.image`.
+1. `user.incus-beacon.image`, or `user.label.incus-beacon.image`.
 2. `user.image_alias`, which incus-compose sets to the fully resolved ref. When
    the repository or tag in the image keys (item 4) differs from it, the
    instance was rebuilt onto another image by hand: it is `error` with "compose
@@ -194,10 +194,13 @@ Refs are normalised with Docker conventions: `nginx` becomes
   Incus `client/oci_images.go`), so a manifest digest never matches it. Incus
   picks the manifest for its own host's platform, so the beacon selects by that
   platform. A test vector read from a running instance pins this.
-- **The beacon writes only `user.beacon.*`, and only on change.** Every config
-  write emits an `instance-updated` lifecycle event, and other watchers
+- **The beacon writes only `user.incus-beacon.*`, and only on change.** Every
+  config write emits an `instance-updated` lifecycle event, and other watchers
   (lazyincus, ic-healthd, incus-compose) react to those. So there is no "last
-  checked" key; that value lives in memory and on `/ready`.
+  checked" key; that value lives in memory and on `/ready`. The one exception is
+  the move from the pre-0.5 `user.beacon.*` names: an instance still holding
+  them is written once, with the same values under the new names, so the dedupe
+  state and `since` carry over rather than reading as never checked.
 - **Writes touch the instance's local config, never the expanded config.**
   Writing the expanded config would copy profile keys onto the instance. Writes
   are guarded by the instance ETag and retried once on a conflict, and wait
@@ -205,6 +208,6 @@ Refs are normalised with Docker conventions: `nginx` becomes
   right after a launch.
 - **Logs go to stderr and reports to stdout,** so `check --format json` can be
   piped. Credentials, trust tokens and private keys are never logged.
-- **A failed check keeps the last known `user.beacon.latest`.** It sets
+- **A failed check keeps the last known `user.incus-beacon.latest`.** It sets
   `status=error` and an error reason, so a flaky registry never hides an update
   that was already found.
