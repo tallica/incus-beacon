@@ -47,7 +47,9 @@ func fixture() *fakeIncus {
 	return &fakeIncus{
 		instances: []api.Instance{
 			instance("default", "web", oci(map[string]string{
-				"user.image_alias": "docker.io/library/nginx:1.27",
+				"user.image_alias":  "docker.io/library/nginx:1.27",
+				"image.description": "docker.io/library/nginx (OCI)",
+				"image.id":          "library/nginx:1.28",
 			}), nil),
 			instance("default", "db", oci(map[string]string{"volatile.base_image": fpPostgres}), nil),
 			instance("default", "db2", oci(map[string]string{"volatile.base_image": fpPostgres}), nil),
@@ -121,6 +123,9 @@ func TestTargetsAllProjects(t *testing.T) {
 		if tg.Ref != r.ref || tg.RefSource != r.from {
 			t.Errorf("%s: ref %q from %q, want %q from %q", r.name, tg.Ref, tg.RefSource, r.ref, r.from)
 		}
+	}
+	if w := byName["default/web"]; w.ImageRef != "docker.io/library/nginx:1.28" {
+		t.Errorf("default/web: image ref %q, want the image keys' tag beside the compose alias", w.ImageRef)
 	}
 	if b := byName["apps/built"]; !b.Local || b.Arch != "aarch64" {
 		t.Errorf("apps/built: local %t, arch %q; want local, arch from the instance", b.Local, b.Arch)

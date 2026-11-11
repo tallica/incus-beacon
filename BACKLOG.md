@@ -14,12 +14,6 @@ not work. An idea that needs more than a paragraph gets its own file in
       lazyincus instance and image panels, and leave `user.beacon.*` out of its
       config fingerprint as `user.healthcheck.*` already is, so beacon writes
       don't read as drift.
-- [ ] **Report compose drift instead of a false update** — an incus-compose
-      instance rebuilt by hand onto another tag keeps `user.image_alias` at the
-      compose file's tag, so beacon tracks that tag, sees other layers and
-      reports a digest update back to it. When `image.id` and the alias tag
-      differ, say so instead: the next `incus-compose up --pull always`
-      recreates the instance on the file's tag.
 
 ## Later
 

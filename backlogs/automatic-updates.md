@@ -20,8 +20,8 @@ Only instances incus-beacon is the sole owner of: those created with
 the desired state and incus-beacon can't change that file:
 
 - incus-compose keeps `user.image_alias` at the file's tag, so after a rebuild
-  onto a newer tag incus-beacon tracks the old tag again and reports a false
-  digest update back to it (verified).
+  onto a newer tag the instance reads as
+  [compose drift](../docs/runbooks/compose-drift.md) until the file changes.
 - `incus-compose up --pull always` then deletes the instance and recreates it on
   the file's tag, a silent downgrade (verified with incus-compose 1.3.5).
 

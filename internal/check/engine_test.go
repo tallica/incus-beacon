@@ -185,6 +185,47 @@ func TestDedupeAndCache(t *testing.T) {
 	}
 }
 
+func TestComposeDrift(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.set("docker.io/library/nginx:1.28", head1, fpOld)
+	compose := func(name, imageRef, track string) incus.Target {
+		tg := target(name, "docker.io/library/nginx:1.28", fpOld, track)
+		tg.RefSource, tg.ImageRef = incus.RefFromCompose, imageRef
+		return tg
+	}
+	updateSource := target("source", "docker.io/library/nginx:1.28", fpOld, "")
+	updateSource.RefSource, updateSource.ImageRef = incus.RefFromUpdateSource, "docker.io/library/nginx:1.29"
+
+	res := run(t, f,
+		compose("same", "docker.io/library/nginx:1.28", ""),
+		compose("mirror", "mirror.example.com/library/nginx:1.28", ""),
+		compose("nokeys", "", ""),
+		compose("retagged", "docker.io/library/nginx:1.29", policy.TrackSemver),
+		compose("moved", "docker.io/example/nginx:1.28", ""),
+		updateSource,
+	)
+	want := []struct {
+		status Status
+		reason string
+	}{
+		{Current, ""},
+		{Current, ""},
+		{Current, ""},
+		{Error, "compose drift: runs 1.29, compose file has 1.28"},
+		{Error, "compose drift: runs example/nginx:1.28, compose file has library/nginx:1.28"},
+		{Current, ""},
+	}
+	for i, w := range want {
+		if res[i].Status != w.status || res[i].Reason != w.reason || res[i].Latest != "" {
+			t.Errorf("%s: %s %q latest %q, want %s %q", res[i].Target.Instance, res[i].Status, res[i].Reason, res[i].Latest, w.status, w.reason)
+		}
+	}
+	if n := f.count("tags"); n != 0 {
+		t.Errorf("%d tag lists fetched for a drifted semver instance, want 0", n)
+	}
+}
+
 func TestSettledWithoutRegistry(t *testing.T) {
 	t.Parallel()
 	f := newFake()

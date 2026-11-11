@@ -149,12 +149,32 @@ func prepare(r *Result) (plan, bool) {
 		r.Status, r.Reason = Unknown, "pinned by digest"
 		return plan{}, false
 	}
+	if reason := composeDrift(t, ref); reason != "" {
+		r.Status, r.Reason = Error, reason
+		return plan{}, false
+	}
 	platform, err := registry.PlatformFor(t.Arch)
 	if err != nil {
 		r.Status, r.Reason = Error, err.Error()
 		return plan{}, false
 	}
 	return plan{target: t, ref: ref, platform: platform, result: r}, true
+}
+
+// composeDrift follows docs/ARCHITECTURE.md#image-ref-resolution.
+func composeDrift(t incus.Target, ref registry.Ref) string {
+	if t.RefSource != incus.RefFromCompose || t.ImageRef == "" {
+		return ""
+	}
+	got, err := registry.ParseRef(t.ImageRef)
+	if err != nil || (got.Repository == ref.Repository && got.Tag == ref.Tag) {
+		return ""
+	}
+	runs, want := got.Tag, ref.Tag
+	if got.Repository != ref.Repository {
+		runs, want = got.Repository+":"+got.Tag, ref.Repository+":"+ref.Tag
+	}
+	return "compose drift: runs " + runs + ", compose file has " + want
 }
 
 func keyOf(p plan) lookupKey {

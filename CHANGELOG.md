@@ -19,6 +19,11 @@ get an entry.
   tag, so it reports newer releases of itself; `--track digest` keeps the old
   behaviour.
 
+### Fixed
+
+- An incus-compose instance rebuilt by hand onto another tag now reads "compose
+  drift", not an update back to the compose file's tag.
+
 ## [0.4.0] - 2026-11-07
 
 ### Added

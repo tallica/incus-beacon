@@ -37,6 +37,7 @@ type Target struct {
 	BaseImage string
 	Ref       string
 	RefSource string
+	ImageRef  string // from the image keys, as launched or last rebuilt
 	Local     bool
 	Policy    policy.Policy
 	PolicyErr error
@@ -117,6 +118,7 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 		PolicyErr: polErr,
 		Beacon:    readBeacon(inst.Config),
 		Inputs:    inputs(inst),
+		ImageRef:  imageKeysRef(inst.ExpandedConfig),
 	}
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
 	return t, true

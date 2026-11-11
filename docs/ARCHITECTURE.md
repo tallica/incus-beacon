@@ -130,7 +130,12 @@ not an OCI instance, so it is not watched at all. Otherwise, the first source
 that yields a ref wins:
 
 1. `user.beacon.image`, or `user.label.beacon.image`.
-2. `user.image_alias`, which incus-compose sets to the fully resolved ref.
+2. `user.image_alias`, which incus-compose sets to the fully resolved ref. When
+   the repository or tag in the image keys (item 4) differs from it, the
+   instance was rebuilt onto another image by hand: it is `error` with "compose
+   drift", not checked, since the compose file's ref would report a false update
+   back to it. Registry hosts are not compared, as a mirror can name the same
+   image differently.
 3. The `update_source` (server and alias) of the instance's image record, looked
    up once per `volatile.base_image` in the instance's project. Incus prunes
    cached images, so this record is often gone.
