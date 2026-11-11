@@ -272,19 +272,29 @@ func TestInstallFlags(t *testing.T) {
 	if err != nil || cfg.Uninstall.Name != "b" {
 		t.Errorf("uninstall: %+v, %v", cfg.Uninstall, err)
 	}
+	cfg, err = parse(t, nil, CmdUpgrade, "--name", "b", "--force")
+	if u := cfg.Upgrade; err != nil || u.Name != "b" || !u.Force || u.Wait != 2*time.Minute || u.Image != "" {
+		t.Errorf("upgrade: %+v, %v", u, err)
+	}
+	if _, err := parse(t, nil, CmdUpgrade, "--wait", "0s"); !errors.Is(err, ErrUsage) {
+		t.Errorf("upgrade --wait 0s: err %v, want a usage error", err)
+	}
 }
 
 func TestRemoteProject(t *testing.T) {
 	t.Parallel()
-	for _, cmd := range []string{CmdInstall, CmdUninstall} {
+	for _, cmd := range []string{CmdInstall, CmdUpgrade, CmdUninstall} {
 		cfg, err := parse(t, nil, cmd, "--remote", "r:apps")
 		if err != nil {
 			t.Fatalf("%s: %v", cmd, err)
 		}
 		var c Common
-		if cfg.Install != nil {
+		switch {
+		case cfg.Install != nil:
 			c = cfg.Install.Common
-		} else {
+		case cfg.Upgrade != nil:
+			c = cfg.Upgrade.Common
+		default:
 			c = cfg.Uninstall.Common
 		}
 		if c.Remote != "r" || c.RemoteProject != "apps" {

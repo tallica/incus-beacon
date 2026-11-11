@@ -71,6 +71,14 @@ joined, then removes the spent token file. `incus-beacon uninstall` removes the
 instance, its volume and its certificate, finding the instance in whichever
 project it is in.
 
+When the instance reports a newer release of itself, install that release of the
+CLI and run `incus-beacon upgrade --remote <remote>`. It rebuilds the instance
+from the image `install` would pick, or `--image`, keeping its config, volume
+and certificate, and waits up to `--wait` (2m) for `/ready`. If that never
+answers, it rebuilds the instance back onto the image it ran before. It refuses
+an older version tag without `--force`, and an instance with snapshots, which
+Incus can't rebuild.
+
 Check it: `incus exec incus-beacon -- wget -q -O - http://127.0.0.1:9153/ready`,
 or `curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
 network, such as the Incus host. Add `--project <project>` to `incus exec` when
@@ -167,6 +175,7 @@ incus-beacon <command> [flags]
 | `status`    | Prints what is recorded on the instances, without asking any registry                                    |
 | `serve`     | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` `/metrics` |
 | `install`   | Creates a `serve` instance on Incus that joins with a trust token                                        |
+| `upgrade`   | Rebuilds that instance on a newer image, rolling back if it isn't ready                                  |
 | `uninstall` | Removes that instance, its volume and its certificate                                                    |
 | `version`   | Prints the version                                                                                       |
 

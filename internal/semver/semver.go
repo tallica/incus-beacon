@@ -52,7 +52,7 @@ func validSuffix(s string) bool {
 	return s[0] == '-' || s[0] == '_' || s[0] == '+'
 }
 
-func (v Version) sameShape(o Version) bool {
+func (v Version) SameShape(o Version) bool {
 	return v.Prefix == o.Prefix && v.Suffix == o.Suffix && len(v.Parts) == len(o.Parts)
 }
 
@@ -80,7 +80,7 @@ func Newest(current string, tags []string, f Filter) (newest string, ok bool) {
 	best := cur
 	for _, t := range tags {
 		v, ok := Parse(t)
-		if !ok || !cur.sameShape(v) || !best.Less(v) {
+		if !ok || !cur.SameShape(v) || !best.Less(v) {
 			continue
 		}
 		if f.Include != nil && !f.Include.MatchString(t) {

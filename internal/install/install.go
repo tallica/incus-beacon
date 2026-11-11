@@ -205,18 +205,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string, log zerolog.Logger) error {
 	var errs []error
 	pool := ""
-	inst, _, err := srv.GetInstance(name)
-	if notFound(err) {
-		p, perr := projectOf(srv, name)
-		if perr != nil {
-			return perr
-		}
-		if p != "" {
-			log.Info().Str("instance", name).Str("project", p).Msg("found in another project")
-			srv = srv.UseProject(p)
-			inst, _, err = srv.GetInstance(name)
-		}
-	}
+	srv, inst, err := findInstance(srv, name, log)
 	switch {
 	case err == nil:
 		pool = inst.Devices[stateDev]["pool"]
@@ -264,6 +253,25 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// findInstance also searches other projects; the server it returns uses the instance's.
+func findInstance(srv incusclient.InstanceServer, name string, log zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+	inst, _, err := srv.GetInstance(name)
+	if !notFound(err) {
+		return srv, inst, err
+	}
+	p, perr := projectOf(srv, name)
+	if perr != nil {
+		return srv, nil, perr
+	}
+	if p == "" {
+		return srv, nil, err
+	}
+	log.Info().Str("instance", name).Str("project", p).Msg("found in another project")
+	srv = srv.UseProject(p)
+	inst, _, err = srv.GetInstance(name)
+	return srv, inst, err
 }
 
 // projectOf finds the project of the instance called name, "" when there is none.

@@ -18,6 +18,8 @@ get an entry.
 - `install` now makes the instance track `semver` when its image has a version
   tag, so it reports newer releases of itself; `--track digest` keeps the old
   behaviour.
+- `upgrade` rebuilds the instance `install` created on a newer release, keeping
+  its settings, and rolls back if it doesn't come up ready.
 - Notification payloads say whether an update is a newer tag or a rebuilt one,
   and name an incus-compose instance's project and service.
 
