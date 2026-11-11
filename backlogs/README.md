@@ -9,6 +9,6 @@ When an idea is done, delete its file and its BACKLOG line; the commit and
 CHANGELOG are the history. When it is rejected, delete the file and record it
 under "Not planned" in [BACKLOG.md](../BACKLOG.md) with the reason.
 
-| Idea                                         | Summary                                                    |
-| -------------------------------------------- | ---------------------------------------------------------- |
-| [automatic-updates.md](automatic-updates.md) | Back up, rebuild or recreate on a newer image, health-gate |
+| Idea                                         | Summary                                                   |
+| -------------------------------------------- | --------------------------------------------------------- |
+| [automatic-updates.md](automatic-updates.md) | Back up, rebuild on a newer image, health-gate, roll back |

@@ -14,6 +14,12 @@ not work. An idea that needs more than a paragraph gets its own file in
       lazyincus instance and image panels, and leave `user.beacon.*` out of its
       config fingerprint as `user.healthcheck.*` already is, so beacon writes
       don't read as drift.
+- [ ] **Report compose drift instead of a false update** — an incus-compose
+      instance rebuilt by hand onto another tag keeps `user.image_alias` at the
+      compose file's tag, so beacon tracks that tag, sees other layers and
+      reports a digest update back to it. When `image.id` and the alias tag
+      differ, say so instead: the next `incus-compose up --pull always`
+      recreates the instance on the file's tag.
 
 ## Later
 
@@ -21,8 +27,17 @@ not work. An idea that needs more than a paragraph gets its own file in
       that puts a trust token into `/run/secrets/token`; beacon already reads
       that path through `--token-file`.
 - [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
-      or recreate on the newer image, health-gate, and roll back; opt-in per
-      instance.
+      on the newer image, health-gate, and roll back; opt-in per instance, never
+      for incus-compose instances, and only on Incus 7.6 or later.
+- [ ] **Updating compose stacks** — a README section on the two paths that
+      change the compose file rather than the instance: Renovate's
+      `docker-compose` manager opening PRs for newer tags, or beacon's webhook
+      starting a Semaphore UI task (or a CI job) that runs `incus-compose up`.
+      Both untested with incus-compose (to verify).
+- [ ] **Richer webhook payload** — `kind` (`digest` or `tag`), the `current`
+      ref, and `compose_project` and `compose_service` from the incus-compose
+      labels, so a task runner can automate digest updates and route tag updates
+      to a PR. Additive; no sender changes.
 - [ ] **Per-registry credentials and mirrors in instance keys** — for setups
       where one docker `config.json` isn't enough.
 - [ ] **Cooldown** — report a new tag only once it is a set age, so a broken
@@ -33,6 +48,14 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Not planned
 
+- **Rebuilding incus-compose instances** — the compose file is the desired
+  state; why is in [automatic-updates.md](backlogs/automatic-updates.md#scope)
+  (2026-11-07).
+- **beacon editing compose files** — beacon has no access to the repo or host
+  that holds them, and Renovate already does this with review in git
+  (2026-11-07).
+- **Komodo as the update runner** — it drives Docker and `docker compose`
+  through its Periphery agent, with no Incus support found (2026-11-07).
 - **shoutrrr for notifications** — roughly doubles the binary (about 13 to 25
   MB) and adds many linked modules; built-in senders plus `--notify-command`
   cover the rest. Go plugins can't load into a static `CGO_ENABLED=0` binary, so
