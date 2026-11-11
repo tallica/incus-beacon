@@ -13,11 +13,7 @@ get an entry.
 
 ## [Unreleased]
 
-### Changed
-
-- **Breaking:** instance keys are now `user.incus-beacon.*` and
-  `user.label.incus-beacon.*`; the old `user.beacon.*` names are still read,
-  with a warning, until 0.7.
+## [0.5.0] - 2026-11-11
 
 ### Added
 
@@ -28,6 +24,17 @@ get an entry.
   its settings, and rolls back if it doesn't come up ready.
 - Notification payloads say whether an update is a newer tag or a rebuilt one,
   and name an incus-compose instance's project and service.
+
+### Changed
+
+- **Breaking:** instance keys are now `user.incus-beacon.*` and
+  `user.label.incus-beacon.*`; status keys move to the new names on an
+  instance's next write.
+
+### Deprecated
+
+- The old `user.beacon.*` and `user.label.beacon.*` names, still read with a
+  warning until 0.7.
 
 ### Fixed
 
@@ -118,7 +125,8 @@ get an entry.
 - Release archives carry THIRD_PARTY_NOTICES.md with the licence and NOTICE text
   of every module the binary links, not only direct dependencies.
 
-[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.4.0...master
+[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.5.0...master
+[0.5.0]: https://github.com/tallica/incus-beacon/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/tallica/incus-beacon/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tallica/incus-beacon/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tallica/incus-beacon/compare/v0.1.2...v0.2.0
