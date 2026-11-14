@@ -140,7 +140,10 @@ first source that yields a ref wins:
    image differently.
 3. The `update_source` (server and alias) of the instance's image record, looked
    up once per `volatile.base_image` in the instance's project. Incus prunes
-   cached images, so this record is often gone.
+   cached images, so this record is often gone. It can also name a tag other
+   than the one pulled: Incus keeps one record per build, so pulling a tag whose
+   build it already holds under another reuses that record, tag and all (seen on
+   Incus 7.6). Item 1 then names the tag that was asked for.
 4. The image keys Incus copies onto the instance: `image.description` holds
    `<registry>/<repo> (OCI)` and `image.id` holds `<repo>:<tag>` as launched. An
    `image.id` pinned by digest has no tag to track and gives no ref.

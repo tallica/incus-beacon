@@ -213,14 +213,14 @@ and `user.label.beacon.*`; those are still read, with a warning, until 0.7, and
 the status keys below move to the new names the next time an instance is
 written.
 
-| Key                            | Values                       | Meaning                                                                  |
-| ------------------------------ | ---------------------------- | ------------------------------------------------------------------------ |
-| `user.incus-beacon.enable`     | `true`, `false`              | Watch this instance or not, whatever `--watch` says                      |
-| `user.incus-beacon.image`      | an image ref                 | The ref to track, when Incus doesn't know it or the image is local       |
-| `user.incus-beacon.track`      | `digest` (default), `semver` | `digest` reports a rebuilt tag; `semver` also reports newer version tags |
-| `user.incus-beacon.constraint` | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                             |
-| `user.incus-beacon.include`    | a regex                      | With `semver`: only tags that match                                      |
-| `user.incus-beacon.exclude`    | a regex                      | With `semver`: no tags that match                                        |
+| Key                            | Values                       | Meaning                                                                                                  |
+| ------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `user.incus-beacon.enable`     | `true`, `false`              | Watch this instance or not, whatever `--watch` says                                                      |
+| `user.incus-beacon.image`      | an image ref                 | The ref to track, when Incus doesn't know it, names another tag of the same build, or the image is local |
+| `user.incus-beacon.track`      | `digest` (default), `semver` | `digest` reports a rebuilt tag; `semver` also reports newer version tags                                 |
+| `user.incus-beacon.constraint` | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                                                             |
+| `user.incus-beacon.include`    | a regex                      | With `semver`: only tags that match                                                                      |
+| `user.incus-beacon.exclude`    | a regex                      | With `semver`: no tags that match                                                                        |
 
 `semver` keeps the shape of the current tag: `1.27.3-alpine` only moves to newer
 `x.y.z-alpine` tags, and `1.27` only to newer `x.y` tags. A tag that is not a
