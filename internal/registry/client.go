@@ -89,6 +89,7 @@ type Image struct {
 	Digest         string
 	ManifestDigest string
 	Fingerprint    string
+	Config         ocispec.Descriptor
 }
 
 // Head uses HEAD, which Docker Hub doesn't count against its pull limit.
@@ -146,7 +147,30 @@ func (c *Client) Resolve(ctx context.Context, ref Ref, platform Platform) (Image
 		layers = append(layers, l.Digest.String())
 	}
 	img.Fingerprint = Fingerprint(layers)
+	img.Config = manifest.Config
 	return img, nil
+}
+
+// Created reads the image config's created time; zero when it has none.
+func (c *Client) Created(ctx context.Context, ref Ref, img Image) (time.Time, error) {
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	repo := c.repo(ref)
+	_, body, err := fetch(func() (ocispec.Descriptor, io.ReadCloser, error) {
+		rc, err := repo.Blobs().Fetch(ctx, img.Config)
+		return img.Config, rc, err
+	})
+	if err != nil {
+		return time.Time{}, c.classify(ctx, ref, err)
+	}
+	var config ocispec.Image
+	if err := json.Unmarshal(body, &config); err != nil {
+		return time.Time{}, fmt.Errorf("%s: config: %w", ref, err)
+	}
+	if config.Created == nil {
+		return time.Time{}, nil
+	}
+	return *config.Created, nil
 }
 
 var errEnoughTags = errors.New("enough tags")

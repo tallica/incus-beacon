@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 
 	mmsemver "github.com/Masterminds/semver/v3"
 
@@ -34,6 +35,9 @@ type Policy struct {
 	Constraint *mmsemver.Constraints
 	Include    *regexp.Regexp
 	Exclude    *regexp.Regexp
+	// HasCooldown tells an explicit 0, which turns a default off, from unset.
+	Cooldown    time.Duration
+	HasCooldown bool
 }
 
 // Key falls back to the incus-compose label form, then to the old names.
@@ -85,6 +89,14 @@ func Parse(config map[string]string, watchAll bool) (Policy, error) {
 			errs = append(errs, err)
 		} else {
 			p.Constraint = c
+		}
+	}
+	if v := Key(config, "cooldown"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			errs = append(errs, fmt.Errorf("cooldown %q: not a duration such as 48h", v))
+		} else {
+			p.Cooldown, p.HasCooldown = d, true
 		}
 	}
 

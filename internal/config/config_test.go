@@ -31,7 +31,7 @@ func TestDefaultsPerCommand(t *testing.T) {
 	if s.LogColor != ColorAuto {
 		t.Errorf("log color %q, want auto", s.LogColor)
 	}
-	if s.Watch != WatchAll || s.Concurrency != 4 || s.Timeout != 30*time.Second || s.LogLevel != "info" {
+	if s.Watch != WatchAll || s.Concurrency != 4 || s.Timeout != 30*time.Second || s.Cooldown != 0 || s.LogLevel != "info" {
 		t.Errorf("common defaults: %+v", s.Common)
 	}
 
@@ -46,7 +46,7 @@ func TestDefaultsPerCommand(t *testing.T) {
 
 func TestFlagOverridesEnv(t *testing.T) {
 	t.Parallel()
-	vars := map[string]string{"BEACON_LOG_LEVEL": "warn", "BEACON_INTERVAL": "2h"}
+	vars := map[string]string{"BEACON_LOG_LEVEL": "warn", "BEACON_INTERVAL": "2h", "BEACON_COOLDOWN": "48h"}
 	cfg, err := parse(t, vars, CmdServe, "--log-level", "debug")
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +56,9 @@ func TestFlagOverridesEnv(t *testing.T) {
 	}
 	if cfg.Serve.Interval != 2*time.Hour {
 		t.Errorf("interval %s, want the variable's 2h", cfg.Serve.Interval)
+	}
+	if cfg.Serve.Cooldown != 48*time.Hour {
+		t.Errorf("cooldown %s, want the variable's 48h", cfg.Serve.Cooldown)
 	}
 }
 
@@ -123,6 +126,7 @@ func TestUsageErrors(t *testing.T) {
 		{"bad colour", nil, []string{CmdCheck, "--log-color", "loud"}, "log-color"},
 		{"bad format", nil, []string{CmdStatus, "--format", "yaml"}, "format"},
 		{"bad watch", nil, []string{CmdCheck, "--watch", "some"}, "watch"},
+		{"negative cooldown", nil, []string{CmdCheck, "--cooldown", "-1h"}, "cooldown"},
 		{"zero concurrency", nil, []string{CmdCheck, "--concurrency", "0"}, "concurrency"},
 		{"cert without key", nil, []string{CmdCheck, "--client-cert", "c.crt"}, "together"},
 		{"remote and url", nil, []string{CmdCheck, "--remote", "r", "--incus", "https://example.com:8443"}, "mutually exclusive"},

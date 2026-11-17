@@ -68,6 +68,33 @@ func TestResolveIndex(t *testing.T) {
 	}
 }
 
+func TestCreated(t *testing.T) {
+	t.Parallel()
+	f := newFakeRegistry(t)
+	at := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	dated, undated := configBlob(t, at), configBlob(t, time.Time{})
+	f.add("example/app", "", dated)
+	f.add("example/app", "", undated)
+	f.add("example/app", "1.2", withConfig(t, dated, layerA))
+	f.add("example/app", "1.3", withConfig(t, undated, layerB))
+	c := newTestClient(t, "")
+
+	for tag, want := range map[string]time.Time{"1.2": at, "1.3": {}} {
+		ref := mustRef(t, f.host+"/example/app:"+tag)
+		img, err := c.Resolve(t.Context(), ref, amd64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := c.Created(t.Context(), ref, img)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.Equal(want) {
+			t.Errorf("%s: created %s, want %s", tag, got, want)
+		}
+	}
+}
+
 func TestResolveDockerManifest(t *testing.T) {
 	t.Parallel()
 	f := newFakeRegistry(t)

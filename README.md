@@ -196,6 +196,7 @@ often needed:
 | `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
 | `--format`                                 | `table` or `json`, for `check` and `status`                                 |
 | `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`     |
+| `--cooldown`                               | Report an image only once it is this old, e.g. `48h`; off by default        |
 | `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                         |
 | `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default  |
 | `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)       |
@@ -221,10 +222,19 @@ written.
 | `user.incus-beacon.constraint` | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                                                             |
 | `user.incus-beacon.include`    | a regex                      | With `semver`: only tags that match                                                                      |
 | `user.incus-beacon.exclude`    | a regex                      | With `semver`: no tags that match                                                                        |
+| `user.incus-beacon.cooldown`   | e.g. `48h`, `168h`, `0`      | Report an image only once it is this old; overrides `--cooldown`, and `0` turns it off                   |
 
 `semver` keeps the shape of the current tag: `1.27.3-alpine` only moves to newer
 `x.y.z-alpine` tags, and `1.27` only to newer `x.y` tags. A tag that is not a
 version, such as `latest`, needs `digest`.
+
+A cooldown keeps a release that is pulled or patched within hours out of
+reports. The age is the image config's `created` time. A rebuilt tag is reported
+once the rebuild is that old. Under `semver`, a newer tag still inside the
+cooldown is passed over for the newest one old enough, and `check` notes the
+held tag; when none is old enough the status stays `current`. An image with no
+`created` time, or the 1970 epoch that reproducible builds set, has an unknown
+age and is never held.
 
 incus-beacon writes these, and never any other key:
 

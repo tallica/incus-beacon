@@ -4,6 +4,7 @@ package semver
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 
 	mmsemver "github.com/Masterminds/semver/v3"
@@ -73,14 +74,23 @@ type Filter struct {
 
 // Newest returns "" when current is newest; ok is false if it isn't a version.
 func Newest(current string, tags []string, f Filter) (newest string, ok bool) {
+	c, ok := Candidates(current, tags, f)
+	if len(c) == 0 {
+		return "", ok
+	}
+	return c[0], true
+}
+
+// Candidates lists the tags above current that pass f, newest first.
+func Candidates(current string, tags []string, f Filter) ([]string, bool) {
 	cur, ok := Parse(current)
 	if !ok {
-		return "", false
+		return nil, false
 	}
-	best := cur
+	var found []Version
 	for _, t := range tags {
 		v, ok := Parse(t)
-		if !ok || !cur.SameShape(v) || !best.Less(v) {
+		if !ok || !cur.SameShape(v) || !cur.Less(v) {
 			continue
 		}
 		if f.Include != nil && !f.Include.MatchString(t) {
@@ -92,12 +102,22 @@ func Newest(current string, tags []string, f Filter) (newest string, ok bool) {
 		if f.Constraint != nil && !f.Constraint.Check(v.padded) {
 			continue
 		}
-		best = v
+		found = append(found, v)
 	}
-	if best.Tag == cur.Tag {
-		return "", true
+	slices.SortStableFunc(found, func(a, b Version) int {
+		switch {
+		case b.Less(a):
+			return -1
+		case a.Less(b):
+			return 1
+		}
+		return 0
+	})
+	out := make([]string, len(found))
+	for i, v := range found {
+		out[i] = v.Tag
 	}
-	return best.Tag, true
+	return out, true
 }
 
 func ParseConstraint(s string) (*mmsemver.Constraints, error) {
