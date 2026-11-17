@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -92,6 +93,10 @@ func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/v2/")
+	if repo, d, isBlob := strings.Cut(rest, "/blobs/"); isBlob {
+		f.serveBlob(w, r, repo, d)
+		return
+	}
 	repo, ref, isManifest := strings.Cut(rest, "/manifests/")
 	if !isManifest {
 		repo, _, _ = strings.Cut(rest, "/tags/list")
@@ -131,6 +136,22 @@ func (f *fakeRegistry) serveManifest(w http.ResponseWriter, r *http.Request, rep
 	}
 }
 
+// serveBlob serves blobs stored with add under their digest alone.
+func (f *fakeRegistry) serveBlob(w http.ResponseWriter, r *http.Request, repo, d string) {
+	b, ok := f.manifests[repo][d]
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"errors":[{"code":"BLOB_UNKNOWN"}]}`)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", strconv.Itoa(len(b.body)))
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(b.body)
+	}
+}
+
 // serveTags pages two tags at a time, as registries may.
 func (f *fakeRegistry) serveTags(w http.ResponseWriter, r *http.Request, repo string) {
 	tags := f.tags[repo]
@@ -164,6 +185,29 @@ func manifestBlob(t *testing.T, mediaType string, layers ...string) blob {
 		m.Layers = append(m.Layers, ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digestOf(l), Size: 1})
 	}
 	return newBlob(t, mediaType, m)
+}
+
+// configBlob is an image config; a zero created leaves the field out.
+func configBlob(t *testing.T, created time.Time) blob {
+	t.Helper()
+	var c ocispec.Image
+	if !created.IsZero() {
+		c.Created = &created
+	}
+	return newBlob(t, ocispec.MediaTypeImageConfig, c)
+}
+
+// withConfig is a manifest whose config is cfg.
+func withConfig(t *testing.T, cfg blob, layers ...string) blob {
+	t.Helper()
+	m := ocispec.Manifest{MediaType: ocispec.MediaTypeImageManifest, Config: ocispec.Descriptor{
+		MediaType: cfg.mediaType, Digest: digestOf(cfg.digest), Size: int64(len(cfg.body)),
+	}}
+	m.SchemaVersion = 2
+	for _, l := range layers {
+		m.Layers = append(m.Layers, ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digestOf(l), Size: 1})
+	}
+	return newBlob(t, m.MediaType, m)
 }
 
 func indexBlob(t *testing.T, mediaType string, entries map[string]blob) blob {

@@ -34,8 +34,6 @@ not work. An idea that needs more than a paragraph gets its own file in
       Both untested with incus-compose (to verify).
 - [ ] **Per-registry credentials and mirrors in instance keys** — for setups
       where one docker `config.json` isn't enough.
-- [ ] **Cooldown** — report a new tag only once it is a set age, so a broken
-      release pulled within hours never triggers an update.
 - [ ] **Changelog links in notifications** — built from the
       `org.opencontainers.image.source` and version labels, so a notification
       says what changed.

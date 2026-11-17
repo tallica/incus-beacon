@@ -65,6 +65,7 @@ type Registry struct {
 	RegistryAuthFile string
 	Concurrency      int
 	Timeout          time.Duration
+	Cooldown         time.Duration
 }
 
 type Check struct {
@@ -356,6 +357,7 @@ func bindRegistry(fs *flag.FlagSet, c *Registry) {
 	fs.StringVar(&c.RegistryAuthFile, "registry-auth-file", "", "docker config.json with registry credentials")
 	fs.IntVar(&c.Concurrency, "concurrency", 4, "registry lookups run at once")
 	fs.DurationVar(&c.Timeout, "timeout", 30*time.Second, "timeout for each registry call")
+	fs.DurationVar(&c.Cooldown, "cooldown", 0, "report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
 }
 
 func (c *Common) validate() error {
@@ -395,6 +397,9 @@ func (c *Registry) validate() error {
 	}
 	if c.Timeout <= 0 {
 		errs = append(errs, fmt.Errorf("timeout %s: must be positive", c.Timeout))
+	}
+	if c.Cooldown < 0 {
+		errs = append(errs, fmt.Errorf("cooldown %s: must not be negative", c.Cooldown))
 	}
 	return errors.Join(errs...)
 }

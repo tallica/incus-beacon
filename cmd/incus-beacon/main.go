@@ -132,7 +132,7 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 		return err
 	}
 	warnLegacy(logger, targets, nil)
-	results := check.New(reg, c.Concurrency, logger).Run(ctx, targets)
+	results := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown}, logger).Run(ctx, targets)
 	failed := 0
 	if c.Write {
 		var written int
@@ -187,7 +187,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	if err != nil {
 		return err
 	}
-	engine := check.New(reg, c.Concurrency, logger)
+	engine := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown}, logger)
 	sender, err := notify.New(notify.Options{
 		URLs:    c.NotifyURLs,
 		URLFile: c.NotifyURLFile,

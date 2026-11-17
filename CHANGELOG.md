@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- A cooldown, `--cooldown` or `user.incus-beacon.cooldown`, reports an image
+  only once it is that old, so a release pulled within hours is never reported.
+
 ## [0.5.1] - 2026-11-11
 
 ### Fixed

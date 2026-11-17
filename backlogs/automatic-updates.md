@@ -56,8 +56,6 @@ keeps today's report-only behaviour.
 
 - The maintenance window format.
 - Whether rollback is automatic or only reported.
-- Whether [cooldown](../BACKLOG.md) lands first; it matters more once a report
-  triggers an action.
 
 ## Depends on
 

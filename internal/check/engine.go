@@ -29,6 +29,7 @@ type Registry interface {
 	Head(ctx context.Context, ref registry.Ref) (string, error)
 	Resolve(ctx context.Context, ref registry.Ref, p registry.Platform) (registry.Image, error)
 	Tags(ctx context.Context, ref registry.Ref) ([]string, error)
+	Created(ctx context.Context, ref registry.Ref, img registry.Image) (time.Time, error)
 }
 
 type Result struct {
@@ -39,22 +40,34 @@ type Result struct {
 	Reason  string
 }
 
+type Options struct {
+	Concurrency int
+	// Cooldown applies to instances without a cooldown key; 0 is off.
+	Cooldown time.Duration
+}
+
 // Engine caches across runs: an unmoved HEAD digest skips the manifest GET.
 type Engine struct {
 	reg         Registry
 	concurrency int
+	cooldown    time.Duration
 	log         zerolog.Logger
+	now         func() time.Time
 
-	mu    sync.Mutex
-	cache map[lookupKey]registry.Image
+	mu      sync.Mutex
+	cache   map[lookupKey]registry.Image
+	created *memo[string, time.Time]
 }
 
-func New(reg Registry, concurrency int, log zerolog.Logger) *Engine {
+func New(reg Registry, opts Options, log zerolog.Logger) *Engine {
 	return &Engine{
 		reg:         reg,
-		concurrency: max(concurrency, 1),
+		concurrency: max(opts.Concurrency, 1),
+		cooldown:    opts.Cooldown,
 		log:         log,
+		now:         time.Now,
 		cache:       map[lookupKey]registry.Image{},
+		created:     newMemo[string, time.Time](),
 	}
 }
 
@@ -68,6 +81,9 @@ type plan struct {
 	ref      registry.Ref
 	platform registry.Platform
 	result   *Result
+	// For the cooldown: newer tags, newest first, then the rebuilt current tag.
+	candidates []string
+	rebuilt    *registry.Image
 }
 
 type digestOutcome struct {
@@ -103,8 +119,12 @@ func (e *Engine) Run(ctx context.Context, targets []incus.Target) []Result {
 	e.lookup(ctx, plans, digests, tagLists)
 
 	for i := range plans {
+		decide(&plans[i], digests[keyOf(plans[i])], tagLists[plans[i].ref.Name()])
+	}
+	e.cool(ctx, plans)
+
+	for i := range plans {
 		p := &plans[i]
-		decide(p, digests[keyOf(*p)], tagLists[p.ref.Name()])
 		e.log.Debug().
 			Str("project", p.target.Project).Str("instance", p.target.Instance).
 			Str("ref", p.result.Current).Str("platform", p.platform.String()).
@@ -255,6 +275,7 @@ func decide(p *plan, d *digestOutcome, tags *tagsOutcome) {
 	r.Status = Current
 	if d.img.Fingerprint != p.target.BaseImage {
 		r.Status, r.Latest = UpdateAvailable, p.ref.Tag+"@"+short(d.img.Digest)
+		p.rebuilt = &d.img
 	}
 	if p.target.Policy.Track != policy.TrackSemver {
 		return
@@ -264,15 +285,110 @@ func decide(p *plan, d *digestOutcome, tags *tagsOutcome) {
 		return
 	}
 	pol := p.target.Policy
-	newest, ok := semver.Newest(p.ref.Tag, tags.tags, semver.Filter{
+	newer, ok := semver.Candidates(p.ref.Tag, tags.tags, semver.Filter{
 		Include: pol.Include, Exclude: pol.Exclude, Constraint: pol.Constraint,
 	})
 	switch {
 	case !ok:
 		r.Status, r.Latest, r.Reason = Error, "", "track=semver needs a version tag, not "+p.ref.Tag
-	case newest != "":
-		r.Status, r.Latest = UpdateAvailable, newest
+	case len(newer) > 0:
+		r.Status, r.Latest = UpdateAvailable, newer[0]
+		p.candidates = newer
 	}
+}
+
+func (e *Engine) cooldownFor(pol policy.Policy) time.Duration {
+	if pol.HasCooldown {
+		return pol.Cooldown
+	}
+	return e.cooldown
+}
+
+// cool falls back from updates younger than the cooldown to one old enough.
+func (e *Engine) cool(ctx context.Context, plans []plan) {
+	var (
+		wg     sync.WaitGroup
+		sem    = make(chan struct{}, e.concurrency)
+		images = newMemo[lookupKey, registry.Image]()
+		now    = e.now()
+	)
+	for i := range plans {
+		p := &plans[i]
+		cd := e.cooldownFor(p.target.Policy)
+		if cd <= 0 || p.result.Status != UpdateAvailable {
+			continue
+		}
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			e.coolOne(ctx, p, cd, now, images)
+		})
+	}
+	wg.Wait()
+}
+
+func (e *Engine) coolOne(ctx context.Context, p *plan, cd time.Duration, now time.Time, images *memo[lookupKey, registry.Image]) {
+	r := p.result
+	var held string
+	settle := func(status Status, latest string) {
+		r.Status, r.Latest = status, latest
+		if held != "" {
+			r.Reason = held
+		}
+	}
+	for _, tag := range p.candidates {
+		ref := p.ref
+		ref.Tag = tag
+		k := lookupKey{ref: ref.String(), platform: p.platform.String()}
+		img, err := images.do(k, func() (registry.Image, error) { return e.image(ctx, ref, p.platform, k) })
+		if err != nil {
+			r.Status, r.Latest, r.Reason = Error, "", reason(err)
+			return
+		}
+		until, err := e.ripeAt(ctx, ref, img, cd)
+		if err != nil {
+			r.Status, r.Latest, r.Reason = Error, "", reason(err)
+			return
+		}
+		if !now.Before(until) {
+			settle(UpdateAvailable, tag)
+			return
+		}
+		if held == "" {
+			held = heldReason(tag, until)
+		}
+	}
+	if p.rebuilt != nil {
+		until, err := e.ripeAt(ctx, p.ref, *p.rebuilt, cd)
+		if err != nil {
+			r.Status, r.Latest, r.Reason = Error, "", reason(err)
+			return
+		}
+		latest := p.ref.Tag + "@" + short(p.rebuilt.Digest)
+		if !now.Before(until) {
+			settle(UpdateAvailable, latest)
+			return
+		}
+		if held == "" {
+			held = heldReason(latest, until)
+		}
+	}
+	settle(Current, "")
+}
+
+// ripeAt is zero for an unknown age; reproducible builds set the epoch.
+func (e *Engine) ripeAt(ctx context.Context, ref registry.Ref, img registry.Image, cd time.Duration) (time.Time, error) {
+	created, err := e.created.do(img.Config.Digest.String(), func() (time.Time, error) {
+		return e.reg.Created(ctx, ref, img)
+	})
+	if err != nil || created.Unix() <= 0 {
+		return time.Time{}, err
+	}
+	return created.Add(cd), nil
+}
+
+func heldReason(latest string, until time.Time) string {
+	return latest + " held by cooldown until " + until.UTC().Format(time.RFC3339)
 }
 
 func reason(err error) string {
@@ -316,4 +432,41 @@ func Beacon(r Result, now time.Time) incus.Beacon {
 		b.Since = now.UTC().Format(time.RFC3339)
 	}
 	return b
+}
+
+// memo runs f once per key among concurrent callers and keeps successes.
+type memo[K comparable, V any] struct {
+	mu sync.Mutex
+	m  map[K]*memoEntry[V]
+}
+
+type memoEntry[V any] struct {
+	done chan struct{}
+	v    V
+	err  error
+}
+
+func newMemo[K comparable, V any]() *memo[K, V] {
+	return &memo[K, V]{m: map[K]*memoEntry[V]{}}
+}
+
+func (m *memo[K, V]) do(k K, f func() (V, error)) (V, error) {
+	m.mu.Lock()
+	if e, ok := m.m[k]; ok {
+		m.mu.Unlock()
+		<-e.done
+		return e.v, e.err
+	}
+	e := &memoEntry[V]{done: make(chan struct{})}
+	m.m[k] = e
+	m.mu.Unlock()
+
+	e.v, e.err = f()
+	if e.err != nil {
+		m.mu.Lock()
+		delete(m.m, k)
+		m.mu.Unlock()
+	}
+	close(e.done)
+	return e.v, e.err
 }

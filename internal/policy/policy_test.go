@@ -3,6 +3,7 @@ package policy
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaults(t *testing.T) {
@@ -95,6 +96,8 @@ func TestErrors(t *testing.T) {
 		{"include", "(", "include"},
 		{"exclude", "[", "exclude"},
 		{"constraint", "~>>1", "constraint"},
+		{"cooldown", "2d", "not a duration"},
+		{"cooldown", "-1h", "not a duration"},
 	}
 	for _, tt := range tests {
 		p, err := Parse(map[string]string{"user.incus-beacon." + tt.key: tt.value}, true)
@@ -118,5 +121,18 @@ func TestRegexes(t *testing.T) {
 	}
 	if !p.Include.MatchString("1.27") || !p.Exclude.MatchString("1.28-rc1") {
 		t.Errorf("regexes not compiled as given: %v %v", p.Include, p.Exclude)
+	}
+}
+
+func TestCooldown(t *testing.T) {
+	t.Parallel()
+	for v, want := range map[string]time.Duration{"48h": 48 * time.Hour, "0": 0} {
+		p, err := Parse(map[string]string{"user.label.incus-beacon.cooldown": v}, true)
+		if err != nil || !p.HasCooldown || p.Cooldown != want {
+			t.Errorf("cooldown=%q: %v, %v; want %s and set", v, p.Cooldown, err, want)
+		}
+	}
+	if p, _ := Parse(map[string]string{}, true); p.HasCooldown {
+		t.Error("no key, but the cooldown reads as set")
 	}
 }

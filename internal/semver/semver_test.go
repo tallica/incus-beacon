@@ -78,6 +78,14 @@ func TestNewestNotAVersion(t *testing.T) {
 	}
 }
 
+func TestCandidatesNewestFirst(t *testing.T) {
+	t.Parallel()
+	got, ok := Candidates("1.27.3", tags, Filter{Constraint: mustConstraint(t, "<2")})
+	if want := []string{"1.28.1", "1.28.0", "1.27.4"}; !ok || !slices.Equal(got, want) {
+		t.Errorf("Candidates = %q, %v; want %q", got, ok, want)
+	}
+}
+
 func mustConstraint(t *testing.T, s string) *mmsemver.Constraints {
 	t.Helper()
 	c, err := ParseConstraint(s)

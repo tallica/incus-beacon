@@ -73,8 +73,18 @@ network.
       tag above the current one. A newer tag outranks a rebuilt current tag.
    4. A current tag that isn't a version (`latest`) is an error under
       `track=semver`.
-6. **Write results.** Write status keys only where a value changed.
-7. **Notify** about the changes that were written (see
+6. **Cooldown**, only for updates where one applies (see
+   [README.md](../README.md#instance-keys)):
+   1. Walk the newer tags newest first, then the rebuilt current tag, and take
+      the first whose image is at least the cooldown old. Each costs a HEAD, the
+      manifest GETs when its digest moved, and one GET of the image config for
+      its `created` time.
+   2. Created times are cached by config digest for the life of the process,
+      since a config never changes.
+   3. A held update leaves the status `current` and writes nothing extra; the
+      held tag shows only in `check` output.
+7. **Write results.** Write status keys only where a value changed.
+8. **Notify** about the changes that were written (see
    [Notifications](#notifications)).
 
 ### Serving
