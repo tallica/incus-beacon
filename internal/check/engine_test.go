@@ -252,7 +252,7 @@ func TestComposeDrift(t *testing.T) {
 func TestSettledWithoutRegistry(t *testing.T) {
 	t.Parallel()
 	f := newFake()
-	bad := target("bad", "ghcr.io/example/app:1", fpOld, "")
+	bad := target("bad", "nginx:1.28", fpOld, "")
 	bad.PolicyErr = errors.New(`track "x": must be digest or semver`)
 	arch := target("arch", "ghcr.io/example/app:1", fpOld, "")
 	arch.Arch = "mips"
@@ -262,7 +262,7 @@ func TestSettledWithoutRegistry(t *testing.T) {
 	res := run(t, f,
 		bad,
 		target("noref", "", fpOld, ""),
-		target("nobase", "ghcr.io/example/app:1", "", ""),
+		target("nobase", "nginx:1.28", "", ""),
 		target("pinned", "ghcr.io/example/app@sha256:abc", fpOld, ""),
 		target("badref", "Not A Ref", fpOld, ""),
 		arch,
@@ -284,6 +284,14 @@ func TestSettledWithoutRegistry(t *testing.T) {
 		if res[i].Status != w.status || !strings.Contains(res[i].Reason, w.reason) {
 			t.Errorf("%s: %s %q, want %s %q", res[i].Target.Instance, res[i].Status, res[i].Reason, w.status, w.reason)
 		}
+	}
+	for _, i := range []int{0, 2} {
+		if got := res[i].Current; got != "docker.io/library/nginx:1.28" {
+			t.Errorf("%s: current %q, want the normalised ref", res[i].Target.Instance, got)
+		}
+	}
+	if got := res[4].Current; got != "Not A Ref" {
+		t.Errorf("badref: current %q, want it as given", got)
 	}
 	if n := f.count("head") + f.count("tags"); n != 0 {
 		t.Errorf("%d registry calls for targets settled locally", n)
