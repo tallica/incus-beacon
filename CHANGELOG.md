@@ -36,6 +36,9 @@ get an entry.
 
 ### Fixed
 
+- An instance whose image Incus recorded by digest no longer reads "no registry
+  ref" once Incus prunes the image: beacon keeps the ref it last tracked for
+  that image, in `user.incus-beacon.current-image`.
 - An instance with a policy error, or not yet checkable, now shows and records
   its image ref in full: `docker.io/library/nginx:1.28`, not
   `docker.io/nginx:1.28`.

@@ -251,13 +251,14 @@ age and is never held.
 
 incus-beacon writes these, and never any other key:
 
-| Key                         | Value                                                                   |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `user.incus-beacon.status`  | `current`, `update-available`, `error` or `unknown`                     |
-| `user.incus-beacon.current` | The image ref being tracked                                             |
-| `user.incus-beacon.latest`  | The newer tag, or `<tag>@sha256:<12 hex>` when the same tag was rebuilt |
-| `user.incus-beacon.error`   | Why the status is `error` or `unknown`; removed once that clears        |
-| `user.incus-beacon.since`   | When the status or latest last changed (RFC 3339)                       |
+| Key                               | Value                                                                   |
+| --------------------------------- | ----------------------------------------------------------------------- |
+| `user.incus-beacon.status`        | `current`, `update-available`, `error` or `unknown`                     |
+| `user.incus-beacon.current`       | The image ref being tracked                                             |
+| `user.incus-beacon.current-image` | The fingerprint `current` was tracked for                               |
+| `user.incus-beacon.latest`        | The newer tag, or `<tag>@sha256:<12 hex>` when the same tag was rebuilt |
+| `user.incus-beacon.error`         | Why the status is `error` or `unknown`; removed once that clears        |
+| `user.incus-beacon.since`         | When the status or latest last changed (RFC 3339)                       |
 
 They change only when a value does, so a quiet check leaves no trace in
 `incus monitor`. [Updating](#updating) adds these:

@@ -25,6 +25,18 @@ func TestBeacon(t *testing.T) {
 			incus.Beacon{Status: "current", Current: "ghcr.io/example/app:1", Since: stamp},
 		},
 		{
+			"the tracked ref keeps its image",
+			incus.Beacon{},
+			Result{Target: incus.Target{BaseImage: "fp-1"}, Status: Current, Current: "ghcr.io/example/app:1"},
+			incus.Beacon{Status: "current", Current: "ghcr.io/example/app:1", CurrentImage: "fp-1", Since: stamp},
+		},
+		{
+			"no ref, no image to pin it to",
+			incus.Beacon{Status: "current", Current: "ghcr.io/example/app:1", CurrentImage: "fp-1", Since: earlier},
+			Result{Target: incus.Target{BaseImage: "fp-1"}, Status: Unknown, Reason: "no registry ref"},
+			incus.Beacon{Status: "unknown", Error: "no registry ref", Since: stamp},
+		},
+		{
 			"unchanged keeps since",
 			incus.Beacon{Status: "update-available", Current: "a:1", Latest: "2", Since: earlier},
 			Result{Status: UpdateAvailable, Current: "a:1", Latest: "2"},

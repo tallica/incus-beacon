@@ -22,6 +22,7 @@ const (
 	RefFromUpdateSource = "update_source"
 	RefFromImageKeys    = "image.description"
 	RefFromApplied      = policy.Prefix + "applied"
+	RefFromCurrent      = policy.Prefix + "current"
 )
 
 // incus-compose's image override, honoured where ComposeFeaturesKey lists ComposeFeatureOverride.
@@ -35,9 +36,11 @@ const (
 type Beacon struct {
 	Status  string
 	Current string
-	Latest  string
-	Error   string
-	Since   string
+	// CurrentImage is the fingerprint Current was tracked for; it outlives the image record.
+	CurrentImage string
+	Latest       string
+	Error        string
+	Since        string
 }
 
 type Target struct {
@@ -242,11 +245,12 @@ func readBeacon(config map[string]string) (b Beacon, legacy bool) {
 		prefix = policy.LegacyPrefix
 	}
 	return Beacon{
-		Status:  config[prefix+"status"],
-		Current: config[prefix+"current"],
-		Latest:  config[prefix+"latest"],
-		Error:   config[prefix+"error"],
-		Since:   config[prefix+"since"],
+		Status:       config[prefix+"status"],
+		Current:      config[prefix+"current"],
+		CurrentImage: config[policy.Prefix+"current-image"],
+		Latest:       config[prefix+"latest"],
+		Error:        config[prefix+"error"],
+		Since:        config[prefix+"since"],
 	}, legacy
 }
 
@@ -286,6 +290,9 @@ func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]stri
 	}
 	if ref := imageKeysRef(config); ref != "" {
 		return ref, RefFromImageKeys
+	}
+	if b := t.Beacon; b.Current != "" && t.BaseImage != "" && b.CurrentImage == t.BaseImage {
+		return b.Current, RefFromCurrent
 	}
 	return "", ""
 }

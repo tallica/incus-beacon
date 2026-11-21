@@ -273,7 +273,15 @@ first source that yields a ref wins:
 5. The image keys Incus copies onto the instance: `image.description` holds
    `<registry>/<repo> (OCI)` and `image.id` holds `<repo>:<tag>` as launched. An
    `image.id` pinned by digest has no tag to track and gives no ref.
-6. Otherwise the result is `unknown`, with the reason "no registry ref".
+6. `user.incus-beacon.current`, the ref the last check tracked, while
+   `current-image` still equals `volatile.base_image`. Incus 7.6 can pin
+   `image.id` by digest from an image's first launch, so an instance beacon
+   never updated has only item 4. Once Incus prunes the image record, this keeps
+   it resolvable. It ranks last where `applied` (item 3) ranks early because
+   `applied` is first-hand, the ref beacon rebuilt the instance onto, while this
+   is second-hand: a copy of what an earlier source said about the image, so
+   every source that can still speak comes first.
+7. Otherwise the result is `unknown`, with the reason "no registry ref".
 
 Refs are normalised with Docker conventions: `nginx` becomes
 `docker.io/library/nginx:latest`.

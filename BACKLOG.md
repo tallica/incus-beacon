@@ -18,12 +18,6 @@ not work. An idea that needs more than a paragraph gets its own file in
       image override (lxc/incus-compose#282) reaching a release. Then run an
       update, `up`, `up --pull always` and a config-change recreate, and drop
       the README's "to verify".
-- [ ] **Resolve digest-pinned instances after a prune** — Incus 7.6 can pin
-      `image.id` by digest from an image's first launch, so an instance beacon
-      never updated resolves only through the cached image record and reads "no
-      registry ref" once Incus prunes it. Record the tracked ref and its
-      fingerprint on each check, as `applied` and `applied-image` already do
-      after an update or rollback.
 
 ## Later
 

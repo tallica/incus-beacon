@@ -17,11 +17,12 @@ var statusNames = []string{"status", "current", "latest", "error", "since"}
 
 func (b Beacon) keys() map[string]string {
 	return map[string]string{
-		policy.Prefix + "status":  b.Status,
-		policy.Prefix + "current": b.Current,
-		policy.Prefix + "latest":  b.Latest,
-		policy.Prefix + "error":   b.Error,
-		policy.Prefix + "since":   b.Since,
+		policy.Prefix + "status":        b.Status,
+		policy.Prefix + "current":       b.Current,
+		policy.Prefix + "current-image": b.CurrentImage,
+		policy.Prefix + "latest":        b.Latest,
+		policy.Prefix + "error":         b.Error,
+		policy.Prefix + "since":         b.Since,
 	}
 }
 

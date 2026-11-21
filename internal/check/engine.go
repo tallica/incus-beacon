@@ -426,6 +426,9 @@ func short(digest string) string {
 func Beacon(r Result, now time.Time) incus.Beacon {
 	prev := r.Target.Beacon
 	b := incus.Beacon{Status: string(r.Status), Current: r.Current, Latest: r.Latest}
+	if b.Current != "" {
+		b.CurrentImage = r.Target.BaseImage
+	}
 	if r.Status == Error || r.Status == Unknown {
 		b.Error = r.Reason
 		if b.Latest == "" {

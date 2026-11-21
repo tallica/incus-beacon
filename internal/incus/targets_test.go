@@ -72,6 +72,20 @@ func fixture() *fakeIncus {
 				"image.description":      "ghcr.io/example/app:1.0 (built by incus-compose)",
 				"user.image_alias":       "ghcr.io/example/app:1.0",
 			}, nil), "aarch64"),
+			instance("apps", "pinned", oci(map[string]string{
+				"volatile.base_image":             fpMissing,
+				"image.description":               "docker.io/library/busybox (OCI)",
+				"image.id":                        "library/busybox@sha256:f97b",
+				"user.incus-beacon.current":       "docker.io/library/busybox:1.37-glibc",
+				"user.incus-beacon.current-image": fpMissing,
+			}), nil),
+			instance("apps", "repinned", oci(map[string]string{
+				"volatile.base_image":             fpMissing,
+				"image.description":               "docker.io/library/busybox (OCI)",
+				"image.id":                        "library/busybox@sha256:f97b",
+				"user.incus-beacon.current":       "docker.io/library/busybox:1.37-glibc",
+				"user.incus-beacon.current-image": "an-older-fingerprint",
+			}), nil),
 			instance("apps", "rolled", oci(map[string]string{
 				"volatile.base_image":             fpMissing,
 				"image.description":               "docker.io/library/busybox (OCI)",
@@ -131,7 +145,7 @@ func TestTargetsAllProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pruned", "apps/retagged", "apps/reused", "apps/rolled", "default/db", "default/db2", "default/web"}
+	want := []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pinned", "apps/pruned", "apps/repinned", "apps/retagged", "apps/reused", "apps/rolled", "default/db", "default/db2", "default/web"}
 	if got := names(targets); !slices.Equal(got, want) {
 		t.Fatalf("targets %q, want %q (non-OCI and enable=false left out, sorted)", got, want)
 	}
@@ -151,6 +165,10 @@ func TestTargetsAllProjects(t *testing.T) {
 		// Rolled back from a fingerprint: image.id is pinned by digest, beacon's record names the tag.
 		{"apps/rolled", "docker.io/library/busybox:1.36-glibc", RefFromApplied},
 		{"apps/moved", "", ""},
+		// Never updated, image pruned, image.id pinned: the last check's ref still names it.
+		{"apps/pinned", "docker.io/library/busybox:1.37-glibc", RefFromCurrent},
+		// The last check was of another image, so its ref says nothing about this one.
+		{"apps/repinned", "", ""},
 		// The image record's own tag can be another of the same build; beacon's record is exact.
 		{"apps/reused", "docker.io/library/busybox:1.36-glibc", RefFromApplied},
 		// Rebuilt by hand since: the fingerprint moved, so the image keys decide.
@@ -193,7 +211,7 @@ func TestTargetsFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := names(targets), []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pruned", "apps/retagged", "apps/reused", "apps/rolled"}; !slices.Equal(got, want) {
+	if got, want := names(targets), []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pinned", "apps/pruned", "apps/repinned", "apps/retagged", "apps/reused", "apps/rolled"}; !slices.Equal(got, want) {
 		t.Errorf("projects=apps: %q, want %q", got, want)
 	}
 
@@ -333,5 +351,17 @@ func TestComposeOverrideAfterARecreate(t *testing.T) {
 	})
 	if tg.Ref != override {
 		t.Errorf("override and applied disagree: ref %q, want the override", tg.Ref)
+	}
+}
+
+func TestReadBeaconCurrentImageUnderLegacyNames(t *testing.T) {
+	t.Parallel()
+	b, legacy := readBeacon(map[string]string{
+		"user.beacon.status":              "current",
+		"user.beacon.current":             "docker.io/library/nginx:1.28",
+		"user.incus-beacon.current-image": "fp-1", // a key with no old name
+	})
+	if !legacy || b.Current != "docker.io/library/nginx:1.28" || b.CurrentImage != "fp-1" {
+		t.Errorf("%+v, legacy %t", b, legacy)
 	}
 }
