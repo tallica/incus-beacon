@@ -27,11 +27,13 @@ func (b Beacon) keys() map[string]string {
 
 // Update is what the last automatic or manual update left on an instance.
 type Update struct {
-	Applied   string // the ref it was rebuilt onto
-	Requested string // the ref it was asked for before beacon first moved it
-	Status    string
-	Reason    string
-	Failed    string // a ref that failed, not tried again until another is offered
+	Applied string // the ref beacon last left it on: rebuilt onto, or rolled back to
+	// AppliedImage is the fingerprint Applied was recorded for; another means someone moved it since.
+	AppliedImage string
+	Requested    string // the ref it was asked for before beacon first moved it
+	Status       string
+	Reason       string
+	Failed       string // a ref that failed, not tried again until another is offered
 }
 
 // ClaimKey holds the claim of the process updating the instance, while it does.
@@ -41,6 +43,7 @@ const ClaimKey = policy.Prefix + "update-claim"
 func (u Update) Keys() map[string]string {
 	return map[string]string{
 		policy.Prefix + "applied":       u.Applied,
+		policy.Prefix + "applied-image": u.AppliedImage,
 		policy.Prefix + "requested":     u.Requested,
 		policy.Prefix + "update-status": u.Status,
 		policy.Prefix + "update-reason": u.Reason,
@@ -50,11 +53,12 @@ func (u Update) Keys() map[string]string {
 
 func readUpdate(config map[string]string) Update {
 	return Update{
-		Applied:   config[policy.Prefix+"applied"],
-		Requested: config[policy.Prefix+"requested"],
-		Status:    config[policy.Prefix+"update-status"],
-		Reason:    config[policy.Prefix+"update-reason"],
-		Failed:    config[policy.Prefix+"update-failed"],
+		Applied:      config[policy.Prefix+"applied"],
+		AppliedImage: config[policy.Prefix+"applied-image"],
+		Requested:    config[policy.Prefix+"requested"],
+		Status:       config[policy.Prefix+"update-status"],
+		Reason:       config[policy.Prefix+"update-reason"],
+		Failed:       config[policy.Prefix+"update-failed"],
 	}
 }
 

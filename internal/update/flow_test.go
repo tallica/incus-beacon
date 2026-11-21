@@ -264,7 +264,8 @@ func TestApplyUpdates(t *testing.T) {
 	if _, ok := cfg["environment.NGINX_VERSION"]; ok || cfg["environment.FOO"] != "bar" {
 		t.Errorf("environment: the old image's value should go and the override stay: %v", cfg)
 	}
-	if cfg["user.incus-beacon.applied"] != newRef || cfg["user.incus-beacon.requested"] != oldRef || cfg["user.incus-beacon.update-status"] != Updated {
+	if cfg["user.incus-beacon.applied"] != newRef || cfg["user.incus-beacon.requested"] != oldRef || cfg["user.incus-beacon.update-status"] != Updated ||
+		cfg["user.incus-beacon.applied-image"] != "fp-new" {
 		t.Errorf("update keys %v", cfg)
 	}
 	snaps := f.volSnaps["default/web-data"]
@@ -327,12 +328,13 @@ func TestApplyRecoversAnAbandonedClaim(t *testing.T) {
 	cfg["volatile.base_image"] = "fp-new"
 	delete(cfg, "environment.NGINX_VERSION")
 	cfg[incus.ClaimKey] = claimJSON(t, claim{
-		Owner: "other/7", Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Step: stepIndex(t, "start"), To: newRef, From: "fp-old",
+		Owner: "other/7", Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Step: stepIndex(t, "start"), To: newRef,
+		FromRef: oldRef, From: "fp-old",
 		Snapshot: "incus-beacon-20261120T000000", Volumes: []string{"default/web-data"},
 		Dropped: map[string]string{"environment.NGINX_VERSION": "1.27.5"},
 	})
 	o := apply(t, f, target())
-	if o.Status != RolledBack || !strings.Contains(o.Reason, "by other/7 was interrupted at start") {
+	if o.Status != RolledBack || !strings.Contains(o.Reason, "by other/7 was interrupted at start") || o.From != oldRef {
 		t.Fatalf("outcome %+v", o)
 	}
 	if !reflect.DeepEqual(f.rebuilds, []api.InstanceSource{{Type: "image", Fingerprint: "fp-old"}}) {
@@ -396,7 +398,8 @@ func TestApplyRollsBackWhenTheInstanceStops(t *testing.T) {
 	if cfg["environment.NGINX_VERSION"] != "1.27.5" {
 		t.Errorf("dropped environment key not put back: %v", cfg)
 	}
-	if cfg["user.incus-beacon.update-status"] != RolledBack || cfg["user.incus-beacon.update-failed"] != newRef || cfg["user.incus-beacon.applied"] != "" {
+	if cfg["user.incus-beacon.update-status"] != RolledBack || cfg["user.incus-beacon.update-failed"] != newRef ||
+		cfg["user.incus-beacon.applied"] != oldRef || cfg["user.incus-beacon.applied-image"] != "fp-old" {
 		t.Errorf("update keys %v", cfg)
 	}
 }
@@ -446,9 +449,14 @@ func TestApplyFailsWhenTheRollbackFails(t *testing.T) {
 	t.Parallel()
 	f := newFake()
 	f.crash = func(int) bool { return true }
-	o := apply(t, f, target())
+	tgt := target()
+	tgt.Update = incus.Update{Applied: "docker.io/library/nginx:1.26-alpine", AppliedImage: "fp-older", Status: Updated}
+	o := apply(t, f, tgt)
 	if o.Status != Failed || !strings.Contains(o.Reason, "roll back stop: the instance is stopped") {
 		t.Errorf("outcome %+v", o)
+	}
+	if cfg := f.inst.Config; cfg["user.incus-beacon.applied"] != "docker.io/library/nginx:1.26-alpine" || cfg["user.incus-beacon.applied-image"] != "fp-older" {
+		t.Errorf("a failed rollback leaves the instance unknown, so the record stays: %v", cfg)
 	}
 	if f.inst.Config["user.incus-beacon.update-status"] != Failed {
 		t.Errorf("update keys %v", f.inst.Config)

@@ -267,7 +267,8 @@ They change only when a value does, so a quiet check leaves no trace in
 | `user.incus-beacon.update-status` | `updated`, `rolled-back`, `failed` (the rollback failed too) or `refused`                                                      |
 | `user.incus-beacon.update-reason` | Why it rolled back, failed or was refused                                                                                      |
 | `user.incus-beacon.update-failed` | The ref that failed; not tried again until a newer image is found                                                              |
-| `user.incus-beacon.applied`       | The ref beacon last updated the instance to                                                                                    |
+| `user.incus-beacon.applied`       | The ref beacon last left the instance on: the one it updated it to, or rolled it back to                                       |
+| `user.incus-beacon.applied-image` | The fingerprint `applied` was recorded for, so a later hand rebuild doesn't inherit it                                         |
 | `user.incus-beacon.requested`     | The ref asked for (compose file or `image` key) when beacon first updated it; while that is unchanged, beacon tracks `applied` |
 | `user.incus-beacon.update-claim`  | Held while an update runs; what a rollback needs if the update is cut short                                                    |
 

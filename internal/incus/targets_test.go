@@ -72,6 +72,34 @@ func fixture() *fakeIncus {
 				"image.description":      "ghcr.io/example/app:1.0 (built by incus-compose)",
 				"user.image_alias":       "ghcr.io/example/app:1.0",
 			}, nil), "aarch64"),
+			instance("apps", "rolled", oci(map[string]string{
+				"volatile.base_image":             fpMissing,
+				"image.description":               "docker.io/library/busybox (OCI)",
+				"image.id":                        "library/busybox@sha256:f97b",
+				"user.incus-beacon.applied":       "docker.io/library/busybox:1.36-glibc",
+				"user.incus-beacon.applied-image": fpMissing,
+			}), nil),
+			instance("apps", "reused", oci(map[string]string{
+				"volatile.base_image":             fpMissing,
+				"image.description":               "docker.io/library/busybox (OCI)",
+				"image.id":                        "library/busybox:1.36.1-glibc",
+				"user.incus-beacon.applied":       "docker.io/library/busybox:1.36-glibc",
+				"user.incus-beacon.applied-image": fpMissing,
+			}), nil),
+			instance("apps", "retagged", oci(map[string]string{
+				"volatile.base_image":             fpMissing,
+				"image.description":               "docker.io/library/busybox (OCI)",
+				"image.id":                        "library/busybox:1.37-glibc",
+				"user.incus-beacon.applied":       "docker.io/library/busybox:1.36-glibc",
+				"user.incus-beacon.applied-image": "an-older-fingerprint",
+			}), nil),
+			instance("apps", "moved", oci(map[string]string{
+				"volatile.base_image":             fpMissing,
+				"image.description":               "docker.io/library/busybox (OCI)",
+				"image.id":                        "library/busybox@sha256:f97b",
+				"user.incus-beacon.applied":       "docker.io/library/busybox:1.36-glibc",
+				"user.incus-beacon.applied-image": "an-older-fingerprint",
+			}), nil),
 			instance("apps", "pruned", oci(map[string]string{
 				"volatile.base_image": fpMissing,
 				"image.description":   "ghcr.io/example/worker (OCI)",
@@ -103,7 +131,7 @@ func TestTargetsAllProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"apps/api", "apps/bad", "apps/built", "apps/orphan", "apps/pruned", "default/db", "default/db2", "default/web"}
+	want := []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pruned", "apps/retagged", "apps/reused", "apps/rolled", "default/db", "default/db2", "default/web"}
 	if got := names(targets); !slices.Equal(got, want) {
 		t.Fatalf("targets %q, want %q (non-OCI and enable=false left out, sorted)", got, want)
 	}
@@ -120,6 +148,13 @@ func TestTargetsAllProjects(t *testing.T) {
 		{"default/db", "docker.io/library/postgres:17", RefFromUpdateSource},
 		{"apps/orphan", "", ""},
 		{"apps/pruned", "ghcr.io/example/worker:3.1", RefFromImageKeys},
+		// Rolled back from a fingerprint: image.id is pinned by digest, beacon's record names the tag.
+		{"apps/rolled", "docker.io/library/busybox:1.36-glibc", RefFromApplied},
+		{"apps/moved", "", ""},
+		// The image record's own tag can be another of the same build; beacon's record is exact.
+		{"apps/reused", "docker.io/library/busybox:1.36-glibc", RefFromApplied},
+		// Rebuilt by hand since: the fingerprint moved, so the image keys decide.
+		{"apps/retagged", "docker.io/library/busybox:1.37-glibc", RefFromImageKeys},
 	}
 	for _, r := range refs {
 		tg := byName[r.name]
@@ -158,7 +193,7 @@ func TestTargetsFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := names(targets), []string{"apps/api", "apps/bad", "apps/built", "apps/orphan", "apps/pruned"}; !slices.Equal(got, want) {
+	if got, want := names(targets), []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pruned", "apps/retagged", "apps/reused", "apps/rolled"}; !slices.Equal(got, want) {
 		t.Errorf("projects=apps: %q, want %q", got, want)
 	}
 

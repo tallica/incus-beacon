@@ -21,6 +21,7 @@ const (
 	RefFromCompose      = "user.image_alias"
 	RefFromUpdateSource = "update_source"
 	RefFromImageKeys    = "image.description"
+	RefFromApplied      = policy.Prefix + "applied"
 )
 
 // incus-compose's image override, honoured where ComposeFeaturesKey lists ComposeFeatureOverride.
@@ -274,6 +275,10 @@ func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]stri
 	}
 	if v := config["user.image_alias"]; v != "" {
 		return v, RefFromCompose
+	}
+	// Beacon's record for this exact image beats Incus's: docs/ARCHITECTURE.md#image-ref-resolution.
+	if u := t.Update; u.Applied != "" && u.AppliedImage == t.BaseImage {
+		return u.Applied, RefFromApplied
 	}
 	key := t.Project + "/" + t.BaseImage
 	src, seen := sources[key]

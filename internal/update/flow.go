@@ -105,6 +105,7 @@ type claim struct {
 	Expires  time.Time         `json:"expires"`
 	Step     int               `json:"step"` // the last step begun, -1 before the first
 	To       string            `json:"to"`
+	FromRef  string            `json:"from_ref,omitempty"` // the ref the instance ran before
 	From     string            `json:"from_image"`
 	Snapshot string            `json:"snapshot,omitempty"`
 	Volumes  []string          `json:"volumes,omitempty"` // pool/name, restored on rollback
@@ -236,7 +237,7 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 	}
 
 	u.c = claim{
-		Owner: u.opts.Owner, Step: -1, To: u.o.To, From: u.inst.Config["volatile.base_image"], Dropped: dropped,
+		Owner: u.opts.Owner, Step: -1, To: u.o.To, FromRef: u.t.Ref, From: u.inst.Config["volatile.base_image"], Dropped: dropped,
 		Snapshot: snapshotPrefix + u.opts.Now().UTC().Format("20060102T150405"),
 	}
 	for _, v := range u.vols {
@@ -274,7 +275,7 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 func (u *updater) refuse(ctx context.Context, reason string) (Outcome, error) {
 	u.o.Status, u.o.Reason = Refused, reason
 	u.log.Warn().Str("reason", reason).Msg("update refused")
-	_, err := incus.WriteUpdate(ctx, u.srv, u.t, u.record())
+	_, err := incus.WriteUpdate(ctx, u.srv, u.t, u.record(""))
 	return u.o, err
 }
 
@@ -294,7 +295,7 @@ func (u *updater) abandon(err error) (Outcome, error) {
 
 // recover rolls back an update whose claim expired, from what the claim recorded.
 func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
-	u.c, u.o.To = c, c.To
+	u.c, u.o.To, u.o.From = c, c.To, cmp.Or(c.FromRef, u.o.From)
 	u.log = u.opts.Log.With().Str("project", u.t.Project).Str("instance", u.t.Instance).Str("to", c.To).Logger()
 	for _, v := range c.Volumes {
 		pool, name, _ := strings.Cut(v, "/")
@@ -359,7 +360,8 @@ func (u *updater) bounded(ctx context.Context, f func(context.Context) error) er
 	return f(ctx)
 }
 
-func (u *updater) record() incus.Update {
+// record sets applied and applied-image together; base is the image the outcome leaves.
+func (u *updater) record(base string) incus.Update {
 	prev := u.t.Update
 	switch u.o.Status {
 	case Updated:
@@ -367,9 +369,15 @@ func (u *updater) record() incus.Update {
 		if u.t.Applied {
 			requested = cmp.Or(prev.Requested, u.t.Asked)
 		}
-		return incus.Update{Applied: u.o.To, Requested: requested, Status: Updated}
+		return incus.Update{Applied: u.o.To, AppliedImage: base, Requested: requested, Status: Updated}
 	case Refused:
 		prev.Status, prev.Reason = Refused, u.o.Reason
+		return prev
+	case RolledBack:
+		prev.Status, prev.Reason, prev.Failed = u.o.Status, u.o.Reason, u.o.To
+		if u.c.FromRef != "" {
+			prev.Applied, prev.AppliedImage = u.c.FromRef, base
+		}
 		return prev
 	default:
 		prev.Status, prev.Reason, prev.Failed = u.o.Status, u.o.Reason, u.o.To
@@ -456,7 +464,7 @@ func (u *updater) release(ctx context.Context) error {
 			return err
 		}
 		delete(cfg, incus.ClaimKey)
-		for k, v := range u.record().Keys() {
+		for k, v := range u.record(cfg["volatile.base_image"]).Keys() {
 			if v == "" {
 				delete(cfg, k)
 			} else {

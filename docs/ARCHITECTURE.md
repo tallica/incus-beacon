@@ -164,10 +164,11 @@ ref is the tracked ref at the `latest` tag.
    `volatile.base_image`, put the override keys and the dropped keys back as
    they were, and start and gate again. A volume another instance also uses is
    not restored, and the outcome says so.
-5. **Release** the claim and record the outcome in one write: `update-status`
-   becomes `updated`, `rolled-back`, `failed` (the rollback failed too) or
-   `refused`. Beacon's snapshots beyond `--update-keep` per volume are pruned
-   after a success.
+5. **Release** the claim and record the outcome in one write, with `applied` and
+   `applied-image` naming the ref and image the instance is left on:
+   `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback
+   failed too) or `refused`. Beacon's snapshots beyond `--update-keep` per
+   volume are pruned after a success.
 
 A claim holds for 30 minutes plus twice `--update-wait` past its last step. A
 claim older than that is taken as abandoned by a process that died. The next
@@ -234,7 +235,7 @@ first source that yields a ref wins:
 
 1. `user.incus-beacon.image`, or `user.label.incus-beacon.image`.
 2. `user.image_alias`, which incus-compose sets to the fully resolved ref. When
-   the repository or tag in the image keys (item 4) differs from it, the
+   the repository or tag in the image keys (item 5) differs from it, the
    instance was rebuilt onto another image by hand: it is `error` with "compose
    drift", not checked, since the compose file's ref would report a false update
    back to it. Registry hosts are not compared, as a mirror can name the same
@@ -253,16 +254,26 @@ first source that yields a ref wins:
    incus-compose will run. When incus-compose recreates an instance on its
    override, the new instance has the override keys but none of beacon's.
 
-3. The `update_source` (server and alias) of the instance's image record, looked
+3. `user.incus-beacon.applied`, the ref beacon last left the instance on, while
+   `applied-image` still equals `volatile.base_image`. Beacon wrote both for
+   this exact image, so they beat what Incus records: a rebuild from a
+   fingerprint, as every rollback is, copies the image record's `image.id`,
+   which Incus 7.6 can store pinned by digest (`library/busybox@sha256:…`), and
+   the record can name another tag of the same build (item 4). Without this, a
+   rolled-back instance reads "no registry ref" once Incus prunes the image. The
+   fingerprint check drops the record once someone rebuilds the instance by
+   hand; a failed rollback leaves the record as it was, and the check then
+   decides whether it still applies.
+4. The `update_source` (server and alias) of the instance's image record, looked
    up once per `volatile.base_image` in the instance's project. Incus prunes
    cached images, so this record is often gone. It can also name a tag other
    than the one pulled: Incus keeps one record per build, so pulling a tag whose
    build it already holds under another reuses that record, tag and all (seen on
    Incus 7.6). Item 1 then names the tag that was asked for.
-4. The image keys Incus copies onto the instance: `image.description` holds
+5. The image keys Incus copies onto the instance: `image.description` holds
    `<registry>/<repo> (OCI)` and `image.id` holds `<repo>:<tag>` as launched. An
    `image.id` pinned by digest has no tag to track and gives no ref.
-5. Otherwise the result is `unknown`, with the reason "no registry ref".
+6. Otherwise the result is `unknown`, with the reason "no registry ref".
 
 Refs are normalised with Docker conventions: `nginx` becomes
 `docker.io/library/nginx:latest`.

@@ -51,9 +51,9 @@ incus start <instance>
 ```
 
 If an update was interrupted, `user.incus-beacon.update-claim` holds the step it
-reached, the old fingerprint, the snapshot name and any dropped environment
-keys. The next `update` of the instance rolls it back once the claim has
-expired. Remove the claim by hand only when no update runs.
+reached, the old ref and fingerprint, the snapshot name and any dropped
+environment keys. The next `update` of the instance rolls it back once the claim
+has expired. Remove the claim by hand only when no update runs.
 
 ## Verify
 
