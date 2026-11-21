@@ -123,8 +123,10 @@ newer tag, or onto the same tag when it was rebuilt upstream. The new image's
 ref is the tracked ref at the `latest` tag.
 
 1. **Refuse** before anything changes, with the reason in `update-reason`, when:
-   - the instance is managed by incus-compose, whose compose file would undo the
-     update;
+   - the instance is managed by incus-compose and doesn't carry
+     `user.incus-compose.beacon-contract=1` in its own config, since an
+     incus-compose that doesn't keep the update would recreate it from the
+     compose file's ref on its next `up --pull always`;
    - it runs incus-beacon, which `upgrade` handles;
    - the same ref already failed (`update-failed`);
    - it isn't running, since a stopped instance can't be health-checked;
@@ -228,6 +230,15 @@ first source that yields a ref wins:
    drift", not checked, since the compose file's ref would report a false update
    back to it. Registry hosts are not compared, as a mirror can name the same
    image differently.
+
+   For items 1 and 2: once beacon has updated the instance, while the ref still
+   names `user.incus-beacon.requested` (compared as Docker spells refs out), the
+   ref tracked is `user.incus-beacon.applied` instead. So an update is not
+   reported back to the ref it moved from. A ref from item 2 keeps its drift
+   check, now against `applied`; one from item 1 has none, since its image keys
+   may name another tag of the same build. A ref that differs from `requested`
+   wins again, and the next update records it as `requested`.
+
 3. The `update_source` (server and alias) of the instance's image record, looked
    up once per `volatile.base_image` in the instance's project. Incus prunes
    cached images, so this record is often gone. It can also name a tag other

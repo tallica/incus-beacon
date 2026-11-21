@@ -54,8 +54,9 @@ type fake struct {
 	health func(n int) string
 	etag   int
 	// meddle, when set, runs before the n-th config write (from 1), as another writer would.
-	meddle func(n int, cfg map[string]string)
-	writes int
+	meddle  func(n int, cfg map[string]string)
+	writes  int
+	profile map[string]string // keys from profiles: in the expanded config only
 	// claimAtRebuild is the claim's step when the new image was rebuilt.
 	claimAtRebuild int
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
@@ -108,7 +109,11 @@ func (f *fake) GetServer() (*api.Server, string, error) {
 func (f *fake) GetInstance(string) (*api.Instance, string, error) {
 	inst := f.inst
 	inst.Config = maps.Clone(f.inst.Config)
-	inst.ExpandedConfig = maps.Clone(f.inst.Config)
+	inst.ExpandedConfig = maps.Clone(f.profile)
+	if inst.ExpandedConfig == nil {
+		inst.ExpandedConfig = map[string]string{}
+	}
+	maps.Copy(inst.ExpandedConfig, f.inst.Config)
 	return &inst, strconv.Itoa(f.etag), nil
 }
 
@@ -464,7 +469,7 @@ func TestApplyRefuses(t *testing.T) {
 		change func(*fake, *incus.Target)
 		reason string
 	}{
-		{"compose", func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" }, "incus-compose"},
+		{"compose without the contract", func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" }, "would undo the update"},
 		{"beacon", func(f *fake, _ *incus.Target) { f.inst.Config["environment.BEACON_TOKEN_FILE"] = "/run/secrets/token" }, "incus-beacon upgrade"},
 		{"failed before", func(_ *fake, t *incus.Target) { t.Update.Failed = newRef }, "failed before"},
 		{"stopped", func(f *fake, _ *incus.Target) { f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped }, "is stopped"},
@@ -586,5 +591,53 @@ func TestApplyBoundsAHungStepByTheLease(t *testing.T) {
 	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), newRef, opts)
 	if err != nil || o.Status != RolledBack || !strings.Contains(o.Reason, "rebuild: context deadline exceeded") {
 		t.Errorf("outcome %+v, %v; want the hung rebuild cut at the lease and rolled back", o, err)
+	}
+}
+
+func TestApplyUpdatesAComposeInstanceUnderTheContract(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.inst.Config["user.incus-compose.managed"] = "true"
+	f.inst.Config[composeContract] = "1"
+	tgt := target()
+	tgt.RefSource = incus.RefFromCompose
+	if o := apply(t, f, tgt); o.Status != Updated {
+		t.Fatalf("outcome %+v", o)
+	}
+	if cfg := f.inst.Config; cfg["user.incus-beacon.requested"] != oldRef || cfg["user.incus-beacon.applied"] != newRef {
+		t.Errorf("config %v; want the compose file's ref as requested and the new one as applied", cfg)
+	}
+	// A second update, while the compose file is unchanged, keeps its ref as requested.
+	tgt.Ref, tgt.Applied, tgt.Update = newRef, true, incus.Update{Requested: oldRef, Applied: newRef, Status: Updated}
+	f.inst.Config["volatile.base_image"], tgt.BaseImage = "fp-new", "fp-new"
+	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, "docker.io/library/nginx:1.29-alpine", options())
+	if err != nil || o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef {
+		t.Errorf("second update: %+v, %v, requested %q", o, err, f.inst.Config["user.incus-beacon.requested"])
+	}
+}
+
+func TestApplyResetsRequestedOnceTheAskedRefMoved(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	tgt := target()
+	tgt.RefSource = incus.RefFromBeacon
+	tgt.Update = incus.Update{Requested: "docker.io/library/nginx:1.25-alpine", Applied: "docker.io/library/nginx:1.26-alpine", Status: Updated}
+	if o := apply(t, f, tgt); o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef {
+		t.Errorf("outcome %+v, requested %q; want the ref asked for now", o, f.inst.Config["user.incus-beacon.requested"])
+	}
+}
+
+func TestApplyNeedsTheComposeContractOnTheInstance(t *testing.T) {
+	t.Parallel()
+	for name, set := range map[string]func(*fake){
+		"from a profile":  func(f *fake) { f.profile = map[string]string{composeContract: "1"} },
+		"another version": func(f *fake) { f.inst.Config[composeContract] = "2" },
+	} {
+		f := newFake()
+		f.inst.Config["user.incus-compose.managed"] = "true"
+		set(f)
+		if o := apply(t, f, target()); o.Status != Refused {
+			t.Errorf("%s: outcome %+v, want refused", name, o)
+		}
 	}
 }

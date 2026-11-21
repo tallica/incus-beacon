@@ -34,9 +34,11 @@ const (
 )
 
 const (
-	snapshotPrefix = "incus-beacon-"
-	healthEnabled  = "user.healthcheck.enabled"
-	healthStatus   = "user.healthcheck.status"
+	// composeContract=1 on the instance: its incus-compose keeps beacon's updates.
+	composeContract = "user.incus-compose.beacon-contract"
+	snapshotPrefix  = "incus-beacon-"
+	healthEnabled   = "user.healthcheck.enabled"
+	healthStatus    = "user.healthcheck.status"
 )
 
 type Registry interface {
@@ -353,7 +355,11 @@ func (u *updater) record() incus.Update {
 	prev := u.t.Update
 	switch u.o.Status {
 	case Updated:
-		return incus.Update{Applied: u.o.To, Requested: cmp.Or(prev.Requested, u.t.Ref), Status: Updated}
+		requested := u.t.Ref
+		if u.t.Applied {
+			requested = prev.Requested
+		}
+		return incus.Update{Applied: u.o.To, Requested: requested, Status: Updated}
 	case Refused:
 		prev.Status, prev.Reason = Refused, u.o.Reason
 		return prev
@@ -456,8 +462,8 @@ func (u *updater) release(ctx context.Context) error {
 func (u *updater) refusal() string {
 	cfg := u.inst.ExpandedConfig
 	switch {
-	case cfg["user.incus-compose.managed"] == "true":
-		return "managed by incus-compose, whose instances are not updated yet"
+	case cfg["user.incus-compose.managed"] == "true" && u.inst.Config[composeContract] != "1":
+		return "managed by an incus-compose that doesn't keep user.incus-beacon.applied, so its next up would undo the update"
 	case isBeacon(cfg, u.o.To):
 		return "an incus-beacon instance; use incus-beacon upgrade"
 	case u.o.To == u.t.Update.Failed:

@@ -196,6 +196,9 @@ func composeDrift(t incus.Target, ref registry.Ref) string {
 	if got.Repository != ref.Repository {
 		runs, want = got.Repository+":"+got.Tag, ref.Repository+":"+ref.Tag
 	}
+	if t.Applied {
+		return "drift: runs " + runs + ", incus-beacon updated it to " + want
+	}
 	return "compose drift: runs " + runs + ", compose file has " + want
 }
 

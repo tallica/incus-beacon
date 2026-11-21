@@ -3,8 +3,9 @@
 Watches OCI registries for newer images of your Incus OCI app containers and
 reports what can be updated: on the command line, and as `user.incus-beacon.*`
 keys on each instance that lazyincus, incus-compose or the `incus` CLI can read.
-A lightweight, Incus-focused cousin of watchtower and diun. Automatic updates
-are planned; today it only reports.
+A lightweight, Incus-focused cousin of watchtower and diun. It can also apply
+the updates, one instance at a time, with volume snapshots, a health gate and
+automatic rollback.
 
 ## Status
 
@@ -253,14 +254,14 @@ incus-beacon writes these, and never any other key:
 They change only when a value does, so a quiet check leaves no trace in
 `incus monitor`. [Updating](#updating) adds these:
 
-| Key                               | Value                                                                       |
-| --------------------------------- | --------------------------------------------------------------------------- |
-| `user.incus-beacon.update-status` | `updated`, `rolled-back`, `failed` (the rollback failed too) or `refused`   |
-| `user.incus-beacon.update-reason` | Why it rolled back, failed or was refused                                   |
-| `user.incus-beacon.update-failed` | The ref that failed; not tried again until a newer image is found           |
-| `user.incus-beacon.applied`       | The ref beacon last updated the instance to                                 |
-| `user.incus-beacon.requested`     | The ref the instance ran before beacon first updated it                     |
-| `user.incus-beacon.update-claim`  | Held while an update runs; what a rollback needs if the update is cut short |
+| Key                               | Value                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `user.incus-beacon.update-status` | `updated`, `rolled-back`, `failed` (the rollback failed too) or `refused`                                                      |
+| `user.incus-beacon.update-reason` | Why it rolled back, failed or was refused                                                                                      |
+| `user.incus-beacon.update-failed` | The ref that failed; not tried again until a newer image is found                                                              |
+| `user.incus-beacon.applied`       | The ref beacon last updated the instance to                                                                                    |
+| `user.incus-beacon.requested`     | The ref asked for (compose file or `image` key) when beacon first updated it; while that is unchanged, beacon tracks `applied` |
+| `user.incus-beacon.update-claim`  | Held while an update runs; what a rollback needs if the update is cut short                                                    |
 
 ### Updating
 
@@ -285,12 +286,24 @@ in `user.incus-beacon.update-reason`. What to do then is in
 
 It needs Incus 7.6 or later on the server, and refuses:
 
-- an instance managed by incus-compose;
+- an incus-compose instance, unless its incus-compose sets
+  `user.incus-compose.beacon-contract=1` on it (see below);
 - incus-beacon's own instance (use `upgrade`);
 - a stopped instance;
 - an instance with instance snapshots, which a rebuild can't keep;
 - an instance with no `volatile.base_image` to roll back to;
 - a ref that failed before.
+
+An incus-compose instance can be updated only when its incus-compose keeps the
+update. Otherwise `incus-compose up --pull always` would recreate it from the
+compose file's older tag. An incus-compose that does sets
+`user.incus-compose.beacon-contract=1` on each instance it creates (a profile
+doesn't count). No released incus-compose does yet, so this path is untested (to
+verify). Beacon then records the compose file's ref in
+`user.incus-beacon.requested` and the one it moved to in `applied`, and keeps
+tracking `applied` while the compose file still names `requested`. Changing the
+file's tag makes the file win again, and the next update records the new ref as
+`requested`. The same holds for a ref set with `user.incus-beacon.image`.
 
 With `--update`, `serve` applies updates the same way, to instances that set
 `user.incus-beacon.update=auto`, after each check, one instance at a time:

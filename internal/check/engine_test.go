@@ -219,6 +219,12 @@ func TestComposeDrift(t *testing.T) {
 	}
 	updateSource := target("source", "docker.io/library/nginx:1.28", fpOld, "")
 	updateSource.RefSource, updateSource.ImageRef = incus.RefFromUpdateSource, "docker.io/library/nginx:1.29"
+	applied := compose("applied", "docker.io/library/nginx:1.29", "")
+	applied.Applied = true
+	appliedSame := compose("applied-same", "docker.io/library/nginx:1.28", "")
+	appliedSame.Applied = true
+	keyed := target("keyed", "docker.io/library/nginx:1.28", fpOld, "")
+	keyed.RefSource, keyed.ImageRef, keyed.Applied = incus.RefFromBeacon, "docker.io/library/nginx:1.27", true
 
 	res := run(t, f,
 		compose("same", "docker.io/library/nginx:1.28", ""),
@@ -227,6 +233,9 @@ func TestComposeDrift(t *testing.T) {
 		compose("retagged", "docker.io/library/nginx:1.29", policy.TrackSemver),
 		compose("moved", "docker.io/example/nginx:1.28", ""),
 		updateSource,
+		applied,
+		appliedSame,
+		keyed,
 	)
 	want := []struct {
 		status Status
@@ -238,6 +247,9 @@ func TestComposeDrift(t *testing.T) {
 		{Error, "compose drift: runs 1.29, compose file has 1.28"},
 		{Error, "compose drift: runs example/nginx:1.28, compose file has library/nginx:1.28"},
 		{Current, ""},
+		{Error, "drift: runs 1.29, incus-beacon updated it to 1.28"},
+		{Current, ""}, // the update is not reported back to the compose file's ref
+		{Current, ""}, // an image key's ref has no drift check: its image keys may name another tag
 	}
 	for i, w := range want {
 		if res[i].Status != w.status || res[i].Reason != w.reason || res[i].Latest != "" {

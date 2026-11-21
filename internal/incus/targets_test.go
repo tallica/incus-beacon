@@ -241,3 +241,26 @@ func TestTrusted(t *testing.T) {
 		t.Errorf("untrusted server: err %v", err)
 	}
 }
+
+func TestAppliedRef(t *testing.T) {
+	t.Parallel()
+	const file, newer = "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.28"
+	moved := Target{Update: Update{Requested: file, Applied: newer}}
+	tests := []struct {
+		name    string
+		t       Target
+		asked   string
+		ref     string
+		applied bool
+	}{
+		{"never updated", Target{}, file, file, false},
+		{"updated, file unchanged", moved, file, newer, true},
+		{"updated, the same ref spelled short", moved, "nginx:1.27", newer, true},
+		{"file moved on", moved, "docker.io/library/nginx:1.29", "docker.io/library/nginx:1.29", false},
+	}
+	for _, tt := range tests {
+		if ref, ok := applied(tt.t, tt.asked); ref != tt.ref || ok != tt.applied {
+			t.Errorf("%s: %q, %t; want %q, %t", tt.name, ref, ok, tt.ref, tt.applied)
+		}
+	}
+}

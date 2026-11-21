@@ -13,6 +13,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 
 	"github.com/tallica/incus-beacon/internal/policy"
+	"github.com/tallica/incus-beacon/internal/registry"
 )
 
 const (
@@ -37,8 +38,10 @@ type Target struct {
 	BaseImage string
 	Ref       string
 	RefSource string
-	ImageRef  string // from the image keys, as launched or last rebuilt
-	Local     bool
+	// Applied: Ref is user.incus-beacon.applied, standing in for RefSource's ref.
+	Applied  bool
+	ImageRef string // from the image keys, as launched or last rebuilt
+	Local    bool
 
 	ComposeProject string
 	ComposeService string
@@ -136,6 +139,9 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 	t.Update = readUpdate(inst.Config)
 	t.Claim = inst.Config[ClaimKey]
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
+	if t.RefSource == RefFromBeacon || t.RefSource == RefFromCompose {
+		t.Ref, t.Applied = applied(t, t.Ref)
+	}
 	return t, true
 }
 
@@ -227,6 +233,24 @@ func readBeacon(config map[string]string) (b Beacon, legacy bool) {
 		Error:   config[prefix+"error"],
 		Since:   config[prefix+"since"],
 	}, legacy
+}
+
+// applied is the ref beacon updated to, while the asked-for ref is still the one it moved from.
+func applied(t Target, asked string) (string, bool) {
+	if t.Update.Applied != "" && sameRef(asked, t.Update.Requested) {
+		return t.Update.Applied, true
+	}
+	return asked, false
+}
+
+// sameRef compares refs as Docker spells them out, so nginx:1.28 is docker.io/library/nginx:1.28.
+func sameRef(a, b string) bool {
+	ra, err := registry.ParseRef(a)
+	rb, err2 := registry.ParseRef(b)
+	if err != nil || err2 != nil {
+		return a == b
+	}
+	return ra == rb
 }
 
 // resolveRef follows docs/ARCHITECTURE.md#image-ref-resolution.
