@@ -259,14 +259,7 @@ func applied(t Target, asked string) (string, bool) {
 }
 
 // sameRef compares refs as Docker spells them out, so nginx:1.28 is docker.io/library/nginx:1.28.
-func sameRef(a, b string) bool {
-	ra, err := registry.ParseRef(a)
-	rb, err2 := registry.ParseRef(b)
-	if err != nil || err2 != nil {
-		return a == b
-	}
-	return ra == rb
-}
+func sameRef(a, b string) bool { return registry.Normalize(a) == registry.Normalize(b) }
 
 // resolveRef follows docs/ARCHITECTURE.md#image-ref-resolution.
 func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]string, sources map[string]*api.ImageSource) (ref, from string) {

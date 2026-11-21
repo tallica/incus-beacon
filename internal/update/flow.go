@@ -131,7 +131,7 @@ func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, to
 	return &updater{
 		srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts,
 		log: opts.Log.With().Str("project", t.Project).Str("instance", t.Instance).Str("to", to).Logger(),
-		o:   Outcome{From: t.Ref, To: to},
+		o:   Outcome{From: registry.Normalize(t.Ref), To: to},
 	}
 }
 
@@ -237,7 +237,7 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 	}
 
 	u.c = claim{
-		Owner: u.opts.Owner, Step: -1, To: u.o.To, FromRef: u.t.Ref, From: u.inst.Config["volatile.base_image"], Dropped: dropped,
+		Owner: u.opts.Owner, Step: -1, To: u.o.To, FromRef: registry.Normalize(u.t.Ref), From: u.inst.Config["volatile.base_image"], Dropped: dropped,
 		Snapshot: snapshotPrefix + u.opts.Now().UTC().Format("20060102T150405"),
 	}
 	for _, v := range u.vols {
@@ -365,9 +365,9 @@ func (u *updater) record(base string) incus.Update {
 	prev := u.t.Update
 	switch u.o.Status {
 	case Updated:
-		requested := u.t.Ref
+		requested := registry.Normalize(u.t.Ref)
 		if u.t.Applied {
-			requested = cmp.Or(prev.Requested, u.t.Asked)
+			requested = cmp.Or(prev.Requested, registry.Normalize(u.t.Asked))
 		}
 		return incus.Update{Applied: u.o.To, AppliedImage: base, Requested: requested, Status: Updated}
 	case Refused:

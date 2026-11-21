@@ -508,6 +508,31 @@ func TestApplyRefuses(t *testing.T) {
 	}
 }
 
+func TestOutcomeSpellsBothRefsOut(t *testing.T) {
+	t.Parallel()
+	tgt := target()
+	tgt.Ref = "docker.io/nginx:1.27-alpine" // as an image record's update_source spells it
+	o := Preview(context.Background(), newFake(), fakeRegistry{}, tgt, newRef, options())
+	if o.From != oldRef || o.To != newRef {
+		t.Errorf("from %q to %q; want both as Docker spells them out", o.From, o.To)
+	}
+}
+
+func TestApplyRecordsRefsSpelledOut(t *testing.T) {
+	t.Parallel()
+	raw := target()
+	raw.Ref = "docker.io/nginx:1.27-alpine"
+	f := newFake()
+	if o := apply(t, f, raw); o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef {
+		t.Errorf("update: %+v, requested %q; want it spelled out", o, f.inst.Config["user.incus-beacon.requested"])
+	}
+	f = newFake()
+	f.crash = func(n int) bool { return n == 1 }
+	if o := apply(t, f, raw); o.Status != RolledBack || f.inst.Config["user.incus-beacon.applied"] != oldRef {
+		t.Errorf("rollback: %+v, applied %q; want it spelled out", o, f.inst.Config["user.incus-beacon.applied"])
+	}
+}
+
 func TestNextRef(t *testing.T) {
 	t.Parallel()
 	for latest, want := range map[string]string{
