@@ -121,6 +121,7 @@ func TestUsageErrors(t *testing.T) {
 		{"unknown command", nil, []string{"frobnicate"}, "unknown command"},
 		{"unknown flag", nil, []string{CmdCheck, "--nope"}, "not defined"},
 		{"extra argument", nil, []string{CmdStatus, "web"}, "unexpected argument"},
+		{"flag before command", nil, ForProgram(DaemonName, []string{"--log-level", "debug", CmdCheck}), "a command goes before its flags"},
 		{"short interval", nil, []string{CmdServe, "--interval", "10s"}, "at least 1m"},
 		{"bad level", nil, []string{CmdCheck, "--log-level", "loud"}, "log-level"},
 		{"bad colour", nil, []string{CmdCheck, "--log-color", "loud"}, "log-color"},
