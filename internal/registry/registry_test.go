@@ -95,6 +95,24 @@ func TestCreated(t *testing.T) {
 	}
 }
 
+func TestEnv(t *testing.T) {
+	t.Parallel()
+	f := newFakeRegistry(t)
+	cfg := newBlob(t, ocispec.MediaTypeImageConfig, ocispec.Image{Config: ocispec.ImageConfig{Env: []string{"PATH=/usr/bin", "NGINX_VERSION=1.27.5"}}})
+	f.add("example/app", "", cfg)
+	f.add("example/app", "1.27", withConfig(t, cfg, layerA))
+	ref := mustRef(t, f.host+"/example/app:1.27")
+	c := newTestClient(t, "")
+	img, err := c.Resolve(t.Context(), ref, amd64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := c.Env(t.Context(), ref, img)
+	if err != nil || strings.Join(env, " ") != "PATH=/usr/bin NGINX_VERSION=1.27.5" {
+		t.Errorf("env %q, %v", env, err)
+	}
+}
+
 func TestResolveDockerManifest(t *testing.T) {
 	t.Parallel()
 	f := newFakeRegistry(t)

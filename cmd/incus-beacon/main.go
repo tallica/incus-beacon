@@ -25,6 +25,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/report"
 	"github.com/tallica/incus-beacon/internal/serve"
+	"github.com/tallica/incus-beacon/internal/update"
 	"github.com/tallica/incus-beacon/internal/version"
 )
 
@@ -93,6 +94,8 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 		err = runServe(ctx, cfg.Serve, logger)
 	case config.CmdStatus:
 		err = runStatus(ctx, cfg.Status, stdout)
+	case config.CmdUpdate:
+		err = runUpdate(ctx, cfg.Update, logger, stdout)
 	case config.CmdInstall:
 		err = runInstall(ctx, cfg.Install, logger)
 	case config.CmdUpgrade:
@@ -147,6 +150,82 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 		return fmt.Errorf("status not recorded on %d instances", failed)
 	}
 	return nil
+}
+
+func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, stdout io.Writer) error {
+	srv, err := incus.Connect(ctx, connectOptions(c.Common))
+	if err != nil {
+		return err
+	}
+	targets, err := incus.Targets(ctx, srv, incus.ListOptions{Projects: c.Projects, Instance: c.Instance, WatchAll: c.Watch == config.WatchAll})
+	if err != nil {
+		return err
+	}
+	switch len(targets) {
+	case 0:
+		return fmt.Errorf("%s is not a watched OCI instance in the projects in scope", c.Instance)
+	case 1:
+	default:
+		return fmt.Errorf("%s is in several projects; give --project", c.Instance)
+	}
+	reg, err := registry.New(registry.Options{AuthFile: c.RegistryAuthFile, Timeout: c.Timeout, UserAgent: userAgent()})
+	if err != nil {
+		return err
+	}
+	r := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown}, logger).Run(ctx, targets)[0]
+	name := r.Target.Project + "/" + r.Target.Instance
+	if r.Status != check.UpdateAvailable {
+		reason := ""
+		if r.Reason != "" {
+			reason = ": " + r.Reason
+		}
+		_, err := fmt.Fprintf(stdout, "%s: %s, nothing to update%s\n", name, r.Status, reason)
+		return err
+	}
+	to, err := update.NextRef(r.Current, r.Latest)
+	if err != nil {
+		return err
+	}
+	opts := update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger}
+	if c.DryRun {
+		o := update.Preview(ctx, srv, reg, r.Target, to, opts)
+		if o.Status != update.Ready {
+			fmt.Fprintf(stdout, "%s: would refuse %s\n", name, to)
+			return fmt.Errorf("%s: %s", update.Refused, o.Reason)
+		}
+		fmt.Fprintf(stdout, "%s: would update from %s to %s\n", name, o.From, o.To)
+		printOutcome(stdout, o, "would snapshot", "would drop")
+		return nil
+	}
+	o, err := update.Apply(ctx, srv, reg, r.Target, to, opts)
+	fmt.Fprintf(stdout, "%s: %s, %s to %s\n", name, o.Status, o.From, o.To)
+	printOutcome(stdout, o, "snapshot", "dropped")
+	if err != nil {
+		return fmt.Errorf("record the outcome: %w", err)
+	}
+	if o.Status != update.Updated {
+		return fmt.Errorf("%s: %s", o.Status, o.Reason)
+	}
+	return nil
+}
+
+func printOutcome(w io.Writer, o update.Outcome, snapshot, dropped string) {
+	for _, v := range o.Snapshots {
+		fmt.Fprintf(w, "  %s %s\n", snapshot, v)
+	}
+	for _, k := range o.Dropped {
+		fmt.Fprintf(w, "  %s %s, which holds an image's own value\n", dropped, k)
+	}
+	why := "an override"
+	if o.OldEnvUnread {
+		why = "an override, or a copy from an old image that can't be read now"
+	}
+	for _, k := range o.Kept {
+		fmt.Fprintf(w, "  kept %s: %s\n", k, why)
+	}
+	for _, v := range o.Unrestored {
+		fmt.Fprintf(w, "  not restored on a rollback: %s, which another instance also uses\n", v)
+	}
 }
 
 // writeResults goes on after a failed write so the report still covers all.

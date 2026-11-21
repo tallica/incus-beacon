@@ -5,10 +5,12 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Principles
 
-- **Report, don't act.** v0.1 only detects newer images and records them. It
-  never stops, rebuilds or recreates an instance it watches. `check` and `serve`
-  change only their own `user.incus-beacon.*` keys; `install` and `uninstall`
-  create and remove only beacon's own instance, volume and certificate.
+- **Report, and act only when asked.** `check` and `serve` detect newer images
+  and record them, changing only their own `user.incus-beacon.*` keys. Only
+  `update` stops, rebuilds or restarts an instance it watches, one at a time,
+  and only after the safety steps under [Updating](#updating). `install` and
+  `uninstall` create and remove only beacon's own instance, volume and
+  certificate.
 - **Incus is the state.** The beacon keeps no database. What it last concluded
   about an instance is stored on that instance, so a restarted or replaced
   container picks up where the last one left off. Lazyincus and the `incus` CLI
@@ -37,7 +39,7 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy          |
 | `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                           |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                      |
-| `internal/update`   | The Incus calls an image update is made of: the OCI source for a ref, start and stop, rebuild, polling until a check passes               | Incus client                      |
+| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback, and the calls `upgrade` shares                  | incus, registry                   |
 | `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics             |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
@@ -113,6 +115,56 @@ same inputs but none of the status keys. A dropped stream reconnects with
 backoff from a second up to a minute; events missed meanwhile wait for the next
 cycle. Targeted checks leave `/ready` alone. A certificate restricted to some
 projects may open the all-projects stream and receives their events.
+
+### Updating
+
+`update` rebuilds one instance that a check found `update-available`, onto the
+newer tag, or onto the same tag when it was rebuilt upstream. The new image's
+ref is the tracked ref at the `latest` tag.
+
+1. **Refuse** before anything changes, with the reason in `update-reason`, when:
+   - the instance is managed by incus-compose, whose compose file would undo the
+     update;
+   - it runs incus-beacon, which `upgrade` handles;
+   - the same ref already failed (`update-failed`);
+   - it isn't running, since a stopped instance can't be health-checked;
+   - it has instance snapshots, which `rebuild` refuses;
+   - the server is older than Incus 7.6, whose rebuild keeps the old image's
+     environment and entry point.
+2. **Claim** the instance in `update-claim`, written only if the instance's ETag
+   still matches what was read, so two processes can't both win.
+3. **Run the steps**, recording in the claim which step has begun:
+   1. Stop gracefully, forcing it after `--update-stop-timeout`. With a health
+      check, wait for ic-healthd to report `stopped`, so no later status is a
+      leftover from before.
+   2. Snapshot each attached custom volume as `incus-beacon-<UTC time>`. An
+      instance snapshot would block the rebuild.
+   3. Drop the instance's own `environment.*` keys whose values are the new
+      image's, or the old image's when its tag still names that image. An Incus
+      older than 7.5 copied those values into the config at creation, and they
+      would now override the new image's. Keys that match neither stay and are
+      listed, so a copy from an old image whose tag has since moved shows up
+      rather than going unnoticed.
+   4. Rebuild from the new ref.
+   5. Start, then gate: the instance must keep running for `--update-settle`
+      and, with a health check, report `healthy` within `--update-wait`.
+      `unhealthy`, or a stop, fails at once.
+4. **On failure, undo every step begun, newest first:** stop and restore the
+   snapshots (only once the new image has run), rebuild from the old
+   `volatile.base_image`, put the dropped keys back, and start and gate again. A
+   volume another instance also uses is not restored, and the outcome says so.
+5. **Release** the claim and record the outcome in one write: `update-status`
+   becomes `updated`, `rolled-back`, `failed` (the rollback failed too) or
+   `refused`. Beacon's snapshots beyond `--update-keep` per volume are pruned
+   after a success.
+
+A claim holds for 30 minutes plus twice `--update-wait` past its last step. A
+claim older than that is taken as abandoned by a process that died. The next
+`update` of that instance takes it over and runs the same undo from the step it
+records, so a crash never leaves an instance stopped or on an unchecked image. A
+process that finds its own claim taken over stops without touching the instance.
+An update stopped before its first step changed nothing, so it reads `refused`
+and the ref is not marked failed.
 
 ### Notifications
 
@@ -216,12 +268,15 @@ Refs are normalised with Docker conventions: `nginx` becomes
   checked" key; that value lives in memory and on `/ready`. The one exception is
   the move from the pre-0.5 `user.beacon.*` names: an instance still holding
   them is written once, with the same values under the new names, so the dedupe
-  state and `since` carry over rather than reading as never checked.
+  state and `since` carry over rather than reading as never checked. `update`
+  also removes the `environment.*` keys of step 3 under [Updating](#updating),
+  and puts them back on a rollback.
 - **Writes touch the instance's local config, never the expanded config.**
   Writing the expanded config would copy profile keys onto the instance. Writes
   are guarded by the instance ETag and retried once on a conflict, and wait
   about 15 seconds at most while a start or stop holds the instance, as one does
-  right after a launch.
+  right after a launch. `update` retries up to ten times instead, re-reading its
+  claim each time, since ic-healthd writes its status while an update runs.
 - **Logs go to stderr and reports to stdout,** so `check --format json` can be
   piped. Credentials, trust tokens and private keys are never logged.
 - **A failed check keeps the last known `user.incus-beacon.latest`.** It sets

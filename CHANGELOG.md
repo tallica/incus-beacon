@@ -15,6 +15,8 @@ get an entry.
 
 ### Added
 
+- `update --instance <name>` rebuilds an instance on its newer image, with
+  volume snapshots and a health gate, and rolls back if it fails.
 - A cooldown, `--cooldown` or `user.incus-beacon.cooldown`, reports an image
   only once it is that old, so a release pulled within hours is never reported.
 

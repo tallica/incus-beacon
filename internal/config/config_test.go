@@ -285,6 +285,29 @@ func TestInstallFlags(t *testing.T) {
 	}
 }
 
+func TestUpdateFlags(t *testing.T) {
+	t.Parallel()
+	cfg, err := parse(t, nil, CmdUpdate, "--instance", "web", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Update
+	if c.Instance != "web" || !c.DryRun || c.StopTimeout != 30*time.Second || c.Wait != 5*time.Minute || c.Settle != 30*time.Second || c.Keep != 3 {
+		t.Errorf("update config %+v", c)
+	}
+	for _, args := range [][]string{
+		{},
+		{"--instance", "web", "--update-settle", "10m"},
+		{"--instance", "web", "--update-stop-timeout", "0s"},
+		{"--instance", "web", "--update-keep", "-1"},
+		{"--instance", "web", "--concurrency", "2"},
+	} {
+		if _, err := parse(t, nil, append([]string{CmdUpdate}, args...)...); !errors.Is(err, ErrUsage) {
+			t.Errorf("update %v: err %v, want a usage error", args, err)
+		}
+	}
+}
+
 func TestRemoteProject(t *testing.T) {
 	t.Parallel()
 	for _, cmd := range []string{CmdInstall, CmdUpgrade, CmdUninstall} {

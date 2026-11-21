@@ -47,6 +47,7 @@ type Target struct {
 	PolicyErr error
 	Legacy    []string // policy keys set under their old names
 	Beacon    Beacon
+	Update    Update
 	// LegacyStatus is set while the status keys still use their old names.
 	LegacyStatus bool
 	Inputs       string // the config a check reads, to tell a real change from a status write
@@ -131,6 +132,7 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 		ComposeService: inst.ExpandedConfig["user.label.incus-compose.service"],
 	}
 	t.Beacon, t.LegacyStatus = readBeacon(inst.Config)
+	t.Update = readUpdate(inst.Config)
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
 	return t, true
 }
@@ -138,6 +140,8 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 // inputs covers every key a check may read, minus the ones beacon writes.
 func inputs(inst *api.Instance) string {
 	written := Beacon{}.keys()
+	maps.Copy(written, Update{}.Keys())
+	written[ClaimKey] = ""
 	for _, k := range legacyStatusKeys() {
 		written[k] = ""
 	}

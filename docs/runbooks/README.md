@@ -9,3 +9,4 @@ One file per failure mode, named `<kebab-symptom>.md`, following
 | [rate-limited-by-registry.md](rate-limited-by-registry.md) | Instances show `rate limited until …`            |
 | [no-registry-ref.md](no-registry-ref.md)                   | An instance shows `no registry ref`              |
 | [compose-drift.md](compose-drift.md)                       | An instance shows `compose drift: runs …`        |
+| [update-rolled-back.md](update-rolled-back.md)             | `update-status` is `rolled-back` or `failed`     |

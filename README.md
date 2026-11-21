@@ -174,6 +174,7 @@ incus-beacon <command> [flags]
 | `check`     | Checks registries and prints what can be updated; `--write` records it on the instances                  |
 | `status`    | Prints what is recorded on the instances, without asking any registry                                    |
 | `serve`     | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` `/metrics` |
+| `update`    | Rebuilds one instance on its newer image, with volume snapshots, a health gate and automatic rollback    |
 | `install`   | Creates a `serve` instance on Incus that joins with a trust token                                        |
 | `upgrade`   | Rebuilds that instance on a newer image, rolling back if it isn't ready                                  |
 | `uninstall` | Removes that instance, its volume and its certificate                                                    |
@@ -247,7 +248,51 @@ incus-beacon writes these, and never any other key:
 | `user.incus-beacon.since`   | When the status or latest last changed (RFC 3339)                       |
 
 They change only when a value does, so a quiet check leaves no trace in
-`incus monitor`.
+`incus monitor`. [Updating](#updating) adds these:
+
+| Key                               | Value                                                                       |
+| --------------------------------- | --------------------------------------------------------------------------- |
+| `user.incus-beacon.update-status` | `updated`, `rolled-back`, `failed` (the rollback failed too) or `refused`   |
+| `user.incus-beacon.update-reason` | Why it rolled back, failed or was refused                                   |
+| `user.incus-beacon.update-failed` | The ref that failed; not tried again until a newer image is found           |
+| `user.incus-beacon.applied`       | The ref beacon last updated the instance to                                 |
+| `user.incus-beacon.requested`     | The ref the instance ran before beacon first updated it                     |
+| `user.incus-beacon.update-claim`  | Held while an update runs; what a rollback needs if the update is cut short |
+
+### Updating
+
+`update --instance <name>` updates one instance that `check` finds
+`update-available`, then prints what it did. `--dry-run` runs the same checks
+and prints what it would do, without changing anything; like a real run, it
+exits non-zero when the update would be refused.
+
+```sh
+incus-beacon update --remote site --instance web --dry-run
+incus-beacon update --remote site --instance web
+```
+
+It stops the instance, snapshots its custom volumes, rebuilds it on the newer
+image and starts it. The instance then has to keep running for `--update-settle`
+(30s) and, when ic-healthd watches it (`user.healthcheck.enabled=true`), report
+`healthy` within `--update-wait` (5m). If any step fails, it stops the instance,
+restores the volumes from the snapshot, rebuilds it on the old image and starts
+it again. The command exits non-zero when it didn't update, with the reason also
+in `user.incus-beacon.update-reason`. What to do then is in
+[update-rolled-back.md](docs/runbooks/update-rolled-back.md).
+
+It needs Incus 7.6 or later on the server, and refuses:
+
+- an instance managed by incus-compose;
+- incus-beacon's own instance (use `upgrade`);
+- a stopped instance;
+- an instance with instance snapshots, which a rebuild can't keep;
+- an instance with no `volatile.base_image` to roll back to;
+- a ref that failed before.
+
+The snapshots are named `incus-beacon-<UTC time>`; the newest `--update-keep`
+(3) per volume are kept. `--update-stop-timeout` (30s) is how long the instance
+may take to stop before it is forced. How it works, and how an interrupted
+update is recovered, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md#updating).
 
 ### Endpoints
 

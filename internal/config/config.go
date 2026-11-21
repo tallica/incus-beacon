@@ -16,18 +16,20 @@ const (
 	CmdStatus    = "status"
 	CmdServe     = "serve"
 	CmdInstall   = "install"
+	CmdUpdate    = "update"
 	CmdUpgrade   = "upgrade"
 	CmdUninstall = "uninstall"
 	CmdVersion   = "version"
 )
 
 // Commands lists the subcommands in the order usage shows them.
-var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdInstall, CmdUpgrade, CmdUninstall, CmdVersion}
+var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdUpdate, CmdInstall, CmdUpgrade, CmdUninstall, CmdVersion}
 
 var summaries = map[string]string{
 	CmdCheck:     "check registries for newer images and print what can be updated",
 	CmdStatus:    "show the update status already recorded on instances",
 	CmdServe:     "run checks on an interval and record results",
+	CmdUpdate:    "rebuild one instance on its newer image, rolling back if it fails",
 	CmdInstall:   "create a serve instance on Incus that joins with a trust token",
 	CmdUpgrade:   "rebuild that instance on a newer image, rolling back if it isn't ready",
 	CmdUninstall: "remove that instance, its volume and its certificate",
@@ -112,6 +114,21 @@ type Install struct {
 	NotifyErrs  bool
 }
 
+type Update struct {
+	Common
+	Registry
+	Instance string
+	DryRun   bool
+	UpdateFlags
+}
+
+type UpdateFlags struct {
+	StopTimeout time.Duration
+	Wait        time.Duration
+	Settle      time.Duration
+	Keep        int
+}
+
 type Upgrade struct {
 	Common
 	Name  string
@@ -131,6 +148,7 @@ type Config struct {
 	Check     *Check
 	Status    *Status
 	Serve     *Serve
+	Update    *Update
 	Install   *Install
 	Upgrade   *Upgrade
 	Uninstall *Uninstall
@@ -184,6 +202,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Check{}
 		bindCommon(fs, &c.Common)
 		bindRegistry(fs, &c.Registry)
+		bindConcurrency(fs, &c.Registry)
 		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
 		fs.BoolVar(&c.Write, "write", false, "also record results in user.incus-beacon.* keys")
@@ -204,6 +223,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Serve{}
 		bindCommon(fs, &c.Common)
 		bindRegistry(fs, &c.Registry)
+		bindConcurrency(fs, &c.Registry)
 		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
 		fs.BoolVar(&c.Events, "events", false, "also check instances as soon as they are created, updated or rebuilt")
@@ -222,6 +242,21 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			}
 			if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyURLFile == "" && c.NotifyCommand == "" {
 				errs = append(errs, errors.New("notify-errors needs notify-url, notify-url-file or notify-command"))
+			}
+			return errors.Join(errs...)
+		}
+	case CmdUpdate:
+		c := &Update{Registry: Registry{Concurrency: 1}}
+		bindCommon(fs, &c.Common)
+		bindRegistry(fs, &c.Registry)
+		fs.StringVar(&c.Instance, "instance", "", "the instance to update (required)")
+		fs.BoolVar(&c.DryRun, "dry-run", false, "print what would be updated, and change nothing")
+		bindUpdate(fs, &c.UpdateFlags)
+		cfg.Update = c
+		validate = func() error {
+			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate()}
+			if c.Instance == "" {
+				errs = append(errs, errors.New("instance: required"))
 			}
 			return errors.Join(errs...)
 		}
@@ -353,9 +388,35 @@ func bindCommon(fs *flag.FlagSet, c *Common) {
 	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
 }
 
+func bindUpdate(fs *flag.FlagSet, c *UpdateFlags) {
+	fs.DurationVar(&c.StopTimeout, "update-stop-timeout", 30*time.Second, "how long an instance may take to stop before it is forced")
+	fs.DurationVar(&c.Wait, "update-wait", 5*time.Minute, "how long an updated instance has to become healthy before it is rolled back")
+	fs.DurationVar(&c.Settle, "update-settle", 30*time.Second, "how long an updated instance must keep running")
+	fs.IntVar(&c.Keep, "update-keep", 3, "how many of beacon's snapshots to keep per volume; 0 keeps all")
+}
+
+func (c *UpdateFlags) validate() error {
+	var errs []error
+	for name, d := range map[string]time.Duration{"update-stop-timeout": c.StopTimeout, "update-wait": c.Wait, "update-settle": c.Settle} {
+		if d <= 0 {
+			errs = append(errs, fmt.Errorf("%s %s: must be positive", name, d))
+		}
+	}
+	if c.Settle >= c.Wait {
+		errs = append(errs, fmt.Errorf("update-settle %s: must be shorter than update-wait %s", c.Settle, c.Wait))
+	}
+	if c.Keep < 0 {
+		errs = append(errs, fmt.Errorf("update-keep %d: must not be negative", c.Keep))
+	}
+	return errors.Join(errs...)
+}
+
+func bindConcurrency(fs *flag.FlagSet, c *Registry) {
+	fs.IntVar(&c.Concurrency, "concurrency", 4, "registry lookups run at once")
+}
+
 func bindRegistry(fs *flag.FlagSet, c *Registry) {
 	fs.StringVar(&c.RegistryAuthFile, "registry-auth-file", "", "docker config.json with registry credentials")
-	fs.IntVar(&c.Concurrency, "concurrency", 4, "registry lookups run at once")
 	fs.DurationVar(&c.Timeout, "timeout", 30*time.Second, "timeout for each registry call")
 	fs.DurationVar(&c.Cooldown, "cooldown", 0, "report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
 }
