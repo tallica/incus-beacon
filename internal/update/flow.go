@@ -113,6 +113,12 @@ type claim struct {
 
 var errTaken = errors.New("the claim was taken over")
 
+// Abandoned reports a readable claim whose lease has run out.
+func Abandoned(raw string, now time.Time) bool {
+	var c claim
+	return raw != "" && json.Unmarshal([]byte(raw), &c) == nil && !now.Before(c.Expires)
+}
+
 // Apply follows docs/ARCHITECTURE.md#updating and records the outcome on the instance.
 func Apply(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t incus.Target, to string, opts Options) (Outcome, error) {
 	return newUpdater(srv, reg, t, to, opts.withDefaults()).apply(ctx)
@@ -246,7 +252,7 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 			}
 			return u.unwind(ctx, i-1, "record the claim: "+err.Error())
 		}
-		if err := s.do(ctx); err != nil {
+		if err := u.bounded(ctx, s.do); err != nil {
 			return u.unwind(ctx, i, s.name+": "+err.Error())
 		}
 	}
@@ -304,6 +310,8 @@ func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 }
 
 func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome, error) {
+	// A rollback must finish even when the caller gives up or the process is stopping.
+	ctx = context.WithoutCancel(ctx)
 	u.o.Reason = cause
 	if begun < 0 {
 		// Nothing changed, so the image is not to blame.
@@ -317,7 +325,13 @@ func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome,
 		if steps[i].undo == nil {
 			continue
 		}
-		if err := steps[i].undo(ctx); err != nil {
+		// Renewed per undo, so a long rollback is never taken for an abandoned one.
+		if err := u.begin(ctx, i); errors.Is(err, errTaken) {
+			return u.abandon(err)
+		} else if err != nil {
+			u.log.Warn().Err(err).Msg("claim not renewed; rolling back anyway")
+		}
+		if err := u.bounded(ctx, steps[i].undo); err != nil {
 			u.o.Status, u.o.Reason = Failed, cause+"; roll back "+steps[i].name+": "+err.Error()
 			u.log.Error().Str("reason", u.o.Reason).Msg("rollback failed")
 			return u.o, u.release(ctx)
@@ -326,6 +340,13 @@ func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome,
 	u.o.Status = RolledBack
 	u.log.Warn().Str("reason", cause).Msg("rolled back")
 	return u.o, u.release(ctx)
+}
+
+// bounded keeps a step or undo inside the claim's lease, so a hung call can't race a takeover.
+func (u *updater) bounded(ctx context.Context, f func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(ctx, u.opts.Lease-u.opts.Lease/10)
+	defer cancel()
+	return f(ctx)
 }
 
 func (u *updater) record() incus.Update {
@@ -342,8 +363,13 @@ func (u *updater) record() incus.Update {
 	}
 }
 
+// writeTimeout bounds one claim or config write, its retries and its operation wait.
+const writeTimeout = time.Minute
+
 // write changes the instance's own config under its ETag, retrying as ic-healthd writes meanwhile.
 func (u *updater) write(ctx context.Context, change func(map[string]string) error) error {
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
 	var err error
 	for range 10 {
 		var inst *api.Instance
@@ -360,7 +386,7 @@ func (u *updater) write(ctx context.Context, change func(map[string]string) erro
 		}
 		var op incusclient.Operation
 		if op, err = u.srv.UpdateInstance(u.t.Instance, put, etag); err == nil {
-			err = op.Wait()
+			err = op.WaitContext(ctx)
 		}
 		if err == nil || !api.StatusErrorCheck(err, http.StatusPreconditionFailed) && !incus.IsBusy(err) {
 			return err
@@ -411,7 +437,7 @@ func (u *updater) begin(ctx context.Context, i int) error {
 
 // release drops the claim and records the outcome in the same write.
 func (u *updater) release(ctx context.Context) error {
-	return u.write(ctx, func(cfg map[string]string) error {
+	return u.write(context.WithoutCancel(ctx), func(cfg map[string]string) error {
 		if err := u.ours(cfg); err != nil {
 			return err
 		}

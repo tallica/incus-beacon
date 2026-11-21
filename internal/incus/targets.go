@@ -48,6 +48,7 @@ type Target struct {
 	Legacy    []string // policy keys set under their old names
 	Beacon    Beacon
 	Update    Update
+	Claim     string // the update claim, while one holds the instance
 	// LegacyStatus is set while the status keys still use their old names.
 	LegacyStatus bool
 	Inputs       string // the config a check reads, to tell a real change from a status write
@@ -133,6 +134,7 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 	}
 	t.Beacon, t.LegacyStatus = readBeacon(inst.Config)
 	t.Update = readUpdate(inst.Config)
+	t.Claim = inst.Config[ClaimKey]
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
 	return t, true
 }

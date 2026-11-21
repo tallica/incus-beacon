@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/tallica/incus-beacon/internal/policy"
 )
 
 const (
@@ -91,6 +93,10 @@ type Serve struct {
 	Listen   string
 	Events   bool
 	Notify
+	Update       bool
+	UpdateWindow string        // HH:MM-HH:MM, or empty for any time
+	Window       policy.Window // UpdateWindow parsed; the zero Window is any time
+	UpdateFlags
 }
 
 type Notify struct {
@@ -231,6 +237,9 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.NotifyURLFile, "notify-url-file", "", "file of further --notify-url values, one per line, as install writes it")
 		fs.StringVar(&c.NotifyCommand, "notify-command", "", "program run per notification, with the JSON payload on stdin; arguments split on spaces, no shell")
 		fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when an instance's check starts failing")
+		fs.BoolVar(&c.Update, "update", false, "apply updates to instances that set user.incus-beacon.update=auto")
+		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in local time, when updates may run, unless an instance sets its own (default: any time)")
+		bindUpdate(fs, &c.UpdateFlags)
 		cfg.Serve = c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
@@ -243,6 +252,13 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyURLFile == "" && c.NotifyCommand == "" {
 				errs = append(errs, errors.New("notify-errors needs notify-url, notify-url-file or notify-command"))
 			}
+			if c.UpdateWindow != "" {
+				var err error
+				if c.Window, err = policy.ParseWindow(c.UpdateWindow); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			errs = append(errs, c.UpdateFlags.validate())
 			return errors.Join(errs...)
 		}
 	case CmdUpdate:

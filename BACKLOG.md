@@ -27,6 +27,8 @@ not work. An idea that needs more than a paragraph gets its own file in
 - [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
       on the newer image, health-gate, and roll back; opt-in per instance, never
       for incus-compose instances, and only on Incus 7.6 or later.
+- [ ] **Update windows by weekday** — `update-window` is daily; a weekly form
+      (`Sat 02:00-05:00`) would keep updates to a maintenance day.
 - [ ] **Updating compose stacks** — a README section on the two paths that
       change the compose file rather than the instance: Renovate's
       `docker-compose` manager opening PRs for newer tags, or beacon's webhook

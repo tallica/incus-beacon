@@ -109,6 +109,46 @@ func TestMessage(t *testing.T) {
 	}
 }
 
+func TestMessageWithUpdates(t *testing.T) {
+	t.Parallel()
+	web := incus.Target{Project: "default", Instance: "web", Beacon: incus.Beacon{Status: "update-available"}}
+	api := incus.Target{Project: "apps", Instance: "api"}
+	b := Batch{Transitions: sorted([]Transition{
+		sample[2],
+		NewApplied(api, "rolled-back", "ghcr.io/example/api:2", "ghcr.io/example/api:3", "the health check reports unhealthy"),
+		NewApplied(web, "updated", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", ""),
+	})}
+	title, body := Message(b)
+	if title != "incus-beacon: 1 updated, 1 update rolled back, 1 check failing" {
+		t.Errorf("title %q", title)
+	}
+	want := "• web (default): nginx:1.27 updated to nginx:1.31\n" +
+		"• api (apps): ghcr.io/example/api:2 update to ghcr.io/example/api:3 rolled back: the health check reports unhealthy\n" +
+		"• db (apps): postgres:17 check failed: registry auth failed"
+	if body != want {
+		t.Errorf("body:\n%s\nwant:\n%s", body, want)
+	}
+	if got := b.Transitions[0]; got.Previous != "update-available" || got.Latest != "docker.io/library/nginx:1.31" {
+		t.Errorf("applied transition %+v", got)
+	}
+}
+
+func TestWithApplied(t *testing.T) {
+	t.Parallel()
+	web := incus.Target{Project: "default", Instance: "web", Beacon: incus.Beacon{
+		Status: "update-available", Current: "docker.io/library/nginx:1.27", Latest: "1.31",
+	}}
+	offered := sample[:1]
+	updated := WithApplied(offered, NewApplied(web, "updated", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", ""))
+	if len(updated) != 1 || updated[0].Status != "updated" || updated[0].Kind != "tag" {
+		t.Errorf("updated: %+v; want only the outcome, of kind tag", updated)
+	}
+	refused := WithApplied(offered, NewApplied(web, "refused", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", "snapshots"))
+	if len(refused) != 2 || len(offered) != 1 {
+		t.Errorf("refused: %+v; want the offer kept beside the refusal, and the input untouched", refused)
+	}
+}
+
 func TestShortRefAndTag(t *testing.T) {
 	t.Parallel()
 	for ref, want := range map[string][2]string{

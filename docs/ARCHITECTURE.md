@@ -7,10 +7,10 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 - **Report, and act only when asked.** `check` and `serve` detect newer images
   and record them, changing only their own `user.incus-beacon.*` keys. Only
-  `update` stops, rebuilds or restarts an instance it watches, one at a time,
-  and only after the safety steps under [Updating](#updating). `install` and
-  `uninstall` create and remove only beacon's own instance, volume and
-  certificate.
+  `update`, and `serve --update` for instances that set `update=auto`, stop,
+  rebuild or restart an instance, one at a time, and only after the safety steps
+  under [Updating](#updating). `install` and `uninstall` create and remove only
+  beacon's own instance, volume and certificate.
 - **Incus is the state.** The beacon keeps no database. What it last concluded
   about an instance is stored on that instance, so a restarted or replaced
   container picks up where the last one left off. Lazyincus and the `incus` CLI
@@ -26,21 +26,21 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Components
 
-| Package             | Job                                                                                                                                       | Depends on                        |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `cmd/incus-beacon`  | Subcommand dispatch (`check`, `status`, `serve`, `version`); builds the logger and wires the packages                                     | everything below                  |
-| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                            |
-| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                                 | zerolog                           |
-| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                            |
-| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust |
-| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                |
-| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                  |
-| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy          |
-| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                           |
-| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                      |
-| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback, and the calls `upgrade` shares                  | incus, registry                   |
-| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics             |
+| Package             | Job                                                                                                                                       | Depends on                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                              | everything below                        |
+| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                                  |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                                 | zerolog                                 |
+| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                                  |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust       |
+| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                      |
+| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                        |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                      |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy                |
+| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                                 |
+| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                            |
+| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares     | incus, registry, check, policy, metrics |
+| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics                   |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
@@ -165,6 +165,33 @@ records, so a crash never leaves an instance stopped or on an unchecked image. A
 process that finds its own claim taken over stops without touching the instance.
 An update stopped before its first step changed nothing, so it reads `refused`
 and the ref is not marked failed.
+
+### Updating from serve
+
+With `--update`, each check (cycle or targeted) hands its results to the updater
+in the same goroutine, after the status writes, so a check and an update never
+write one instance at once. For each result:
+
+1. An abandoned claim (see above) is rolled back, whatever the status.
+2. Otherwise the result must be `update-available` with `update=auto`, inside
+   the instance's window or the daemon's, and its ref must not be the one in
+   `update-failed`.
+3. Once a ref rolls back or fails, the rest of that run skips it, so a broken
+   release stops after its first replica.
+
+A started update runs to its end even past the cycle's deadline or on shutdown,
+since cutting it would force a rollback. No new one starts once the deadline has
+passed. What bounds it is the claim's lease: each step, and each undo of a
+rollback, must finish within it, and the claim is renewed before each. A hung
+Incus call, such as a stalled pull, therefore fails its step before another
+process could take the claim over. Each claim write, with its retries, has a
+minute. A single API request can't be cut short from beacon: the Incus client
+takes no context for it, and a client-wide timeout would also cut the long
+operation waits and the event stream. Stopping `serve` waits for a running
+update. If Incus kills the process first, the claim is left, and the next cycle
+rolls the update back once the claim expires. The updated instances are then
+checked again, and the same message carries the outcomes, in place of the
+"update available" line of an instance that was updated.
 
 ### Notifications
 

@@ -26,9 +26,10 @@ the one map of where each kind of fact lives; everywhere else links to the home:
 ## Status
 
 Pre-1.0, released as 0.x: `check`, `status`, `serve`, `install`, `upgrade` and
-`uninstall` work against a real Incus, with notifications; automatic updates are
-on the backlog. Go 1.27, built static with `CGO_ENABLED=0`. No dependency is
-pinned below its latest release.
+`uninstall` work against a real Incus, with notifications; `update` and
+`serve --update` are built but not yet verified against a real Incus. Go 1.27,
+built static with `CGO_ENABLED=0`. No dependency is pinned below its latest
+release.
 
 ## Working on this
 

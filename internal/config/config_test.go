@@ -308,6 +308,24 @@ func TestUpdateFlags(t *testing.T) {
 	}
 }
 
+func TestServeUpdateFlags(t *testing.T) {
+	t.Parallel()
+	cfg, err := parse(t, nil, CmdServe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := cfg.Serve; c.Update || c.UpdateWindow != "" || c.Wait != 5*time.Minute || c.Keep != 3 {
+		t.Errorf("serve update defaults %+v", c)
+	}
+	cfg, err = parse(t, map[string]string{"BEACON_UPDATE": "true", "BEACON_UPDATE_WINDOW": "02:00-05:00"}, CmdServe)
+	if err != nil || !cfg.Serve.Update || cfg.Serve.Window.String() != "02:00-05:00" {
+		t.Errorf("serve from the environment: %+v, %v", cfg.Serve, err)
+	}
+	if _, err := parse(t, nil, CmdServe, "--update-window", "2-5"); !errors.Is(err, ErrUsage) {
+		t.Errorf("a bad window: err %v, want a usage error", err)
+	}
+}
+
 func TestRemoteProject(t *testing.T) {
 	t.Parallel()
 	for _, cmd := range []string{CmdInstall, CmdUpgrade, CmdUninstall} {

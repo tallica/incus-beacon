@@ -28,6 +28,11 @@ const (
 
 type fakeOp struct{ incusclient.Operation }
 
+// hungOp never finishes on its own, like an image pull that stalls.
+type hungOp struct{ incusclient.Operation }
+
+func (hungOp) WaitContext(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
+
 func (fakeOp) Wait() error                       { return nil }
 func (fakeOp) WaitContext(context.Context) error { return nil }
 
@@ -56,6 +61,7 @@ type fake struct {
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
 	stuck    bool
 	snapFail string // pool/name whose snapshot fails
+	hang     bool   // the rebuild onto the new image never finishes
 }
 
 func newFake() *fake {
@@ -153,6 +159,9 @@ func (f *fake) RebuildInstance(_ string, req api.InstanceRebuildPost) (incusclie
 	var c claim
 	if json.Unmarshal([]byte(f.inst.Config[incus.ClaimKey]), &c) == nil && req.Source.Fingerprint == "" {
 		f.claimAtRebuild = c.Step
+	}
+	if f.hang && req.Source.Fingerprint == "" {
+		return hungOp{}, nil
 	}
 	if req.Source.Fingerprint != "" {
 		f.inst.Config["volatile.base_image"] = req.Source.Fingerprint
@@ -565,5 +574,17 @@ func TestPreview(t *testing.T) {
 	f.snapshots = []string{"snap0"}
 	if o := Preview(context.Background(), f, fakeRegistry{}, target(), newRef, options()); o.Status != Refused || !strings.Contains(o.Reason, "snap0") {
 		t.Errorf("preview with instance snapshots: %+v", o)
+	}
+}
+
+func TestApplyBoundsAHungStepByTheLease(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.hang = true
+	opts := options()
+	opts.Lease = 100 * time.Millisecond
+	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), newRef, opts)
+	if err != nil || o.Status != RolledBack || !strings.Contains(o.Reason, "rebuild: context deadline exceeded") {
+		t.Errorf("outcome %+v, %v; want the hung rebuild cut at the lease and rolled back", o, err)
 	}
 }

@@ -23,6 +23,12 @@ const (
 	statusUpdate = "update-available"
 	statusError  = "error"
 
+	// What an update by serve came to, as in user.incus-beacon.update-status.
+	statusUpdated    = "updated"
+	statusRolledBack = "rolled-back"
+	statusFailed     = "failed"
+	statusRefused    = "refused"
+
 	kindDigest = "digest" // the same tag on new layers
 	kindTag    = "tag"    // a newer tag
 )
@@ -68,6 +74,34 @@ func NewTransition(t incus.Target, next incus.Beacon) Transition {
 	}
 }
 
+// NewApplied reports an update serve tried: status is its outcome, from and to the refs.
+func NewApplied(t incus.Target, status, from, to, reason string) Transition {
+	return Transition{
+		Project:  t.Project,
+		Instance: t.Instance,
+		Image:    from,
+		Status:   status,
+		Previous: t.Beacon.Status,
+		Latest:   to,
+		Kind:     kindOf(t.Beacon),
+		Reason:   reason,
+
+		ComposeProject: t.ComposeProject,
+		ComposeService: t.ComposeService,
+	}
+}
+
+// WithApplied adds an update's outcome; an instance that updated loses its "update available" line.
+func WithApplied(changes []Transition, applied Transition) []Transition {
+	out := slices.Clone(changes)
+	if applied.Status == statusUpdated {
+		out = slices.DeleteFunc(out, func(tr Transition) bool {
+			return tr.Project == applied.Project && tr.Instance == applied.Instance
+		})
+	}
+	return append(out, applied)
+}
+
 func kindOf(b incus.Beacon) string {
 	switch {
 	case b.Status != statusUpdate:
@@ -102,28 +136,41 @@ var (
 func Message(b Batch) (title, body string) { return message(b, plain) }
 
 func message(b Batch, st style) (title, body string) {
-	updates, failing := 0, 0
+	counts := map[string]int{}
 	var w strings.Builder
 	for _, t := range b.Transitions {
 		fmt.Fprintf(&w, "• %s (%s): %s", st.bold(t.Instance), t.Project, st.code(shortRef(t.Image)))
 		switch {
+		case t.Status == statusUpdated:
+			fmt.Fprintf(&w, " updated to %s\n", st.code(shortRef(t.Latest)))
+		case t.Status == statusRolledBack:
+			fmt.Fprintf(&w, " update to %s rolled back: %s\n", st.code(shortRef(t.Latest)), t.Reason)
+		case t.Status == statusFailed:
+			fmt.Fprintf(&w, " update to %s failed, and so did the rollback: %s\n", st.code(shortRef(t.Latest)), t.Reason)
+		case t.Status == statusRefused:
+			fmt.Fprintf(&w, " update refused: %s\n", t.Reason)
 		case t.Status != statusUpdate:
-			failing++
 			fmt.Fprintf(&w, " check failed: %s\n", t.Reason)
 		case t.Kind == kindDigest:
-			updates++
 			w.WriteString(" rebuilt\n")
 		default:
-			updates++
 			fmt.Fprintf(&w, " → %s\n", st.code(t.Latest))
 		}
+		counts[t.Status]++
 	}
 	var parts []string
-	if updates > 0 {
-		parts = append(parts, plural(updates, "update", "updates")+" available")
+	names := map[string][2]string{
+		statusUpdated:    {"updated", "updated"},
+		statusRolledBack: {"update rolled back", "updates rolled back"},
+		statusFailed:     {"update failed", "updates failed"},
+		statusRefused:    {"update refused", "updates refused"},
+		statusUpdate:     {"update available", "updates available"},
+		statusError:      {"check failing", "checks failing"},
 	}
-	if failing > 0 {
-		parts = append(parts, plural(failing, "check", "checks")+" failing")
+	for _, status := range order {
+		if n := counts[status]; n > 0 {
+			parts = append(parts, plural(n, names[status][0], names[status][1]))
+		}
 	}
 	title = "incus-beacon"
 	if b.Server != "" {
@@ -145,11 +192,14 @@ func sorted(ts []Transition) []Transition {
 	return out
 }
 
+// order is how lines and the title's counts are listed; any other status comes last.
+var order = []string{statusUpdated, statusRolledBack, statusFailed, statusRefused, statusUpdate, statusError}
+
 func rank(t Transition) int {
-	if t.Status == statusUpdate {
-		return 0
+	if i := slices.Index(order, t.Status); i >= 0 {
+		return i
 	}
-	return 1
+	return len(order)
 }
 
 // shortRef drops Docker Hub's implied parts, as docker does: nginx:1.27.

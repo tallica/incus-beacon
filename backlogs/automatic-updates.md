@@ -1,4 +1,5 @@
-Status: **idea, designed, not started** (2026-11-07).
+Status: **in progress** (2026-11-21): `update` and `serve --update` cover
+instances outside incus-compose; compose instances are next.
 
 # Automatic updates
 

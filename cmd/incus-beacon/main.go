@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // update windows read TZ; the image has no zoneinfo
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/rs/zerolog"
@@ -280,23 +282,18 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	conn := &incus.Conn{Options: connectOptions(c.Common)}
 	watchAll := c.Watch == config.WatchAll
 	seen := incus.Seen{}
+	runner := &update.Runner{
+		Enabled: c.Update, Window: c.Window, Registry: reg, Metrics: set, Log: logger,
+		Options: update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger},
+	}
+	runner.Init()
 
-	checkAndWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) serve.Summary {
+	checkWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) ([]check.Result, serve.Summary, []notify.Transition) {
 		for _, t := range targets {
 			seen.Record(t)
 		}
 		results := engine.Run(ctx, targets)
 		sum := serve.Summary{Targets: len(results), Statuses: map[incus.Key]check.Status{}}
-		for i := range results {
-			sum.Statuses[results[i].Target.Key()] = results[i].Status
-			switch results[i].Status {
-			case check.UpdateAvailable:
-				sum.Updates++
-			case check.Error:
-				sum.Errors++
-			case check.Current, check.Unknown:
-			}
-		}
 		var changes []notify.Transition
 		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger, func(t incus.Target, next incus.Beacon) {
 			seen.Wrote(t.Key(), next)
@@ -304,6 +301,43 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 				changes = append(changes, notify.NewTransition(t, next))
 			}
 		})
+		for i := range results {
+			sum.Statuses[results[i].Target.Key()] = results[i].Status
+		}
+		return results, sum, changes
+	}
+	// checkAndWrite then applies updates, re-checks what they changed and sends one message.
+	checkAndWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) serve.Summary {
+		results, sum, changes := checkWrite(ctx, srv, targets)
+		var rechecks []incus.Target
+		for _, d := range runner.Run(ctx, srv, results) {
+			if d.Notable {
+				o := d.Outcome
+				changes = notify.WithApplied(changes, notify.NewApplied(d.Target, o.Status, o.From, o.To, o.Reason))
+			}
+			if !d.Changed() {
+				continue
+			}
+			if t, ok, err := incus.TargetOf(ctx, srv, d.Target.Key(), watchAll); err == nil && ok {
+				rechecks = append(rechecks, t)
+			}
+		}
+		// The status keys of an updated instance still describe its old image.
+		if len(rechecks) > 0 {
+			_, re, more := checkWrite(ctx, srv, rechecks)
+			sum.Written, sum.Failed = sum.Written+re.Written, sum.Failed+re.Failed
+			maps.Copy(sum.Statuses, re.Statuses)
+			changes = append(changes, more...)
+		}
+		for _, st := range sum.Statuses {
+			switch st {
+			case check.UpdateAvailable:
+				sum.Updates++
+			case check.Error:
+				sum.Errors++
+			case check.Current, check.Unknown:
+			}
+		}
 		if len(changes) > 0 {
 			sender.Notify(ctx, notify.Batch{Server: serverName(srv, logger), Transitions: changes})
 		}

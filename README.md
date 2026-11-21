@@ -185,23 +185,24 @@ environment variable named after it: `--server-fingerprint` is
 `BEACON_SERVER_FINGERPRINT`; a flag on the command line wins. The ones most
 often needed:
 
-| Flag                                       | Purpose                                                                     |
-| ------------------------------------------ | --------------------------------------------------------------------------- |
-| `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`    |
-| `--remote <remote>:<project>`              | Also the project `install` puts the instance in                             |
-| `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                        |
-| `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)           |
-| `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir  |
-| `--token-file`                             | Read the token from a file instead, as `install` sets up                    |
-| `--project`                                | Project to watch, or several comma-separated; all visible ones by default   |
-| `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones |
-| `--format`                                 | `table` or `json`, for `check` and `status`                                 |
-| `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`     |
-| `--cooldown`                               | Report an image only once it is this old, e.g. `48h`; off by default        |
-| `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                         |
-| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default  |
-| `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)       |
-| `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`   |
+| Flag                                       | Purpose                                                                          |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`         |
+| `--remote <remote>:<project>`              | Also the project `install` puts the instance in                                  |
+| `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                             |
+| `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)                |
+| `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir       |
+| `--token-file`                             | Read the token from a file instead, as `install` sets up                         |
+| `--project`                                | Project to watch, or several comma-separated; all visible ones by default        |
+| `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones      |
+| `--format`                                 | `table` or `json`, for `check` and `status`                                      |
+| `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`          |
+| `--cooldown`                               | Report an image only once it is this old, e.g. `48h`; off by default             |
+| `--update`, `--update-window`              | Let `serve` apply updates to `update=auto` instances, at any time or in a window |
+| `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                              |
+| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default       |
+| `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)            |
+| `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`        |
 
 ### Instance keys
 
@@ -215,15 +216,17 @@ and `user.label.beacon.*`; those are still read, with a warning, until 0.7, and
 the status keys below move to the new names the next time an instance is
 written.
 
-| Key                            | Values                       | Meaning                                                                                                  |
-| ------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `user.incus-beacon.enable`     | `true`, `false`              | Watch this instance or not, whatever `--watch` says                                                      |
-| `user.incus-beacon.image`      | an image ref                 | The ref to track, when Incus doesn't know it, names another tag of the same build, or the image is local |
-| `user.incus-beacon.track`      | `digest` (default), `semver` | `digest` reports a rebuilt tag; `semver` also reports newer version tags                                 |
-| `user.incus-beacon.constraint` | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                                                             |
-| `user.incus-beacon.include`    | a regex                      | With `semver`: only tags that match                                                                      |
-| `user.incus-beacon.exclude`    | a regex                      | With `semver`: no tags that match                                                                        |
-| `user.incus-beacon.cooldown`   | e.g. `48h`, `168h`, `0`      | Report an image only once it is this old; overrides `--cooldown`, and `0` turns it off                   |
+| Key                               | Values                       | Meaning                                                                                                  |
+| --------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `user.incus-beacon.enable`        | `true`, `false`              | Watch this instance or not, whatever `--watch` says                                                      |
+| `user.incus-beacon.image`         | an image ref                 | The ref to track, when Incus doesn't know it, names another tag of the same build, or the image is local |
+| `user.incus-beacon.track`         | `digest` (default), `semver` | `digest` reports a rebuilt tag; `semver` also reports newer version tags                                 |
+| `user.incus-beacon.constraint`    | e.g. `~1.27`, `<2`           | With `semver`: only versions that satisfy it                                                             |
+| `user.incus-beacon.include`       | a regex                      | With `semver`: only tags that match                                                                      |
+| `user.incus-beacon.exclude`       | a regex                      | With `semver`: no tags that match                                                                        |
+| `user.incus-beacon.cooldown`      | e.g. `48h`, `168h`, `0`      | Report an image only once it is this old; overrides `--cooldown`, and `0` turns it off                   |
+| `user.incus-beacon.update`        | `notify` (default), `auto`   | `auto` lets `serve --update` apply this instance's updates (see [Updating](#updating))                   |
+| `user.incus-beacon.update-window` | e.g. `02:00-05:00`           | When `serve` may update this instance, daily in local time; overrides `--update-window`                  |
 
 `semver` keeps the shape of the current tag: `1.27.3-alpine` only moves to newer
 `x.y.z-alpine` tags, and `1.27` only to newer `x.y` tags. A tag that is not a
@@ -289,6 +292,31 @@ It needs Incus 7.6 or later on the server, and refuses:
 - an instance with no `volatile.base_image` to roll back to;
 - a ref that failed before.
 
+With `--update`, `serve` applies updates the same way, to instances that set
+`user.incus-beacon.update=auto`, after each check, one instance at a time:
+
+```sh
+incus config set web user.incus-beacon.update=auto
+incus-beacon serve --update --update-window 02:00-05:00
+```
+
+- An update waits for the window: the instance's `update-window`, else
+  `--update-window`, else any time. The window is daily, in the process's local
+  time, which `TZ` sets (UTC in the published image unless it is set; to
+  verify). On the day clocks change, a window in the skipped hour doesn't happen
+  and one in the repeated hour happens twice.
+- Once one replica of an image fails, the other instances on that image are not
+  tried in the same cycle, and a ref that failed is not tried again (see the
+  runbook).
+- An update interrupted by a crash, its claim expired, is rolled back by the
+  next cycle.
+- Each update is [notified](#notifications), and the instance is checked again
+  at once, so its status keys describe the new image.
+- An `update=auto` instance under a `serve` without `--update` is reported, not
+  updated, and the log says so once.
+- The [cooldown](#instance-keys) decides which tags count as updates at all, so
+  set one before letting `serve` act on them.
+
 The snapshots are named `incus-beacon-<UTC time>`; the newest `--update-keep`
 (3) per volume are kept. `--update-stop-timeout` (30s) is how long the instance
 may take to stop before it is forced. How it works, and how an interrupted
@@ -304,17 +332,18 @@ update is recovered, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md#updating).
 | `/ready`   | 200 once the last cycle finished without error, else 503; JSON with that cycle's summary |
 | `/metrics` | Prometheus metrics, below                                                                |
 
-| Metric                                           | Type      | Labels                   | Meaning                                                          |
-| ------------------------------------------------ | --------- | ------------------------ | ---------------------------------------------------------------- |
-| `incus_beacon_instances`                         | gauge     | `status`                 | Watched instances by status, as of each one's latest check       |
-| `incus_beacon_cycles_total`                      | counter   | `result`                 | Full check cycles, `success` or `failure`                        |
-| `incus_beacon_last_success_timestamp_seconds`    | gauge     |                          | When the last successful cycle finished; 0 before the first      |
-| `incus_beacon_cycle_duration_seconds`            | gauge     |                          | How long the last cycle took                                     |
-| `incus_beacon_status_writes_total`               | counter   | `result`                 | `user.incus-beacon.*` writes, `written` or `failed`              |
-| `incus_beacon_registry_requests_total`           | counter   | `host`, `method`, `code` | Registry requests by HTTP status, or `error` when none came back |
-| `incus_beacon_registry_request_duration_seconds` | histogram | `host`                   | Time to a registry's response headers                            |
-| `incus_beacon_notifications_total`               | counter   | `notifier`, `result`     | Messages per notifier kind, `sent` or `failed`                   |
-| `incus_beacon_build_info`                        | gauge     | `version`                | Always 1                                                         |
+| Metric                                           | Type      | Labels                   | Meaning                                                              |
+| ------------------------------------------------ | --------- | ------------------------ | -------------------------------------------------------------------- |
+| `incus_beacon_instances`                         | gauge     | `status`                 | Watched instances by status, as of each one's latest check           |
+| `incus_beacon_cycles_total`                      | counter   | `result`                 | Full check cycles, `success` or `failure`                            |
+| `incus_beacon_last_success_timestamp_seconds`    | gauge     |                          | When the last successful cycle finished; 0 before the first          |
+| `incus_beacon_cycle_duration_seconds`            | gauge     |                          | How long the last cycle took                                         |
+| `incus_beacon_status_writes_total`               | counter   | `result`                 | `user.incus-beacon.*` writes, `written` or `failed`                  |
+| `incus_beacon_registry_requests_total`           | counter   | `host`, `method`, `code` | Registry requests by HTTP status, or `error` when none came back     |
+| `incus_beacon_registry_request_duration_seconds` | histogram | `host`                   | Time to a registry's response headers                                |
+| `incus_beacon_notifications_total`               | counter   | `notifier`, `result`     | Messages per notifier kind, `sent` or `failed`                       |
+| `incus_beacon_updates_total`                     | counter   | `result`                 | Updates `serve` tried: `updated`, `rolled-back`, `failed`, `refused` |
+| `incus_beacon_build_info`                        | gauge     | `version`                | Always 1                                                             |
 
 Targeted checks from `--events` update `incus_beacon_instances` too; an instance
 deleted since is counted until the next cycle. Requests held back by a
@@ -323,9 +352,11 @@ registry's rate limit are never sent, so they are not counted.
 ### Notifications
 
 `serve` sends a message when an instance gets an update, or a newer one, and,
-with `--notify-errors`, when its check starts failing. Each change is sent once,
-and the changes one check finds go in one message. An update applied, or a check
-that recovers, sends nothing.
+with `--notify-errors`, when its check starts failing. With `--update`, it also
+sends what each update it applies comes to: updated, rolled back, failed, or
+refused (a refusal once per reason). Each change is sent once, and the changes
+one check finds go in one message. An update applied by hand, or a check that
+recovers, sends nothing.
 
 `--notify-url` can be repeated, or hold several URLs separated by spaces, as
 `BEACON_NOTIFY_URL` does:
@@ -375,9 +406,12 @@ cluster). An update's `kind` is `tag` for a newer tag, or `digest` for new
 layers under the same tag, as `latest` shows with `<tag>@sha256:…`.
 `compose_project` and `compose_service` name an incus-compose instance's stack
 and service, so a script can act on the right one. A failed check adds
-`"reason"` instead of `kind`. A message that fails to send is logged and counted
-in `incus_beacon_notifications_total`, and not sent again. Webhook URLs are
-secrets: logs name only the scheme and host.
+`"reason"` instead of `kind`. An update `serve` applied has `status` set to
+`updated`, `rolled-back`, `failed` or `refused`, `image` the ref it ran and
+`latest` the ref it was updated to, `kind` the kind of update it applied, and
+`reason` when it didn't succeed. A message that fails to send is logged and
+counted in `incus_beacon_notifications_total`, and not sent again. Webhook URLs
+are secrets: logs name only the scheme and host.
 
 `--notify-url-file` reads more URLs, one per line, with `#` comments. That is
 how `install --notify-url` sets them up: it writes `notify-urls` into the state
