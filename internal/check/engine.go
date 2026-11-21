@@ -145,6 +145,10 @@ func Precheck(t incus.Target) Result {
 func prepare(r *Result) (plan, bool) {
 	t := r.Target
 	r.Current = t.Ref
+	ref, refErr := registry.ParseRef(t.Ref)
+	if t.Ref != "" && refErr == nil {
+		r.Current = ref.String()
+	}
 	switch {
 	case t.PolicyErr != nil:
 		r.Status, r.Reason = Error, "policy: "+t.PolicyErr.Error()
@@ -159,12 +163,10 @@ func prepare(r *Result) (plan, bool) {
 		r.Status, r.Reason = Unknown, "no base image fingerprint"
 		return plan{}, false
 	}
-	ref, err := registry.ParseRef(t.Ref)
-	if err != nil {
-		r.Status, r.Reason = Error, err.Error()
+	if refErr != nil {
+		r.Status, r.Reason = Error, refErr.Error()
 		return plan{}, false
 	}
-	r.Current = ref.String()
 	if ref.Tag == "" {
 		r.Status, r.Reason = Unknown, "pinned by digest"
 		return plan{}, false

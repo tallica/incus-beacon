@@ -18,6 +18,12 @@ get an entry.
 - A cooldown, `--cooldown` or `user.incus-beacon.cooldown`, reports an image
   only once it is that old, so a release pulled within hours is never reported.
 
+### Fixed
+
+- An instance with a policy error, or not yet checkable, now shows and records
+  its image ref in full: `docker.io/library/nginx:1.28`, not
+  `docker.io/nginx:1.28`.
+
 ## [0.5.1] - 2026-11-11
 
 ### Fixed
