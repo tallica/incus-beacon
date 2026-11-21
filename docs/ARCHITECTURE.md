@@ -163,12 +163,14 @@ ref is the tracked ref at the `latest` tag.
    snapshots (only once the new image has run), rebuild from the old
    `volatile.base_image`, put the override keys and the dropped keys back as
    they were, and start and gate again. A volume another instance also uses is
-   not restored, and the outcome says so.
+   not restored, and the outcome says so; its snapshot is still taken, for a
+   restore by hand once the other instances are stopped.
 5. **Release** the claim and record the outcome in one write, with `applied` and
    `applied-image` naming the ref and image the instance is left on:
    `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback
-   failed too) or `refused`. Beacon's snapshots beyond `--update-keep` per
-   volume are pruned after a success.
+   failed too) or `refused`. After a success, beacon's snapshots beyond
+   `--update-keep` per volume are pruned, outside the claim, so a slow delete
+   can't outlast its lease and get the update rolled back.
 
 A claim holds for 30 minutes plus twice `--update-wait` past its last step. A
 claim older than that is taken as abandoned by a process that died. The next

@@ -16,8 +16,9 @@ incus config get <instance> user.incus-beacon.update-reason
 `rolled-back`: one step of the update failed. The usual cause is that the new
 image didn't start, stopped again within `--update-settle`, or wasn't `healthy`
 within `--update-wait`. The instance runs the old image again, on its volumes as
-they were before the update. The ref is in `user.incus-beacon.update-failed` and
-is not tried again.
+they were before the update, except a volume another instance also uses: that
+one keeps what the new image wrote. The ref is in
+`user.incus-beacon.update-failed` and is not tried again.
 
 `failed`: the update failed, and so did a step of the rollback, named in the
 reason after `roll back`. The instance may be stopped, or on the new image.
@@ -49,6 +50,9 @@ incus rebuild <fingerprint> <instance>
 incus storage volume snapshot restore <pool> <volume> <snapshot>
 incus start <instance>
 ```
+
+A shared volume left unrestored can be restored the same way, from its newest
+`incus-beacon-*` snapshot, once every instance using it is stopped.
 
 If an update was interrupted, `user.incus-beacon.update-claim` holds the step it
 reached, the old ref and fingerprint, the snapshot name and any dropped

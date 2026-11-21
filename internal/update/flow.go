@@ -266,10 +266,16 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 			return u.unwind(ctx, i, s.name+": "+err.Error())
 		}
 	}
-	u.prune()
 	u.o.Status = Updated
 	u.log.Info().Msg("updated")
-	return u.o, u.release(ctx)
+	if err := u.release(ctx); err != nil {
+		return u.o, err
+	}
+	// Outside the claim: docs/ARCHITECTURE.md#updating says why.
+	ctx, cancel := context.WithTimeout(ctx, u.opts.Lease)
+	defer cancel()
+	u.prune(ctx)
+	return u.o, nil
 }
 
 func (u *updater) refuse(ctx context.Context, reason string) (Outcome, error) {
@@ -770,7 +776,7 @@ func (u *updater) restore(ctx context.Context) error {
 }
 
 // prune keeps the newest Keep of beacon's snapshots per volume; a failure only logs.
-func (u *updater) prune() {
+func (u *updater) prune(ctx context.Context) {
 	if u.opts.Keep <= 0 {
 		return
 	}
@@ -790,7 +796,7 @@ func (u *updater) prune() {
 		for _, n := range ours[:max(len(ours)-u.opts.Keep, 0)] {
 			op, err := u.srv.DeleteStoragePoolVolumeSnapshot(v.pool, "custom", v.name, n)
 			if err == nil {
-				err = op.Wait()
+				err = op.WaitContext(ctx)
 			}
 			if err != nil {
 				u.log.Warn().Err(err).Str("snapshot", v.pool+"/"+v.name+"/"+n).Msg("snapshot not pruned")

@@ -64,6 +64,7 @@ type fake struct {
 	stuck    bool
 	snapFail string // pool/name whose snapshot fails
 	hang     bool   // the rebuild onto the new image never finishes
+	hangDel  bool   // snapshot deletes never finish
 }
 
 func newFake() *fake {
@@ -207,6 +208,9 @@ func (f *fake) GetStoragePoolVolumeSnapshotNames(pool, _, name string) ([]string
 
 func (f *fake) DeleteStoragePoolVolumeSnapshot(pool, _, name, snap string) (incusclient.Operation, error) {
 	k := pool + "/" + name
+	if f.hangDel {
+		return hungOp{}, nil
+	}
 	f.volSnaps[k] = slices.DeleteFunc(f.volSnaps[k], func(s string) bool { return s == snap })
 	return fakeOp{}, nil
 }
@@ -628,6 +632,21 @@ func TestApplyBoundsAHungStepByTheLease(t *testing.T) {
 	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), newRef, opts)
 	if err != nil || o.Status != RolledBack || !strings.Contains(o.Reason, "rebuild: context deadline exceeded") {
 		t.Errorf("outcome %+v, %v; want the hung rebuild cut at the lease and rolled back", o, err)
+	}
+}
+
+func TestApplyPrunesAfterTheRelease(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.hangDel = true
+	opts := options()
+	opts.Lease = 100 * time.Millisecond
+	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), newRef, opts)
+	if err != nil || o.Status != Updated {
+		t.Fatalf("outcome %+v, %v; want a hung prune to leave the update standing", o, err)
+	}
+	if _, ok := f.inst.Config[incus.ClaimKey]; ok || f.inst.Config["user.incus-beacon.update-status"] != Updated {
+		t.Errorf("config %v; want the outcome recorded and the claim gone before the prune", f.inst.Config)
 	}
 }
 
