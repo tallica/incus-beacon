@@ -26,6 +26,9 @@ LABEL org.opencontainers.image.title="incus-beacon" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$COMMIT"
 COPY --from=build /out/incus-beacon /usr/local/bin/incus-beacon
+# Called as incus-beacond with no command, the binary runs serve. The old path
+# stays: an instance rebuilt on Incus 7.5 or older keeps its old entry point.
+RUN ["/bin/ln", "-s", "incus-beacon", "/usr/local/bin/incus-beacond"]
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY LICENSE THIRD_PARTY_NOTICES.md IMAGE_NOTICES.md /usr/share/doc/incus-beacon/
 COPY --from=build --chown=65534:65534 /out/state /var/lib/incus-beacon
@@ -36,5 +39,4 @@ USER 65534:65534
 EXPOSE 9153
 HEALTHCHECK --interval=1m --timeout=5s --start-period=1m --start-interval=5s \
   CMD wget -q -O /dev/null http://127.0.0.1:9153/ready || exit 1
-ENTRYPOINT ["/usr/local/bin/incus-beacon"]
-CMD ["serve"]
+ENTRYPOINT ["/usr/local/bin/incus-beacond"]

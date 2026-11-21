@@ -60,8 +60,8 @@ incus-beacon install --remote <remote>
 ```
 
 In the remote's current project, or the one after the colon, it creates a volume
-`incus-beacon-state` owned by uid 65534, a one-time trust token (restricted to
-`--project` when given) and an instance `incus-beacon` from
+`incus-beacond-state` owned by uid 65534, a one-time trust token (restricted to
+`--project` when given) and an instance `incus-beacond` from
 `ghcr.io/tallica/incus-beacon` at this version's `major.minor`. The token
 reaches the instance as a file, not as config. The instance gets
 `user.incus-beacon.track=semver` when the image tag is a version, so it also
@@ -70,7 +70,9 @@ reports newer releases of itself; `--track` overrides that. The instance dials
 addresses; `--api-url` overrides that. `install` waits until the instance has
 joined, then removes the spent token file. `incus-beacon uninstall` removes the
 instance, its volume and its certificate, finding the instance in whichever
-project it is in.
+project it is in. An instance installed before 0.6 is called `incus-beacon`:
+`upgrade` and `uninstall` find it under that name when `--name` isn't given, and
+`install` refuses to add a second beacon beside it.
 
 When the instance reports a newer release of itself, install that release of the
 CLI and run `incus-beacon upgrade --remote <remote>`. It rebuilds the instance
@@ -80,16 +82,18 @@ answers, it rebuilds the instance back onto the image it ran before. It refuses
 an older version tag without `--force`, and an instance with snapshots, which
 Incus can't rebuild.
 
-Check it: `incus exec incus-beacon -- wget -q -O - http://127.0.0.1:9153/ready`,
-or `curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
+Check it:
+`incus exec incus-beacond -- wget -q -O - http://127.0.0.1:9153/ready`, or
+`curl http://<beacon-ip>:9153/ready` from a host that reaches the instance's
 network, such as the Incus host. Add `--project <project>` to `incus exec` when
 it lives in another project.
 
 #### By hand
 
-The image runs `serve` as uid 65534, listens on port 9153 and keeps its client
-certificate in `/var/lib/incus-beacon`. It joins Incus with a one-time trust
-token, which also carries the server's fingerprint for pinning.
+The image runs `incus-beacond`, which is `serve`, as uid 65534, listens on port
+9153 and keeps its client certificate in `/var/lib/incus-beacon`. It joins Incus
+with a one-time trust token, which also carries the server's fingerprint for
+pinning.
 
 1. Create a volume owned by uid 65534, so the certificate survives the instance
    being rebuilt for a new image:
@@ -180,6 +184,10 @@ incus-beacon <command> [flags]
 | `upgrade`   | Rebuilds that instance on a newer image, rolling back if it isn't ready                                  |
 | `uninstall` | Removes that instance, its volume and its certificate                                                    |
 | `version`   | Prints the version                                                                                       |
+
+The same binary also answers to `incus-beacond`, as the image's entry point
+does: called by that name with no command, or with only flags, it runs `serve`.
+For a host install, `ln -s incus-beacon incus-beacond` gives it that name.
 
 `incus-beacon <command> -h` lists every flag. Each flag can also be set with an
 environment variable named after it: `--server-fingerprint` is
@@ -434,8 +442,8 @@ restart the instance:
 
 ```sh
 incus storage volume file push --uid 65534 --gid 65534 --mode 0400 \
-  notify-urls <pool> incus-beacon-state/notify-urls
-incus restart incus-beacon
+  notify-urls <pool> incus-beacond-state/notify-urls
+incus restart incus-beacond
 ```
 
 ## Documentation

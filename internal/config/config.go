@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -22,6 +23,26 @@ const (
 	CmdUpgrade   = "upgrade"
 	CmdUninstall = "uninstall"
 	CmdVersion   = "version"
+)
+
+// DaemonName is the binary's second name: called by it, no command means serve.
+const DaemonName = "incus-beacond"
+
+// ForProgram prepends serve for DaemonName given no command, or only flags.
+func ForProgram(prog string, args []string) []string {
+	if filepath.Base(prog) != DaemonName {
+		return args
+	}
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") && !slices.Contains(helpArgs, args[0]) && !slices.Contains(versionArgs, args[0]) {
+		return append([]string{CmdServe}, args...)
+	}
+	return args
+}
+
+// Parse takes these in place of a command.
+var (
+	helpArgs    = []string{"-h", "-help", "--help", "help"}
+	versionArgs = []string{"-version", "--version"}
 )
 
 // Commands lists the subcommands in the order usage shows them.
@@ -190,11 +211,11 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		return nil, fmt.Errorf("%w: no command given", ErrUsage)
 	}
 	name, rest := args[0], args[1:]
-	switch name {
-	case "-h", "-help", "--help", "help":
+	switch {
+	case slices.Contains(helpArgs, name):
 		Usage(out)
 		return nil, ErrHelp
-	case "-version", "--version":
+	case slices.Contains(versionArgs, name):
 		name = CmdVersion
 	}
 
@@ -282,7 +303,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindRemoteProject(fs, &c.Common)
 		fs.Var((*csvValue)(&c.Projects), "project", "project to watch, and to restrict the certificate to; comma-separate several (default: all)")
 		fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
-		bindInstance(fs, &c.Name)
+		bindInstance(fs, &c.Name, "incus-beacond, refused beside an incus-beacon from before 0.6")
 		fs.StringVar(&c.Image, "image", "", "image to run (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
 		fs.StringVar(&c.StoragePool, "storage-pool", "", "pool for the state volume (default: the default profile's root pool)")
 		fs.StringVar(&c.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
@@ -309,7 +330,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Upgrade{Common: Common{Watch: WatchAll}}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name)
+		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
 		fs.StringVar(&c.Image, "image", "", "image to rebuild from (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
 		fs.BoolVar(&c.Force, "force", false, "allow an image older than the running one")
 		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
@@ -325,7 +346,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Uninstall{Common: Common{Watch: WatchAll}}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name)
+		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
 		cfg.Uninstall = c
 		validate = func() error { return c.validate() }
 	case CmdVersion:
@@ -385,8 +406,8 @@ func bindRemoteProject(fs *flag.FlagSet, c *Common) {
 	fs.Var(&remoteValue{c: c, project: true}, "remote", "incus CLI `remote[:project]` to use, the project being where the instance lives (default: the CLI's default remote and its current project)")
 }
 
-func bindInstance(fs *flag.FlagSet, name *string) {
-	fs.StringVar(name, "name", "incus-beacon", "instance name; also names its volume and certificate")
+func bindInstance(fs *flag.FlagSet, name *string, dflt string) {
+	fs.StringVar(name, "name", "", "instance name; also names its volume and certificate (default: "+dflt+")")
 }
 
 func bindCommon(fs *flag.FlagSet, c *Common) {

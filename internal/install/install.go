@@ -48,6 +48,26 @@ type Options struct {
 	Log         zerolog.Logger
 }
 
+// DefaultName is what install calls the instance; legacyName is what it did before 0.6.
+const (
+	DefaultName = "incus-beacond"
+	legacyName  = "incus-beacon"
+)
+
+// ResolveName is name, else the default, else an instance from before 0.6 under the old name.
+func ResolveName(srv incusclient.InstanceServer, name string, log zerolog.Logger) string {
+	if name != "" {
+		return name
+	}
+	if _, _, err := findInstance(srv, DefaultName, log); notFound(err) {
+		if _, _, err := findInstance(srv, legacyName, log); err == nil {
+			log.Info().Str("instance", legacyName).Msg("using the instance from before 0.6")
+			return legacyName
+		}
+	}
+	return DefaultName
+}
+
 // VolumeName is the state volume of the instance called name.
 func VolumeName(name string) string { return name + "-state" }
 
@@ -76,6 +96,12 @@ func trackFor(track, image string) string {
 
 // Install undoes what it created if a step before the start fails.
 func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) error {
+	if opts.Name == "" {
+		if _, _, err := findInstance(srv, legacyName, opts.Log); err == nil {
+			return fmt.Errorf("an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another", legacyName)
+		}
+		opts.Name = DefaultName
+	}
 	if err := checkFree(srv, opts.Name); err != nil {
 		return err
 	}

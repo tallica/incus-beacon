@@ -266,7 +266,7 @@ func TestInstallFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cfg.Install
-	if c.Name != "incus-beacon" || c.Wait != time.Minute || c.Remote != "r" || !slices.Equal(c.Projects, []string{"default", "apps"}) {
+	if c.Name != "" || c.Wait != time.Minute || c.Remote != "r" || !slices.Equal(c.Projects, []string{"default", "apps"}) {
 		t.Errorf("install config %+v", c)
 	}
 	if _, err := parse(t, nil, CmdInstall, "--client-cert", "c"); !errors.Is(err, ErrUsage) {
@@ -304,6 +304,31 @@ func TestUpdateFlags(t *testing.T) {
 	} {
 		if _, err := parse(t, nil, append([]string{CmdUpdate}, args...)...); !errors.Is(err, ErrUsage) {
 			t.Errorf("update %v: err %v, want a usage error", args, err)
+		}
+	}
+}
+
+func TestForProgram(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		prog string
+		args []string
+		want string
+	}{
+		{"/usr/local/bin/incus-beacond", nil, "serve"},
+		{"/usr/local/bin/incus-beacond", []string{"--update", "--interval", "1h"}, "serve --update --interval 1h"},
+		{"incus-beacond", []string{"check"}, "check"},
+		{"incus-beacond", []string{"--version"}, "--version"},
+		{"incus-beacond", []string{"help"}, "help"},
+		{"incus-beacond", []string{"-h"}, "-h"},
+		// As with incus-beacon, flags go after the command; leading ones are serve's.
+		{"incus-beacond", []string{"--log-level", "debug", "check"}, "serve --log-level debug check"},
+		{"incus-beacon", nil, ""},
+		{"incus-beacon", []string{"--update"}, "--update"},
+	}
+	for _, tt := range tests {
+		if got := strings.Join(ForProgram(tt.prog, tt.args), " "); got != tt.want {
+			t.Errorf("ForProgram(%q, %q) = %q, want %q", tt.prog, tt.args, got, tt.want)
 		}
 	}
 }

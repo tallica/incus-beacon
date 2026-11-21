@@ -15,6 +15,8 @@ get an entry.
 
 ### Added
 
+- The binary also answers to `incus-beacond`, which runs `serve`; the image now
+  starts it by that name.
 - `update --instance <name>` rebuilds an instance on its newer image, with
   volume snapshots and a health gate, and rolls back if it fails.
 - Updates reach incus-compose instances too, once incus-compose sets
@@ -25,6 +27,12 @@ get an entry.
   notifies each outcome.
 - A cooldown, `--cooldown` or `user.incus-beacon.cooldown`, reports an image
   only once it is that old, so a release pulled within hours is never reported.
+
+### Changed
+
+- **Breaking:** `install` names its instance, state volume and certificate
+  `incus-beacond` (`incus-beacond-state` for the volume); `upgrade` and
+  `uninstall` still find one installed before as `incus-beacon`.
 
 ### Fixed
 

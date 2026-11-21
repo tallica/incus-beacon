@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"slices"
@@ -401,6 +402,51 @@ func TestInstallKeepsInstanceThatDidNotJoin(t *testing.T) {
 	}
 	if f.instances["incus-beacon"] == nil {
 		t.Error("instance removed; its log is what explains the failure")
+	}
+}
+
+func TestInstallNamesItIncusBeacond(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	o := opts()
+	o.Name = ""
+	if err := Install(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.instances[DefaultName]; !ok {
+		t.Errorf("instances %v, want %s", slices.Collect(maps.Keys(f.instances)), DefaultName)
+	}
+}
+
+func TestInstallRefusesBesideABeaconFromBefore06(t *testing.T) {
+	t.Parallel()
+	f := installedFake() // an instance called incus-beacon
+	o := opts()
+	o.Name = ""
+	if err := Install(context.Background(), f, o); err == nil || !strings.Contains(err.Error(), "upgrade it") {
+		t.Errorf("err %v, want a pointer to upgrade", err)
+	}
+	if _, ok := f.instances[DefaultName]; ok {
+		t.Error("a second beacon was created")
+	}
+}
+
+func TestResolveName(t *testing.T) {
+	t.Parallel()
+	log := zerolog.Nop()
+	if got := ResolveName(newFake(), "", log); got != DefaultName {
+		t.Errorf("nothing installed: %q, want %q", got, DefaultName)
+	}
+	if got := ResolveName(installedFake(), "", log); got != "incus-beacon" {
+		t.Errorf("an instance from before 0.6: %q, want incus-beacon", got)
+	}
+	both := installedFake()
+	both.instances[DefaultName] = &api.Instance{Name: DefaultName}
+	if got := ResolveName(both, "", log); got != DefaultName {
+		t.Errorf("both: %q, want %q", got, DefaultName)
+	}
+	if got := ResolveName(both, "mine", log); got != "mine" {
+		t.Errorf("--name mine: %q", got)
 	}
 }
 

@@ -40,7 +40,7 @@ const (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	code := run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+	code := run(ctx, config.ForProgram(os.Args[0], os.Args[1:]), os.Getenv, os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
 }
@@ -475,7 +475,7 @@ func runUpgrade(ctx context.Context, c *config.Upgrade, logger zerolog.Logger) e
 		return err
 	}
 	return install.Upgrade(ctx, srv, install.UpgradeOptions{
-		Name:  c.Name,
+		Name:  install.ResolveName(srv, c.Name, logger),
 		Image: image,
 		Force: c.Force,
 		Wait:  c.Wait,
@@ -488,7 +488,7 @@ func runUninstall(ctx context.Context, c *config.Uninstall, logger zerolog.Logge
 	if err != nil {
 		return err
 	}
-	return install.Uninstall(ctx, srv, c.Name, logger)
+	return install.Uninstall(ctx, srv, install.ResolveName(srv, c.Name, logger), logger)
 }
 
 func connectOptions(c config.Common) incus.ConnectOptions {

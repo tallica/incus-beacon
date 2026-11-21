@@ -22,7 +22,8 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
   only follows when the digest moves. Replicas of the same image share one
   lookup.
 - **Small and static.** Standard library first, no CGO, and one binary that
-  serves as both the CLI and the daemon.
+  serves as both the CLI and the daemon. Called as `incus-beacond`, its name in
+  the image, it runs `serve` when given no command.
 
 ## Components
 
