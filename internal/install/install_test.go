@@ -484,17 +484,6 @@ func TestDefaultImage(t *testing.T) {
 	}
 }
 
-func TestSplitImage(t *testing.T) {
-	t.Parallel()
-	server, alias, err := splitImage("ghcr.io/tallica/incus-beacon:0.1")
-	if err != nil || server != "https://ghcr.io" || alias != "tallica/incus-beacon:0.1" {
-		t.Errorf("got %s %s %v", server, alias, err)
-	}
-	if _, _, err := splitImage("tallica/incus-beacon"); err == nil {
-		t.Error("a ref without a registry was accepted")
-	}
-}
-
 func TestDetectURL(t *testing.T) {
 	t.Parallel()
 	tests := []struct{ addr, want string }{

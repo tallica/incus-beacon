@@ -20,6 +20,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/semver"
+	"github.com/tallica/incus-beacon/internal/update"
 )
 
 const (
@@ -100,7 +101,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 			return err
 		}
 	}
-	server, alias, err := splitImage(opts.Image)
+	server, alias, err := update.SplitImage(opts.Image)
 	if err != nil {
 		return err
 	}
@@ -186,7 +187,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if err := pushToken(srv, opts.Name, token); err != nil {
 		return rollback(err)
 	}
-	if err := setState(ctx, srv, opts.Name, "start"); err != nil {
+	if err := update.SetState(ctx, srv, opts.Name, "start"); err != nil {
 		return rollback(fmt.Errorf("start %s: %w", opts.Name, err))
 	}
 
@@ -210,7 +211,7 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 	case err == nil:
 		pool = inst.Devices[stateDev]["pool"]
 		if inst.StatusCode != api.Stopped {
-			if err := setState(ctx, srv, name, "stop"); err != nil {
+			if err := update.SetState(ctx, srv, name, "stop"); err != nil {
 				errs = append(errs, fmt.Errorf("stop %s: %w", name, err))
 			}
 		}
@@ -357,15 +358,6 @@ func detectURL(srv incusclient.InstanceServer, network string) (string, error) {
 	return "https://" + net.JoinHostPort(ip.String(), port), nil
 }
 
-// splitImage turns registry/repo:tag into the OCI source Incus pulls from.
-func splitImage(ref string) (server, alias string, err error) {
-	host, rest, ok := strings.Cut(ref, "/")
-	if !ok || !strings.ContainsAny(host, ".:") || rest == "" {
-		return "", "", fmt.Errorf("image %q: want registry/repository[:tag]", ref)
-	}
-	return "https://" + host, rest, nil
-}
-
 func createToken(srv incusclient.InstanceServer, name string, projects []string) (token, opID string, err error) {
 	op, err := tokens(srv).CreateCertificateToken(api.CertificatesPost{
 		CertificatePut: api.CertificatePut{
@@ -457,14 +449,6 @@ func writeNotifyURLs(srv incusclient.InstanceServer, pool, vol string, urls []st
 		return fmt.Errorf("write %s in %s: %w", notifyFile, vol, err)
 	}
 	return nil
-}
-
-func setState(ctx context.Context, srv incusclient.InstanceServer, name, action string) error {
-	op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"}, "")
-	if err != nil {
-		return err
-	}
-	return op.WaitContext(ctx)
 }
 
 func deleteInstance(srv incusclient.InstanceServer, name string) error {

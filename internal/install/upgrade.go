@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/tallica/incus-beacon/internal/semver"
+	"github.com/tallica/incus-beacon/internal/update"
 )
 
 type UpgradeOptions struct {
@@ -37,7 +38,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if inst.Devices[stateDev]["source"] != VolumeName(opts.Name) || inst.Config["environment.BEACON_TOKEN_FILE"] != tokenFile {
 		return fmt.Errorf("instance %s was not created by install", opts.Name)
 	}
-	server, alias, err := splitImage(opts.Image)
+	server, alias, err := update.SplitImage(opts.Image)
 	if err != nil {
 		return err
 	}
@@ -59,17 +60,17 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	}
 
 	if inst.StatusCode != api.Stopped {
-		if err := setState(ctx, srv, opts.Name, "stop"); err != nil {
+		if err := update.SetState(ctx, srv, opts.Name, "stop"); err != nil {
 			return fmt.Errorf("stop %s: %w", opts.Name, err)
 		}
 	}
-	err = rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias})
+	err = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias})
 	if err == nil {
 		opts.Log.Info().Str("instance", opts.Name).Str("from", from).Str("image", opts.Image).Msg("instance rebuilt")
-		err = setState(ctx, srv, opts.Name, "start")
+		err = update.SetState(ctx, srv, opts.Name, "start")
 	}
 	if err == nil {
-		err = waitReady(ctx, srv, opts.Name, opts.Wait)
+		err = update.Poll(ctx, opts.Wait, 2*time.Second, func(ctx context.Context) error { return probe(ctx, srv, opts.Name) })
 	}
 	if err == nil {
 		opts.Log.Info().Str("instance", opts.Name).Str("image", opts.Image).Msg("upgraded and ready")
@@ -78,12 +79,12 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 
 	err = fmt.Errorf("upgrade %s to %s: %w", opts.Name, opts.Image, err)
 	opts.Log.Warn().Err(err).Str("image", from).Msg("rolling back")
-	rerr := setState(ctx, srv, opts.Name, "stop")
+	rerr := update.SetState(ctx, srv, opts.Name, "stop")
 	if rerr == nil {
-		rerr = rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old})
+		rerr = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old})
 	}
 	if rerr == nil {
-		rerr = setState(ctx, srv, opts.Name, "start")
+		rerr = update.SetState(ctx, srv, opts.Name, "start")
 	}
 	if rerr != nil {
 		return errors.Join(err, fmt.Errorf("roll back to %s: %w", from, rerr))
@@ -105,32 +106,6 @@ func tagOf(ref string) string {
 		return ""
 	}
 	return ref[i+1:]
-}
-
-func rebuild(ctx context.Context, srv incusclient.InstanceServer, name string, src api.InstanceSource) error {
-	op, err := srv.RebuildInstance(name, api.InstanceRebuildPost{Source: src})
-	if err != nil {
-		return err
-	}
-	return op.WaitContext(ctx)
-}
-
-func waitReady(ctx context.Context, srv incusclient.InstanceServer, name string, wait time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, wait)
-	defer cancel()
-	tick := time.NewTicker(2 * time.Second)
-	defer tick.Stop()
-	var last error
-	for {
-		if last = probe(ctx, srv, name); last == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("not ready within %s: %w", wait, last)
-		case <-tick.C:
-		}
-	}
 }
 
 func probe(ctx context.Context, srv incusclient.InstanceServer, name string) error {

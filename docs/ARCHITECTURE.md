@@ -37,6 +37,7 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy          |
 | `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                           |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                      |
+| `internal/update`   | The Incus calls an image update is made of: the OCI source for a ref, start and stop, rebuild, polling until a check passes               | Incus client                      |
 | `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics             |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
