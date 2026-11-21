@@ -15,9 +15,9 @@ not work. An idea that needs more than a paragraph gets its own file in
       `user.incus-beacon.*` out of its config fingerprint as
       `user.healthcheck.*` already is, so beacon writes don't read as drift.
 - [ ] **Verify updates of incus-compose instances** — waits on incus-compose's
-      image override (its `feat/image-override` branch) reaching a release. Then
-      run an update, `up`, `up --pull always` and a config-change recreate, and
-      drop the README's "to verify".
+      image override (lxc/incus-compose#282) reaching a release. Then run an
+      update, `up`, `up --pull always` and a config-change recreate, and drop
+      the README's "to verify".
 - [ ] **Resolve digest-pinned instances after a prune** — Incus 7.6 can pin
       `image.id` by digest from an image's first launch, so an instance beacon
       never updated resolves only through the cached image record and reads "no
