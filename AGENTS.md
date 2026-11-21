@@ -26,10 +26,12 @@ the one map of where each kind of fact lives; everywhere else links to the home:
 ## Status
 
 Pre-1.0, released as 0.x: `check`, `status`, `serve`, `install`, `upgrade` and
-`uninstall` work against a real Incus, with notifications; `update` and
-`serve --update` are built but not yet verified against a real Incus. Go 1.27,
-built static with `CGO_ENABLED=0`. No dependency is pinned below its latest
-release.
+`uninstall` work against a real Incus, with notifications. `update` and
+`serve --update` work against Incus 7.6: update, rollback with the volumes
+restored, and recovery of an interrupted update. Still to verify: the ic-healthd
+gate, incus-compose instances, update notifications, and `install` with the
+`incus-beacond` image. Go 1.27, built static with `CGO_ENABLED=0`. No dependency
+is pinned below its latest release.
 
 ## Working on this
 
