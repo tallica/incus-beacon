@@ -315,9 +315,9 @@ incus-beacon serve --update --update-window 02:00-05:00
 
 - An update waits for the window: the instance's `update-window`, else
   `--update-window`, else any time. The window is daily, in the process's local
-  time, which `TZ` sets (UTC in the published image unless it is set; to
-  verify). On the day clocks change, a window in the skipped hour doesn't happen
-  and one in the repeated hour happens twice.
+  time, which `TZ` sets (UTC in the published image unless it is set). On the
+  day clocks change, a window in the skipped hour doesn't happen and one in the
+  repeated hour happens twice.
 - Once one replica of an image fails, the other instances on that image are not
   tried in the same cycle, and a ref that failed is not tried again (see the
   runbook).
