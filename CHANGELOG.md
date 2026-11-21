@@ -19,9 +19,9 @@ get an entry.
   starts it by that name.
 - `update --instance <name>` rebuilds an instance on its newer image, with
   volume snapshots and a health gate, and rolls back if it fails.
-- Updates reach incus-compose instances too, once incus-compose sets
-  `user.incus-compose.beacon-contract=1`, and are not reported back while the
-  compose file is unchanged.
+- Updates reach incus-compose instances too, when their incus-compose has an
+  image override (`image-override` in `user.incus-compose.features`), and are
+  not reported back while the compose file is unchanged.
 - `serve --update` applies updates to instances set to
   `user.incus-beacon.update=auto`, within an optional `--update-window`, and
   notifies each outcome.

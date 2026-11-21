@@ -14,11 +14,10 @@ not work. An idea that needs more than a paragraph gets its own file in
       in the lazyincus instance and image panels, and leave
       `user.incus-beacon.*` out of its config fingerprint as
       `user.healthcheck.*` already is, so beacon writes don't read as drift.
-- [ ] **incus-compose keeps beacon's updates** — incus-compose sets
-      `user.incus-compose.beacon-contract=1` and, while the compose file still
-      names `user.incus-beacon.requested`, neither treats the image as changed
-      nor recreates from the file's ref, keeping `applied` and `requested`.
-      Until then `update` refuses incus-compose instances.
+- [ ] **Verify updates of incus-compose instances** — waits on incus-compose's
+      image override (its `feat/image-override` branch) reaching a release. Then
+      run an update, `up`, `up --pull always` and a config-change recreate, and
+      drop the README's "to verify".
 
 ## Later
 

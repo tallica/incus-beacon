@@ -34,11 +34,9 @@ const (
 )
 
 const (
-	// composeContract=1 on the instance: its incus-compose keeps beacon's updates.
-	composeContract = "user.incus-compose.beacon-contract"
-	snapshotPrefix  = "incus-beacon-"
-	healthEnabled   = "user.healthcheck.enabled"
-	healthStatus    = "user.healthcheck.status"
+	snapshotPrefix = "incus-beacon-"
+	healthEnabled  = "user.healthcheck.enabled"
+	healthStatus   = "user.healthcheck.status"
 )
 
 type Registry interface {
@@ -111,6 +109,8 @@ type claim struct {
 	Snapshot string            `json:"snapshot,omitempty"`
 	Volumes  []string          `json:"volumes,omitempty"` // pool/name, restored on rollback
 	Dropped  map[string]string `json:"dropped,omitempty"`
+	// Override holds an incus-compose instance's override keys as they were; "" was unset.
+	Override map[string]string `json:"override,omitempty"`
 }
 
 var errTaken = errors.New("the claim was taken over")
@@ -163,9 +163,10 @@ func (u *updater) steps() []step {
 		{"stop", u.stop, u.startOld},
 		{"snapshot", u.snapshot, nil},
 		{
-			"drop environment keys", func(ctx context.Context) error { return u.setEnv(ctx, nil, u.c.Dropped) },
-			func(ctx context.Context) error { return u.setEnv(ctx, u.c.Dropped, nil) },
+			"drop environment keys", func(ctx context.Context) error { return u.setConfig(ctx, nil, u.c.Dropped) },
+			func(ctx context.Context) error { return u.setConfig(ctx, u.c.Dropped, nil) },
 		},
+		{"set the image override", u.setOverride, u.unsetOverride},
 		{"rebuild", u.rebuild, u.rebuildOld},
 		{"start", u.start, u.restore},
 	}
@@ -241,6 +242,12 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 	for _, v := range u.vols {
 		if !v.shared {
 			u.c.Volumes = append(u.c.Volumes, v.pool+"/"+v.name)
+		}
+	}
+	if u.compose() {
+		u.c.Override = map[string]string{
+			incus.ComposeOverrideKey:   u.inst.Config[incus.ComposeOverrideKey],
+			incus.ComposeOverrideOfKey: u.inst.Config[incus.ComposeOverrideOfKey],
 		}
 	}
 	if err := u.acquire(ctx); err != nil {
@@ -357,7 +364,7 @@ func (u *updater) record() incus.Update {
 	case Updated:
 		requested := u.t.Ref
 		if u.t.Applied {
-			requested = prev.Requested
+			requested = cmp.Or(prev.Requested, u.t.Asked)
 		}
 		return incus.Update{Applied: u.o.To, Requested: requested, Status: Updated}
 	case Refused:
@@ -462,8 +469,10 @@ func (u *updater) release(ctx context.Context) error {
 func (u *updater) refusal() string {
 	cfg := u.inst.ExpandedConfig
 	switch {
-	case cfg["user.incus-compose.managed"] == "true" && u.inst.Config[composeContract] != "1":
-		return "managed by an incus-compose that doesn't keep user.incus-beacon.applied, so its next up would undo the update"
+	case u.compose() && !hasFeature(u.inst.Config[incus.ComposeFeaturesKey], incus.ComposeFeatureOverride):
+		return "managed by an incus-compose without the image override, so its next up would undo the update"
+	case u.compose() && u.inst.Config["user.image_alias"] == "":
+		return "managed by incus-compose, but has no user.image_alias for the image override to name"
 	case isBeacon(cfg, u.o.To):
 		return "an incus-beacon instance; use incus-beacon upgrade"
 	case u.o.To == u.t.Update.Failed:
@@ -581,7 +590,7 @@ func (u *updater) staleEnv(ctx context.Context) (map[string]string, error) {
 	return stale, nil
 }
 
-func (u *updater) setEnv(ctx context.Context, add, drop map[string]string) error {
+func (u *updater) setConfig(ctx context.Context, add, drop map[string]string) error {
 	if len(add) == 0 && len(drop) == 0 {
 		return nil
 	}
@@ -659,6 +668,42 @@ func (u *updater) startOld(ctx context.Context) error {
 		return nil
 	}
 	return u.start(ctx)
+}
+
+func (u *updater) compose() bool {
+	return u.inst.Config["user.incus-compose.managed"] == "true"
+}
+
+func hasFeature(list, feature string) bool {
+	for f := range strings.SplitSeq(list, ",") {
+		if strings.TrimSpace(f) == feature {
+			return true
+		}
+	}
+	return false
+}
+
+// setOverride keeps incus-compose on the new image while its file names user.image_alias.
+func (u *updater) setOverride(ctx context.Context) error {
+	if u.c.Override == nil {
+		return nil
+	}
+	return u.setConfig(ctx, map[string]string{
+		incus.ComposeOverrideKey:   u.c.To,
+		incus.ComposeOverrideOfKey: u.inst.Config["user.image_alias"],
+	}, nil)
+}
+
+func (u *updater) unsetOverride(ctx context.Context) error {
+	add, drop := map[string]string{}, map[string]string{}
+	for k, v := range u.c.Override {
+		if v == "" {
+			drop[k] = ""
+		} else {
+			add[k] = v
+		}
+	}
+	return u.setConfig(ctx, add, drop)
 }
 
 func (u *updater) rebuild(ctx context.Context) error {

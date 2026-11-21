@@ -264,3 +264,39 @@ func TestAppliedRef(t *testing.T) {
 		}
 	}
 }
+
+func TestComposeOverrideAfterARecreate(t *testing.T) {
+	t.Parallel()
+	const file, override = "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.28"
+	resolve := func(cfg map[string]string) Target {
+		cfg["image.type"], cfg["user.image_alias"], cfg["user.incus-compose.managed"] = "oci", file, "true"
+		inst := &api.Instance{Name: "web-1", InstancePut: api.InstancePut{Config: cfg}, ExpandedConfig: cfg}
+		tg, ok := target(nil, inst, true, map[string]*api.ImageSource{})
+		if !ok {
+			t.Fatal("not a target")
+		}
+		return tg
+	}
+	// Recreated by incus-compose on the override: beacon's own keys are gone.
+	tg := resolve(map[string]string{ComposeOverrideKey: override, ComposeOverrideOfKey: file})
+	if tg.Ref != override || !tg.Applied || tg.Asked != file || tg.RefSource != RefFromCompose {
+		t.Errorf("in force: %+v", tg)
+	}
+	tg = resolve(map[string]string{ComposeOverrideKey: override, ComposeOverrideOfKey: "docker.io/library/nginx:1.26"})
+	if tg.Ref != file || tg.Applied {
+		t.Errorf("set against an older file ref: %+v; want the file's ref", tg)
+	}
+	// An image key from a compose label survives the recreate; the override still decides.
+	tg = resolve(map[string]string{"user.label.incus-beacon.image": file, ComposeOverrideKey: override, ComposeOverrideOfKey: file})
+	if tg.Ref != override || !tg.Applied || tg.RefSource != RefFromBeacon {
+		t.Errorf("with an image label: %+v", tg)
+	}
+	// incus-compose's override is what it will run, so it wins over beacon's own record.
+	tg = resolve(map[string]string{
+		"user.incus-beacon.requested": file, "user.incus-beacon.applied": "docker.io/library/nginx:1.29",
+		ComposeOverrideKey: override, ComposeOverrideOfKey: file,
+	})
+	if tg.Ref != override {
+		t.Errorf("override and applied disagree: ref %q, want the override", tg.Ref)
+	}
+}

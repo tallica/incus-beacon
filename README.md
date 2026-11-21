@@ -294,23 +294,28 @@ in `user.incus-beacon.update-reason`. What to do then is in
 
 It needs Incus 7.6 or later on the server, and refuses:
 
-- an incus-compose instance, unless its incus-compose sets
-  `user.incus-compose.beacon-contract=1` on it (see below);
+- an incus-compose instance whose incus-compose has no image override (see
+  below);
 - incus-beacon's own instance (use `upgrade`);
 - a stopped instance;
 - an instance with instance snapshots, which a rebuild can't keep;
 - an instance with no `volatile.base_image` to roll back to;
 - a ref that failed before.
 
-An incus-compose instance can be updated only when its incus-compose keeps the
-update. Otherwise `incus-compose up --pull always` would recreate it from the
-compose file's older tag. An incus-compose that does sets
-`user.incus-compose.beacon-contract=1` on each instance it creates (a profile
-doesn't count). No released incus-compose does yet, so this path is untested (to
-verify). Beacon then records the compose file's ref in
-`user.incus-beacon.requested` and the one it moved to in `applied`, and keeps
-tracking `applied` while the compose file still names `requested`. Changing the
-file's tag makes the file win again, and the next update records the new ref as
+An incus-compose instance can be updated only when its incus-compose has an
+image override: it lists `image-override` in the instance's own
+`user.incus-compose.features`. Otherwise its next `up` would recreate the
+instance from the compose file's older tag. Beacon sets the override
+(`user.incus-compose.image-override` and `image-override-of`, described under
+"Image override" in incus-compose's `up` documentation once released), so `up`
+keeps the instance on the new image, even across a recreate for another change.
+No released incus-compose has the override yet, so this path is untested (to
+verify).
+
+Beacon records the compose file's ref in `user.incus-beacon.requested` and the
+one it moved to in `applied`, and keeps tracking `applied`, or incus-compose's
+override, while the compose file still names that ref. Changing the file's tag
+makes the file win again, and the next update records the new ref as
 `requested`. The same holds for a ref set with `user.incus-beacon.image`.
 
 With `--update`, `serve` applies updates the same way, to instances that set

@@ -23,6 +23,14 @@ const (
 	RefFromImageKeys    = "image.description"
 )
 
+// incus-compose's image override, honoured where ComposeFeaturesKey lists ComposeFeatureOverride.
+const (
+	ComposeOverrideKey     = "user.incus-compose.image-override"
+	ComposeOverrideOfKey   = "user.incus-compose.image-override-of"
+	ComposeFeaturesKey     = "user.incus-compose.features"
+	ComposeFeatureOverride = "image-override"
+)
+
 type Beacon struct {
 	Status  string
 	Current string
@@ -38,10 +46,10 @@ type Target struct {
 	BaseImage string
 	Ref       string
 	RefSource string
-	// Applied: Ref is user.incus-beacon.applied, standing in for RefSource's ref.
-	Applied  bool
-	ImageRef string // from the image keys, as launched or last rebuilt
-	Local    bool
+	Applied   bool   // Ref is the ref beacon updated to, standing in for Asked
+	Asked     string // the ref RefSource gave; equal to Ref unless Applied
+	ImageRef  string // from the image keys, as launched or last rebuilt
+	Local     bool
 
 	ComposeProject string
 	ComposeService string
@@ -139,13 +147,19 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 	t.Update = readUpdate(inst.Config)
 	t.Claim = inst.Config[ClaimKey]
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
+	t.Asked = t.Ref
 	if t.RefSource == RefFromBeacon || t.RefSource == RefFromCompose {
 		t.Ref, t.Applied = applied(t, t.Ref)
+	}
+	// Kept by incus-compose across a recreate that drops beacon's keys; its own terms apply.
+	if c := inst.Config; c["user.incus-compose.managed"] == "true" && c[ComposeOverrideKey] != "" &&
+		c[ComposeOverrideOfKey] == c[RefFromCompose] {
+		t.Ref, t.Applied = c[ComposeOverrideKey], true
 	}
 	return t, true
 }
 
-// inputs covers every key a check may read, minus the ones beacon writes.
+// inputs covers every key a check may read but beacon's own; others may set the override.
 func inputs(inst *api.Instance) string {
 	written := Beacon{}.keys()
 	maps.Copy(written, Update{}.Keys())
@@ -159,7 +173,7 @@ func inputs(inst *api.Instance) string {
 		if _, ok := written[k]; ok {
 			continue
 		}
-		if k == "volatile.base_image" || k == RefFromCompose || strings.HasPrefix(k, "image.") ||
+		if k == "volatile.base_image" || k == RefFromCompose || k == ComposeOverrideKey || k == ComposeOverrideOfKey || strings.HasPrefix(k, "image.") ||
 			strings.HasPrefix(k, policy.Prefix) || strings.HasPrefix(k, policy.LabelPrefix) ||
 			strings.HasPrefix(k, policy.LegacyPrefix) || strings.HasPrefix(k, policy.LegacyLabelPrefix) {
 			fmt.Fprintf(&b, "\n%s=%s", k, inst.ExpandedConfig[k])

@@ -54,9 +54,10 @@ type fake struct {
 	health func(n int) string
 	etag   int
 	// meddle, when set, runs before the n-th config write (from 1), as another writer would.
-	meddle  func(n int, cfg map[string]string)
-	writes  int
-	profile map[string]string // keys from profiles: in the expanded config only
+	meddle            func(n int, cfg map[string]string)
+	writes            int
+	profile           map[string]string // keys from profiles: in the expanded config only
+	overrideAtRebuild string            // incus-compose's override when the new image was rebuilt
 	// claimAtRebuild is the claim's step when the new image was rebuilt.
 	claimAtRebuild int
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
@@ -164,6 +165,9 @@ func (f *fake) RebuildInstance(_ string, req api.InstanceRebuildPost) (incusclie
 	var c claim
 	if json.Unmarshal([]byte(f.inst.Config[incus.ClaimKey]), &c) == nil && req.Source.Fingerprint == "" {
 		f.claimAtRebuild = c.Step
+	}
+	if req.Source.Fingerprint == "" {
+		f.overrideAtRebuild = f.inst.Config[incus.ComposeOverrideKey]
 	}
 	if f.hang && req.Source.Fingerprint == "" {
 		return hungOp{}, nil
@@ -469,7 +473,7 @@ func TestApplyRefuses(t *testing.T) {
 		change func(*fake, *incus.Target)
 		reason string
 	}{
-		{"compose without the contract", func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" }, "would undo the update"},
+		{"compose without the image override", func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" }, "would undo the update"},
 		{"beacon", func(f *fake, _ *incus.Target) { f.inst.Config["environment.BEACON_TOKEN_FILE"] = "/run/secrets/token" }, "incus-beacon upgrade"},
 		{"failed before", func(_ *fake, t *incus.Target) { t.Update.Failed = newRef }, "failed before"},
 		{"stopped", func(f *fake, _ *incus.Target) { f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped }, "is stopped"},
@@ -594,25 +598,64 @@ func TestApplyBoundsAHungStepByTheLease(t *testing.T) {
 	}
 }
 
-func TestApplyUpdatesAComposeInstanceUnderTheContract(t *testing.T) {
-	t.Parallel()
+func composeFake() *fake {
 	f := newFake()
 	f.inst.Config["user.incus-compose.managed"] = "true"
-	f.inst.Config[composeContract] = "1"
+	f.inst.Config[incus.ComposeFeaturesKey] = "dns," + incus.ComposeFeatureOverride
+	f.inst.Config["user.image_alias"] = oldRef
+	return f
+}
+
+func composeTarget() incus.Target {
 	tgt := target()
-	tgt.RefSource = incus.RefFromCompose
+	tgt.RefSource, tgt.Asked = incus.RefFromCompose, oldRef
+	return tgt
+}
+
+func TestApplySetsIncusComposesImageOverride(t *testing.T) {
+	t.Parallel()
+	f := composeFake()
+	tgt := composeTarget()
 	if o := apply(t, f, tgt); o.Status != Updated {
 		t.Fatalf("outcome %+v", o)
 	}
-	if cfg := f.inst.Config; cfg["user.incus-beacon.requested"] != oldRef || cfg["user.incus-beacon.applied"] != newRef {
+	cfg := f.inst.Config
+	if cfg[incus.ComposeOverrideKey] != newRef || cfg[incus.ComposeOverrideOfKey] != oldRef {
+		t.Errorf("override %q of %q; want the new ref over the compose file's", cfg[incus.ComposeOverrideKey], cfg[incus.ComposeOverrideOfKey])
+	}
+	if f.overrideAtRebuild != newRef {
+		t.Errorf("override at rebuild %q; want it set before the rebuild, so an up meanwhile keeps the update", f.overrideAtRebuild)
+	}
+	if cfg["user.incus-beacon.requested"] != oldRef || cfg["user.incus-beacon.applied"] != newRef {
 		t.Errorf("config %v; want the compose file's ref as requested and the new one as applied", cfg)
 	}
 	// A second update, while the compose file is unchanged, keeps its ref as requested.
 	tgt.Ref, tgt.Applied, tgt.Update = newRef, true, incus.Update{Requested: oldRef, Applied: newRef, Status: Updated}
 	f.inst.Config["volatile.base_image"], tgt.BaseImage = "fp-new", "fp-new"
 	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, "docker.io/library/nginx:1.29-alpine", options())
-	if err != nil || o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef {
-		t.Errorf("second update: %+v, %v, requested %q", o, err, f.inst.Config["user.incus-beacon.requested"])
+	if err != nil || o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef ||
+		f.inst.Config[incus.ComposeOverrideOfKey] != oldRef {
+		t.Errorf("second update: %+v, %v, config %v", o, err, f.inst.Config)
+	}
+}
+
+func TestApplyRollbackRestoresTheImageOverride(t *testing.T) {
+	t.Parallel()
+	f := composeFake()
+	f.crash = func(n int) bool { return n == 1 }
+	if o := apply(t, f, composeTarget()); o.Status != RolledBack {
+		t.Fatalf("outcome %+v", o)
+	}
+	if _, ok := f.inst.Config[incus.ComposeOverrideKey]; ok {
+		t.Errorf("config %v; want no override after rolling back an instance that had none", f.inst.Config)
+	}
+
+	f = composeFake()
+	f.crash = func(n int) bool { return n == 1 }
+	f.inst.Config[incus.ComposeOverrideKey] = "docker.io/library/nginx:1.27.1-alpine"
+	f.inst.Config[incus.ComposeOverrideOfKey] = oldRef
+	if o := apply(t, f, composeTarget()); o.Status != RolledBack || f.inst.Config[incus.ComposeOverrideKey] != "docker.io/library/nginx:1.27.1-alpine" {
+		t.Errorf("outcome %+v, override %q; want the earlier override back", o, f.inst.Config[incus.ComposeOverrideKey])
 	}
 }
 
@@ -627,17 +670,46 @@ func TestApplyResetsRequestedOnceTheAskedRefMoved(t *testing.T) {
 	}
 }
 
-func TestApplyNeedsTheComposeContractOnTheInstance(t *testing.T) {
+func TestApplyNeedsIncusComposesImageOverride(t *testing.T) {
 	t.Parallel()
 	for name, set := range map[string]func(*fake){
-		"from a profile":  func(f *fake) { f.profile = map[string]string{composeContract: "1"} },
-		"another version": func(f *fake) { f.inst.Config[composeContract] = "2" },
+		"no features": func(f *fake) { delete(f.inst.Config, incus.ComposeFeaturesKey) },
+		"from a profile": func(f *fake) {
+			f.profile = map[string]string{incus.ComposeFeaturesKey: incus.ComposeFeatureOverride}
+			delete(f.inst.Config, incus.ComposeFeaturesKey)
+		},
+		"another feature": func(f *fake) { f.inst.Config[incus.ComposeFeaturesKey] = "image-override-v2" },
+		"no image alias":  func(f *fake) { delete(f.inst.Config, "user.image_alias") },
 	} {
-		f := newFake()
-		f.inst.Config["user.incus-compose.managed"] = "true"
+		f := composeFake()
 		set(f)
-		if o := apply(t, f, target()); o.Status != Refused {
+		if o := apply(t, f, composeTarget()); o.Status != Refused || !strings.Contains(o.Reason, "image") {
 			t.Errorf("%s: outcome %+v, want refused", name, o)
 		}
+	}
+}
+
+func TestApplyAcceptsAFeatureListWithSpaces(t *testing.T) {
+	t.Parallel()
+	f := composeFake()
+	f.inst.Config[incus.ComposeFeaturesKey] = "dns, image-override"
+	if o := apply(t, f, composeTarget()); o.Status != Updated {
+		t.Errorf("outcome %+v", o)
+	}
+}
+
+func TestApplyRecoveryRestoresTheImageOverride(t *testing.T) {
+	t.Parallel()
+	f := composeFake()
+	cfg := f.inst.Config
+	cfg["volatile.base_image"] = "fp-new"
+	cfg[incus.ComposeOverrideKey], cfg[incus.ComposeOverrideOfKey] = newRef, oldRef
+	cfg[incus.ClaimKey] = claimJSON(t, claim{
+		Owner: "other/7", Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Step: stepIndex(t, "rebuild"), To: newRef, From: "fp-old",
+		Override: map[string]string{incus.ComposeOverrideKey: "", incus.ComposeOverrideOfKey: ""},
+	})
+	o := apply(t, f, composeTarget())
+	if _, ok := f.inst.Config[incus.ComposeOverrideKey]; o.Status != RolledBack || ok {
+		t.Errorf("outcome %+v, config %v; want the override removed as it was before", o, f.inst.Config)
 	}
 }

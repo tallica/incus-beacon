@@ -17,7 +17,8 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
   can read the result too.
 - **One writer per key.** This follows the incus-compose convention, where
   ic-healthd writes only `user.healthcheck.status`. The beacon reads keys the
-  user sets and writes only the keys it owns.
+  user sets and writes only the keys it owns, with the exceptions listed under
+  [Invariants](#invariants).
 - **Cheap on registries.** A manifest HEAD comes first, and the more costly GET
   only follows when the digest moves. Replicas of the same image share one
   lookup.
@@ -124,10 +125,10 @@ newer tag, or onto the same tag when it was rebuilt upstream. The new image's
 ref is the tracked ref at the `latest` tag.
 
 1. **Refuse** before anything changes, with the reason in `update-reason`, when:
-   - the instance is managed by incus-compose and doesn't carry
-     `user.incus-compose.beacon-contract=1` in its own config, since an
-     incus-compose that doesn't keep the update would recreate it from the
-     compose file's ref on its next `up --pull always`;
+   - the instance is managed by incus-compose and its own config's
+     `user.incus-compose.features` doesn't list `image-override`, since an
+     incus-compose without the override recreates it from the compose file's ref
+     on its next `up`;
    - it runs incus-beacon, which `upgrade` handles;
    - the same ref already failed (`update-failed`);
    - it isn't running, since a stopped instance can't be health-checked;
@@ -148,14 +149,21 @@ ref is the tracked ref at the `latest` tag.
       would now override the new image's. Keys that match neither stay and are
       listed, so a copy from an old image whose tag has since moved shows up
       rather than going unnoticed.
-   4. Rebuild from the new ref.
-   5. Start, then gate: the instance must keep running for `--update-settle`
+   4. On an incus-compose instance, set incus-compose's image override:
+      `user.incus-compose.image-override` to the new ref and `image-override-of`
+      to the instance's `user.image_alias`. From then on, `up` keeps the
+      instance on that image, even when it recreates it for another change. The
+      keys go in before the rebuild, so an `up` during the update can't put it
+      back on the file's image.
+   5. Rebuild from the new ref.
+   6. Start, then gate: the instance must keep running for `--update-settle`
       and, with a health check, report `healthy` within `--update-wait`.
       `unhealthy`, or a stop, fails at once.
 4. **On failure, undo every step begun, newest first:** stop and restore the
    snapshots (only once the new image has run), rebuild from the old
-   `volatile.base_image`, put the dropped keys back, and start and gate again. A
-   volume another instance also uses is not restored, and the outcome says so.
+   `volatile.base_image`, put the override keys and the dropped keys back as
+   they were, and start and gate again. A volume another instance also uses is
+   not restored, and the outcome says so.
 5. **Release** the claim and record the outcome in one write: `update-status`
    becomes `updated`, `rolled-back`, `failed` (the rollback failed too) or
    `refused`. Beacon's snapshots beyond `--update-keep` per volume are pruned
@@ -238,7 +246,12 @@ first source that yields a ref wins:
    reported back to the ref it moved from. A ref from item 2 keeps its drift
    check, now against `applied`; one from item 1 has none, since its image keys
    may name another tag of the same build. A ref that differs from `requested`
-   wins again, and the next update records it as `requested`.
+   wins again, and the next update records it as `requested`. On an
+   incus-compose instance, incus-compose's override is tracked instead, on
+   incus-compose's own terms (`image-override-of` equals `user.image_alias`),
+   whichever item gave the ref, and it wins over `applied`: it is what
+   incus-compose will run. When incus-compose recreates an instance on its
+   override, the new instance has the override keys but none of beacon's.
 
 3. The `update_source` (server and alias) of the instance's image record, looked
    up once per `volatile.base_image` in the instance's project. Incus prunes
@@ -309,7 +322,8 @@ Refs are normalised with Docker conventions: `nginx` becomes
   them is written once, with the same values under the new names, so the dedupe
   state and `since` carry over rather than reading as never checked. `update`
   also removes the `environment.*` keys of step 3 under [Updating](#updating),
-  and puts them back on a rollback.
+  sets incus-compose's two override keys of step 4, which incus-compose leaves
+  to an updater, and puts both back as they were on a rollback.
 - **Writes touch the instance's local config, never the expanded config.**
   Writing the expanded config would copy profile keys onto the instance. Writes
   are guarded by the instance ETag and retried once on a conflict, and wait
