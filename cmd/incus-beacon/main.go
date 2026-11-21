@@ -81,6 +81,8 @@ func commonOf(cfg *config.Config) config.Common {
 		return cfg.Upgrade.Common
 	case cfg.Uninstall != nil:
 		return cfg.Uninstall.Common
+	case cfg.Update != nil:
+		return cfg.Update.Common
 	default:
 		return cfg.Serve.Common
 	}
@@ -174,6 +176,17 @@ func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, std
 	if err != nil {
 		return err
 	}
+	opts := update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger}
+	// A claim first: an interrupted update can leave it current on an ungated image.
+	if t := targets[0]; t.Claim != "" {
+		if c.DryRun {
+			o := update.Preview(ctx, srv, reg, t, "", opts)
+			fmt.Fprintf(stdout, "%s/%s: would refuse: %s\n", t.Project, t.Instance, o.Reason)
+			return fmt.Errorf("%s: %s", update.Refused, o.Reason)
+		}
+		o, err := update.Apply(ctx, srv, reg, t, "", opts)
+		return reportUpdate(stdout, t.Project+"/"+t.Instance, o, err)
+	}
 	r := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown}, logger).Run(ctx, targets)[0]
 	name := r.Target.Project + "/" + r.Target.Instance
 	if r.Status != check.UpdateAvailable {
@@ -188,7 +201,6 @@ func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, std
 	if err != nil {
 		return err
 	}
-	opts := update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger}
 	if c.DryRun {
 		o := update.Preview(ctx, srv, reg, r.Target, to, opts)
 		if o.Status != update.Ready {
@@ -200,6 +212,10 @@ func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, std
 		return nil
 	}
 	o, err := update.Apply(ctx, srv, reg, r.Target, to, opts)
+	return reportUpdate(stdout, name, o, err)
+}
+
+func reportUpdate(stdout io.Writer, name string, o update.Outcome, err error) error {
 	fmt.Fprintf(stdout, "%s: %s, %s to %s\n", name, o.Status, o.From, o.To)
 	printOutcome(stdout, o, "snapshot", "dropped")
 	if err != nil {

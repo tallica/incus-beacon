@@ -295,6 +295,7 @@ func (u *updater) abandon(err error) (Outcome, error) {
 // recover rolls back an update whose claim expired, from what the claim recorded.
 func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 	u.c, u.o.To = c, c.To
+	u.log = u.opts.Log.With().Str("project", u.t.Project).Str("instance", u.t.Instance).Str("to", c.To).Logger()
 	for _, v := range c.Volumes {
 		pool, name, _ := strings.Cut(v, "/")
 		u.vols = append(u.vols, volume{pool: pool, name: name})
