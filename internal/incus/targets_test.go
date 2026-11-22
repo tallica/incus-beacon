@@ -248,6 +248,9 @@ func TestSourceRef(t *testing.T) {
 		{&api.ImageSource{Protocol: "oci", Server: "https://ghcr.io", Alias: "example/app:2"}, "ghcr.io/example/app:2"},
 		{&api.ImageSource{Protocol: "oci", Server: "https://registry.example.com/mirror/", Alias: "app:2"}, "registry.example.com/mirror/app:2"},
 		{&api.ImageSource{Protocol: "oci", Server: "not a url", Alias: "app:2"}, ""},
+		{&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres:17@sha256:abc"}, "docker.io/library/postgres:17"},
+		{&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres@sha256:abc"}, ""},
+		{&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres"}, "docker.io/library/postgres"},
 	}
 	for _, tt := range tests {
 		if got := sourceRef(tt.src); got != tt.want {

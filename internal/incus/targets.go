@@ -322,6 +322,9 @@ func sourceRef(src *api.ImageSource) string {
 	if err != nil || u.Host == "" {
 		return ""
 	}
-	alias, _, _ := strings.Cut(src.Alias, "@")
+	alias, _, pinned := strings.Cut(src.Alias, "@")
+	if i := strings.LastIndex(alias, ":"); pinned && (i < 0 || strings.Contains(alias[i:], "/")) {
+		return ""
+	}
 	return u.Host + strings.TrimSuffix(u.Path, "/") + "/" + alias
 }

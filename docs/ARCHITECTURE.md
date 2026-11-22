@@ -161,9 +161,9 @@ ref is the tracked ref at the `latest` tag.
       change what is gated. The tag stays in the alias because the image
       record's `update_source` keeps the alias as given, and item 4 of
       [image ref resolution](#image-ref-resolution) reads the tag from it: a
-      bare `repo@digest` there would track `latest`. The ref that is recorded
-      and shown stays the tag alone. Without a digest, as for a claim taken over
-      or an unresolved lookup, it rebuilds from the tag.
+      bare `repo@digest` there would give no ref. The ref that is recorded and
+      shown stays the tag alone. Without a digest, as for a claim taken over or
+      an unresolved lookup, it rebuilds from the tag.
    6. Start, then gate: the instance must keep running for `--update-settle`
       and, with a health check, report `healthy` within `--update-wait`.
       `unhealthy`, or a stop, fails at once.
@@ -281,7 +281,8 @@ first source that yields a ref wins:
    cached images, so this record is often gone. It can also name a tag other
    than the one pulled: Incus keeps one record per build, so pulling a tag whose
    build it already holds under another reuses that record, tag and all (seen on
-   Incus 7.6). Item 1 then names the tag that was asked for.
+   Incus 7.6). Item 1 then names the tag that was asked for. An alias pinned by
+   digest gives the tag beside it, or no ref without one.
 5. The image keys Incus copies onto the instance: `image.description` holds
    `<registry>/<repo> (OCI)` and `image.id` holds `<repo>:<tag>` as launched. An
    `image.id` pinned by digest has no tag to track and gives no ref.
