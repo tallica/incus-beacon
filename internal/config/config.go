@@ -363,7 +363,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		return nil, fmt.Errorf("%w: %w", ErrUsage, err)
 	}
 	if fs.NArg() > 0 && slices.Contains(Commands, fs.Arg(0)) {
-		return nil, fmt.Errorf("%w: unexpected argument %q; a command goes before its flags", ErrUsage, fs.Arg(0))
+		return nil, fmt.Errorf("%w: unexpected argument %q; give one command, before its flags", ErrUsage, fs.Arg(0))
 	}
 	if fs.NArg() > 0 {
 		return nil, fmt.Errorf("%w: unexpected argument %q", ErrUsage, fs.Arg(0))
