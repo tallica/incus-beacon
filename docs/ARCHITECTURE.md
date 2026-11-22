@@ -182,13 +182,14 @@ ref is the tracked ref at the `latest` tag.
    after a rollback keeps updates that keep failing from piling up snapshots;
    after `failed` every snapshot stays, for a recovery by hand.
 
-A claim holds for 30 minutes plus twice `--update-wait` past its last step. A
-claim older than that is taken as abandoned by a process that died. The next
-`update` of that instance takes it over and runs the same undo from the step it
-records, so a crash never leaves an instance stopped or on an unchecked image. A
-process that finds its own claim taken over stops without touching the instance.
-An update stopped before its first step changed nothing, so it reads `refused`
-and the ref is not marked failed.
+A claim holds for 30 minutes plus `--update-wait` past its last step: no step or
+undo waits on the health gate more than once, and the 30 minutes leaves room for
+a stop, a pull and a rebuild. A claim older than that is taken as abandoned by a
+process that died. The next `update` of that instance takes it over and runs the
+same undo from the step it records, so a crash never leaves an instance stopped
+or on an unchecked image. A process that finds its own claim taken over stops
+without touching the instance. An update stopped before its first step changed
+nothing, so it reads `refused` and the ref is not marked failed.
 
 ### Updating from serve
 

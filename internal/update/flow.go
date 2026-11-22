@@ -65,7 +65,7 @@ func (o Options) withDefaults() Options {
 	o.StopTimeout = cmp.Or(o.StopTimeout, 30*time.Second)
 	o.Wait = cmp.Or(o.Wait, 5*time.Minute)
 	o.Settle = cmp.Or(o.Settle, 30*time.Second)
-	o.Lease = cmp.Or(o.Lease, 30*time.Minute+2*o.Wait)
+	o.Lease = cmp.Or(o.Lease, 30*time.Minute+o.Wait)
 	o.Every = cmp.Or(o.Every, 2*time.Second)
 	o.pruneWait = cmp.Or(o.pruneWait, 5*time.Minute)
 	if o.Owner == "" {
