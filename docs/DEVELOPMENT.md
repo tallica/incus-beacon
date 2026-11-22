@@ -26,14 +26,14 @@ The `internal/` packages and their jobs are listed in
 
 ## Make targets
 
-| Target                          | What it does                                                      |
-| ------------------------------- | ----------------------------------------------------------------- |
-| `make check`                    | With `make fmt-check`, the gate before every commit; CI runs both |
-| `make lint`                     | Linters                                                           |
-| `make test`                     | Tests                                                             |
-| `make fmt`                      | Format Go and Markdown; Markdown wraps at 80 columns              |
-| `make fmt-check`                | Fails if Prettier would change anything; `make lint` checks Go    |
-| `make release-notes TAG=vX.Y.Z` | Print a version's CHANGELOG section                               |
+| Target                          | What it does                                                         |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `make check`                    | With `make fmt-check`, the gate before every commit; CI runs both    |
+| `make lint`                     | Linters                                                              |
+| `make test`                     | Tests                                                                |
+| `make fmt`                      | Format Go, Markdown, YAML, JSON and JS; Markdown wraps at 80 columns |
+| `make fmt-check`                | Fails if Prettier would change anything; `make lint` checks Go       |
+| `make release-notes TAG=vX.Y.Z` | Print a version's CHANGELOG section                                  |
 
 ## Adding a notifier
 
@@ -94,8 +94,11 @@ incus config show web --project beacon-test | grep user.incus-beacon
 | `make build`            | Static binary in `bin/`                         |
 | `make install`          | Version-stamped binary into `$GOBIN`            |
 | `make race`             | Tests with the race detector                    |
+| `make vet`              | `go vet` alone; `make lint` runs it too         |
 | `make audit`            | govulncheck: vulnerabilities the code can reach |
 | `make notices`          | THIRD_PARTY_NOTICES.md from the linked modules  |
 | `make notices-check`    | Fails if THIRD_PARTY_NOTICES.md is stale        |
+| `make release-check`    | Validate `.goreleaser.yaml`                     |
 | `make release-snapshot` | Local GoReleaser dry run into `dist/`           |
 | `make image`            | Container image for the host's platform         |
+| `make clean`            | Remove `bin/`, `dist/` and `.archive/`          |
