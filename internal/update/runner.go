@@ -74,7 +74,7 @@ func (r *Runner) Run(ctx context.Context, srv incusclient.InstanceServer, result
 			case !r.Enabled:
 				r.warnOnce(t, log, "an abandoned update claim; serve rolls it back only with --update")
 			default:
-				done = append(done, r.apply(ctx, srv, t, ""))
+				done = append(done, r.apply(ctx, srv, t, Next{}))
 			}
 			continue
 		}
@@ -93,26 +93,26 @@ func (r *Runner) Run(ctx context.Context, srv incusclient.InstanceServer, result
 			log.Debug().Stringer("window", window).Msg("update waits for its window")
 			continue
 		}
-		to, err := NextRef(res.Current, res.Latest)
+		next, err := NextOf(res)
 		if err != nil {
 			log.Warn().Err(err).Msg("no ref to update to")
 			continue
 		}
-		if to == t.Update.Failed || failed[to] {
+		if next.Ref == t.Update.Failed || failed[next.Ref] {
 			continue
 		}
-		d := r.apply(ctx, srv, t, to)
+		d := r.apply(ctx, srv, t, next)
 		if d.Outcome.Status == RolledBack || d.Outcome.Status == Failed {
-			failed[to] = true
+			failed[next.Ref] = true
 		}
 		done = append(done, d)
 	}
 	return done
 }
 
-func (r *Runner) apply(ctx context.Context, srv incusclient.InstanceServer, t incus.Target, to string) Done {
+func (r *Runner) apply(ctx context.Context, srv incusclient.InstanceServer, t incus.Target, next Next) Done {
 	// Once begun, an update runs to its end; a deadline cut would turn it into a rollback.
-	o, err := Apply(context.WithoutCancel(ctx), srv, r.Registry, t, to, r.Options)
+	o, err := Apply(context.WithoutCancel(ctx), srv, r.Registry, t, next, r.Options)
 	if err != nil {
 		r.Log.Warn().Err(err).Str("project", t.Project).Str("instance", t.Instance).Msg("update outcome not recorded")
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/registry"
 )
@@ -85,18 +86,24 @@ type Outcome struct {
 	OldEnvUnread bool
 }
 
-// NextRef is current's repository at latest's tag; a rebuilt tag reads tag@digest.
-func NextRef(current, latest string) (string, error) {
-	ref, err := registry.ParseRef(current)
+// Next is what an update moves to; the zero value, for a claim, takes the claim's own.
+type Next struct {
+	Ref    string // tag only: what is recorded and shown
+	Digest string // pins the rebuild, whatever the tag has moved to; "" rebuilds from the tag
+}
+
+// NextOf is r's repository at its latest tag, pinned to the digest the check resolved.
+func NextOf(r check.Result) (Next, error) {
+	ref, err := registry.ParseRef(r.Current)
 	if err != nil {
-		return "", err
+		return Next{}, err
 	}
-	tag, _, _ := strings.Cut(latest, "@")
+	tag, _, _ := strings.Cut(r.Latest, "@")
 	if tag == "" {
-		return "", fmt.Errorf("no tag in %q", latest)
+		return Next{}, fmt.Errorf("no tag in %q", r.Latest)
 	}
 	ref.Tag, ref.Digest = tag, ""
-	return ref.String(), nil
+	return Next{Ref: ref.String(), Digest: r.LatestDigest}, nil
 }
 
 // claim, in incus.ClaimKey, holds what another process needs to roll back if this one dies.
@@ -123,24 +130,25 @@ func Abandoned(raw string, now time.Time) bool {
 }
 
 // Apply follows docs/ARCHITECTURE.md#updating and records the outcome on the instance.
-func Apply(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t incus.Target, to string, opts Options) (Outcome, error) {
-	return newUpdater(srv, reg, t, to, opts.withDefaults()).apply(ctx)
+func Apply(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) (Outcome, error) {
+	return newUpdater(srv, reg, t, next, opts.withDefaults()).apply(ctx)
 }
 
-func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, to string, opts Options) *updater {
+func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) *updater {
 	return &updater{
-		srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts,
-		log: opts.Log.With().Str("project", t.Project).Str("instance", t.Instance).Str("to", to).Logger(),
-		o:   Outcome{From: registry.Normalize(t.Ref), To: to},
+		srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts, digest: next.Digest,
+		log: opts.Log.With().Str("project", t.Project).Str("instance", t.Instance).Str("to", next.Ref).Logger(),
+		o:   Outcome{From: registry.Normalize(t.Ref), To: next.Ref},
 	}
 }
 
 type updater struct {
-	srv  incusclient.InstanceServer
-	reg  Registry
-	t    incus.Target
-	opts Options
-	log  zerolog.Logger
+	srv    incusclient.InstanceServer
+	reg    Registry
+	t      incus.Target
+	opts   Options
+	log    zerolog.Logger
+	digest string // Next.Digest
 
 	inst *api.Instance
 	c    claim
@@ -174,8 +182,8 @@ func (u *updater) steps() []step {
 }
 
 // Preview runs Apply's read-only checks and says what it would do; it changes nothing.
-func Preview(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t incus.Target, to string, opts Options) Outcome {
-	u := newUpdater(srv, reg, t, to, opts.withDefaults())
+func Preview(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) Outcome {
+	u := newUpdater(srv, reg, t, next, opts.withDefaults())
 	if _, reason := u.prepare(ctx); reason != "" {
 		u.o.Status, u.o.Reason = Refused, reason
 		return u.o
@@ -725,6 +733,10 @@ func (u *updater) rebuild(ctx context.Context) error {
 	server, alias, err := SplitImage(u.c.To)
 	if err != nil {
 		return err
+	}
+	if u.digest != "" {
+		// Incus pulls the digest and ignores a tag that disagrees with it (verified on 7.6).
+		alias += "@" + u.digest
 	}
 	return Rebuild(ctx, u.srv, u.t.Instance, api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias})
 }

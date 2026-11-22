@@ -155,7 +155,12 @@ ref is the tracked ref at the `latest` tag.
       instance on that image, even when it recreates it for another change. The
       keys go in before the rebuild, so an `up` during the update can't put it
       back on the file's image.
-   5. Rebuild from the new ref.
+   5. Rebuild from the new ref, pinned to the digest the check resolved for it
+      (`tag@digest`; Incus 7.6 pulls the digest and ignores a tag that
+      disagrees), so a tag that moves between the check and the rebuild can't
+      change what is gated. The ref that is recorded and shown stays the tag
+      alone. Without a digest, as for a claim taken over or an unresolved
+      lookup, it rebuilds from the tag.
    6. Start, then gate: the instance must keep running for `--update-settle`
       and, with a health check, report `healthy` within `--update-wait`.
       `unhealthy`, or a stop, fails at once.

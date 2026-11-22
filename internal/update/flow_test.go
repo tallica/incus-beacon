@@ -17,6 +17,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/registry"
 )
@@ -243,11 +244,28 @@ func options() Options {
 
 func apply(t *testing.T, f *fake, tgt incus.Target) Outcome {
 	t.Helper()
-	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, newRef, options())
+	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, Next{Ref: newRef}, options())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return o
+}
+
+func TestApplyPinsDigest(t *testing.T) {
+	t.Parallel()
+	const pin = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	f := newFake()
+	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef, Digest: pin}, options())
+	if err != nil || o.Status != Updated {
+		t.Fatalf("outcome %+v, %v", o, err)
+	}
+	want := []api.InstanceSource{{Type: "image", Protocol: "oci", Server: "https://docker.io", Alias: "library/nginx:1.28-alpine@" + pin}}
+	if !reflect.DeepEqual(f.rebuilds, want) {
+		t.Errorf("rebuilds %+v, want %+v", f.rebuilds, want)
+	}
+	if o.To != newRef || f.inst.Config["user.incus-beacon.applied"] != newRef {
+		t.Errorf("recorded %q and %q, want the tag-only ref %q", o.To, f.inst.Config["user.incus-beacon.applied"], newRef)
+	}
 }
 
 func TestApplyUpdates(t *testing.T) {
@@ -516,7 +534,7 @@ func TestOutcomeSpellsBothRefsOut(t *testing.T) {
 	t.Parallel()
 	tgt := target()
 	tgt.Ref = "docker.io/nginx:1.27-alpine" // as an image record's update_source spells it
-	o := Preview(context.Background(), newFake(), fakeRegistry{}, tgt, newRef, options())
+	o := Preview(context.Background(), newFake(), fakeRegistry{}, tgt, Next{Ref: newRef}, options())
 	if o.From != oldRef || o.To != newRef {
 		t.Errorf("from %q to %q; want both as Docker spells them out", o.From, o.To)
 	}
@@ -537,17 +555,19 @@ func TestApplyRecordsRefsSpelledOut(t *testing.T) {
 	}
 }
 
-func TestNextRef(t *testing.T) {
+func TestNextOf(t *testing.T) {
 	t.Parallel()
+	const pin = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	for latest, want := range map[string]string{
 		"1.28-alpine":                     newRef,
 		"1.27-alpine@sha256:0123456789ab": oldRef,
 	} {
-		if got, err := NextRef(oldRef, latest); err != nil || got != want {
-			t.Errorf("NextRef(%q) = %q, %v; want %q", latest, got, err, want)
+		got, err := NextOf(check.Result{Current: oldRef, Latest: latest, LatestDigest: pin})
+		if err != nil || got != (Next{Ref: want, Digest: pin}) {
+			t.Errorf("NextOf(%q) = %+v, %v; want %q at %s", latest, got, err, want, pin)
 		}
 	}
-	if _, err := NextRef(oldRef, ""); err == nil {
+	if _, err := NextOf(check.Result{Current: oldRef}); err == nil {
 		t.Error("an empty latest was accepted")
 	}
 }
@@ -603,7 +623,7 @@ func TestPreview(t *testing.T) {
 	t.Parallel()
 	f := newFake()
 	f.volumes["default/web-data"].UsedBy = []string{"/1.0/instances/web", "/1.0/instances/worker"}
-	o := Preview(context.Background(), f, fakeRegistry{}, target(), newRef, options())
+	o := Preview(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef}, options())
 	if o.Status != Ready || !reflect.DeepEqual(o.Snapshots, []string{"default/web-data"}) ||
 		!reflect.DeepEqual(o.Dropped, []string{"environment.NGINX_VERSION"}) || !reflect.DeepEqual(o.Kept, []string{"environment.FOO"}) ||
 		!reflect.DeepEqual(o.Unrestored, []string{"default/web-data"}) || o.OldEnvUnread {
@@ -611,14 +631,14 @@ func TestPreview(t *testing.T) {
 	}
 	moved := target()
 	moved.BaseImage = "fp-older" // the old tag now names another build
-	if o := Preview(context.Background(), f, fakeRegistry{}, moved, newRef, options()); !o.OldEnvUnread {
+	if o := Preview(context.Background(), f, fakeRegistry{}, moved, Next{Ref: newRef}, options()); !o.OldEnvUnread {
 		t.Errorf("preview with a moved old tag: %+v, want the old environment marked unread", o)
 	}
 	if len(f.states) != 0 || f.writes != 0 {
 		t.Errorf("preview changed the instance: states %v, %d writes", f.states, f.writes)
 	}
 	f.snapshots = []string{"snap0"}
-	if o := Preview(context.Background(), f, fakeRegistry{}, target(), newRef, options()); o.Status != Refused || !strings.Contains(o.Reason, "snap0") {
+	if o := Preview(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef}, options()); o.Status != Refused || !strings.Contains(o.Reason, "snap0") {
 		t.Errorf("preview with instance snapshots: %+v", o)
 	}
 }
@@ -629,7 +649,7 @@ func TestApplyBoundsAHungStepByTheLease(t *testing.T) {
 	f.hang = true
 	opts := options()
 	opts.Lease = 100 * time.Millisecond
-	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), newRef, opts)
+	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef}, opts)
 	if err != nil || o.Status != RolledBack || !strings.Contains(o.Reason, "rebuild: context deadline exceeded") {
 		t.Errorf("outcome %+v, %v; want the hung rebuild cut at the lease and rolled back", o, err)
 	}
@@ -641,7 +661,7 @@ func TestApplyPrunesAfterTheRelease(t *testing.T) {
 	f.hangDel = true
 	opts := options()
 	opts.Lease = 100 * time.Millisecond
-	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), newRef, opts)
+	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef}, opts)
 	if err != nil || o.Status != Updated {
 		t.Fatalf("outcome %+v, %v; want a hung prune to leave the update standing", o, err)
 	}
@@ -684,7 +704,7 @@ func TestApplySetsIncusComposesImageOverride(t *testing.T) {
 	// A second update, while the compose file is unchanged, keeps its ref as requested.
 	tgt.Ref, tgt.Applied, tgt.Update = newRef, true, incus.Update{Requested: oldRef, Applied: newRef, Status: Updated}
 	f.inst.Config["volatile.base_image"], tgt.BaseImage = "fp-new", "fp-new"
-	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, "docker.io/library/nginx:1.29-alpine", options())
+	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, Next{Ref: "docker.io/library/nginx:1.29-alpine"}, options())
 	if err != nil || o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef ||
 		f.inst.Config[incus.ComposeOverrideOfKey] != oldRef {
 		t.Errorf("second update: %+v, %v, config %v", o, err, f.inst.Config)

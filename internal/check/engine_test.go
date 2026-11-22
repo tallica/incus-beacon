@@ -136,7 +136,7 @@ func TestDigest(t *testing.T) {
 	if r := res[0]; r.Status != Current || r.Latest != "" || r.Current != "ghcr.io/example/app:1.2" {
 		t.Errorf("same layers: %+v", r)
 	}
-	if r := res[1]; r.Status != UpdateAvailable || r.Latest != "1.2@sha256:bbbbbbbbbbbb" {
+	if r := res[1]; r.Status != UpdateAvailable || r.Latest != "1.2@sha256:bbbbbbbbbbbb" || r.LatestDigest != head2 {
 		t.Errorf("rebuilt tag: %+v", r)
 	}
 	if r := res[2]; r.Status != Current {
@@ -149,6 +149,7 @@ func TestSemver(t *testing.T) {
 	f := newFake()
 	f.set("docker.io/library/nginx:1.27.3-alpine", head1, fpOld)
 	f.set("docker.io/library/nginx:latest", head1, fpOld)
+	f.set("docker.io/library/nginx:1.28.0-alpine", head2, fpNew)
 	f.tags["docker.io/library/nginx"] = []string{"1.27.3-alpine", "1.27.4-alpine", "1.28.0", "1.28.0-alpine", "latest"}
 
 	constrained := target("pinned", "nginx:1.27.3-alpine", fpOld, policy.TrackSemver)
@@ -158,13 +159,16 @@ func TestSemver(t *testing.T) {
 	}
 	constrained.Policy = c
 
-	res := run(t, f,
+	res := New(f, Options{Concurrency: 4, Pin: true}, zerolog.Nop()).Run(t.Context(), []incus.Target{
 		target("newer", "nginx:1.27.3-alpine", fpOld, policy.TrackSemver),
 		constrained,
 		target("floating", "nginx:latest", fpOld, policy.TrackSemver),
-	)
+	})
 	if r := res[0]; r.Status != UpdateAvailable || r.Latest != "1.28.0-alpine" {
 		t.Errorf("newer tag, suffix kept: %+v", r)
+	}
+	if r := res[0]; r.LatestDigest != head2 {
+		t.Errorf("newer tag's digest %q, want it resolved to %q", r.LatestDigest, head2)
 	}
 	if r := res[1]; r.Status != UpdateAvailable || r.Latest != "1.27.4-alpine" {
 		t.Errorf("constraint ~1.27: %+v", r)
@@ -174,6 +178,36 @@ func TestSemver(t *testing.T) {
 	}
 	if n := f.count("tags"); n != 1 {
 		t.Errorf("tags listed %d times for one repository, want 1", n)
+	}
+}
+
+func TestPinLooksUpATagOnce(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.set("docker.io/library/nginx:1.27", head1, fpOld)
+	f.set("docker.io/library/nginx:1.28", head2, fpNew)
+	f.tags["docker.io/library/nginx"] = []string{"1.27", "1.28"}
+	replicas := []incus.Target{
+		target("web-1", "nginx:1.27", fpOld, policy.TrackSemver),
+		target("web-2", "nginx:1.27", fpOld, policy.TrackSemver),
+		target("web-3", "nginx:1.27", fpOld, policy.TrackSemver),
+	}
+	for _, r := range run(t, f, replicas...) {
+		if r.Status != UpdateAvailable || r.LatestDigest != "" {
+			t.Errorf("%s unpinned: %+v, want 1.28 with no digest", r.Target.Instance, r)
+		}
+	}
+	if h := f.count("head"); h != 1 {
+		t.Errorf("unpinned: %d HEADs, want only the current tag's", h)
+	}
+	for _, r := range New(f, Options{Concurrency: 4, Pin: true}, zerolog.Nop()).Run(t.Context(), replicas) {
+		if r.Status != UpdateAvailable || r.LatestDigest != head2 {
+			t.Errorf("%s: %+v, want 1.28 pinned to %s", r.Target.Instance, r, head2)
+		}
+	}
+	// A new engine looks up the current tag again, then 1.28 once for all three.
+	if h, g := f.count("head"), f.count("resolve"); h != 3 || g != 3 {
+		t.Errorf("three replicas: %d HEADs, %d GETs; want 3 each", h, g)
 	}
 }
 
@@ -344,7 +378,7 @@ func TestRegistryErrors(t *testing.T) {
 var now = time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 
 func coolEngine(f *fakeRegistry, cooldown time.Duration) *Engine {
-	e := New(f, Options{Concurrency: 4, Cooldown: cooldown}, zerolog.Nop())
+	e := New(f, Options{Concurrency: 4, Cooldown: cooldown, Pin: true}, zerolog.Nop())
 	e.now = func() time.Time { return now }
 	return e
 }
@@ -374,19 +408,22 @@ func TestCooldownSemver(t *testing.T) {
 			r.Reason != "1.30 held by cooldown until 2026-11-19T10:00:00Z" {
 			t.Errorf("48h: %+v, want 1.28 with 1.30 noted as held", r)
 		}
+		if r := res[0]; r.LatestDigest != head2 {
+			t.Errorf("48h: digest %q, want the settled 1.28's %q", r.LatestDigest, head2)
+		}
 	}
 	if n := f.count("created"); n != 3 {
 		t.Errorf("%d config fetches over two runs, want one per image", n)
 	}
 
 	res := runCooldown(t, f, 24*time.Hour, nginx)
-	if r := res[0]; r.Status != UpdateAvailable || r.Latest != "1.29" {
-		t.Errorf("24h: %+v, want 1.29", r)
+	if r := res[0]; r.Status != UpdateAvailable || r.Latest != "1.29" || r.LatestDigest != head3 {
+		t.Errorf("24h: %+v, want 1.29 at %s", r, head3)
 	}
 
 	res = runCooldown(t, f, 0, nginx)
-	if r := res[0]; r.Status != UpdateAvailable || r.Latest != "1.30" || r.Reason != "" {
-		t.Errorf("off: %+v, want 1.30", r)
+	if r := res[0]; r.Status != UpdateAvailable || r.Latest != "1.30" || r.Reason != "" || r.LatestDigest != head4 {
+		t.Errorf("off: %+v, want 1.30 at %s", r, head4)
 	}
 
 	res = runCooldown(t, f, 60*24*time.Hour, nginx)

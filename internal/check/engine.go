@@ -37,13 +37,17 @@ type Result struct {
 	Status  Status
 	Current string
 	Latest  string
-	Reason  string
+	// LatestDigest is the registry's top-level digest for Latest, in full; "" when unresolved.
+	LatestDigest string
+	Reason       string
 }
 
 type Options struct {
 	Concurrency int
 	// Cooldown applies to instances without a cooldown key; 0 is off.
 	Cooldown time.Duration
+	// Pin resolves the digest of a newer tag the check only named, for an update to rebuild onto.
+	Pin bool
 }
 
 // Engine caches across runs: an unmoved HEAD digest skips the manifest GET.
@@ -51,6 +55,7 @@ type Engine struct {
 	reg         Registry
 	concurrency int
 	cooldown    time.Duration
+	pin         bool
 	log         zerolog.Logger
 	now         func() time.Time
 
@@ -64,6 +69,7 @@ func New(reg Registry, opts Options, log zerolog.Logger) *Engine {
 		reg:         reg,
 		concurrency: max(opts.Concurrency, 1),
 		cooldown:    opts.Cooldown,
+		pin:         opts.Pin,
 		log:         log,
 		now:         time.Now,
 		cache:       map[lookupKey]registry.Image{},
@@ -122,6 +128,9 @@ func (e *Engine) Run(ctx context.Context, targets []incus.Target) []Result {
 		decide(&plans[i], digests[keyOf(plans[i])], tagLists[plans[i].ref.Name()])
 	}
 	e.cool(ctx, plans)
+	if e.pin {
+		e.pinDigests(ctx, plans)
+	}
 
 	for i := range plans {
 		p := &plans[i]
@@ -279,14 +288,14 @@ func decide(p *plan, d *digestOutcome, tags *tagsOutcome) {
 	}
 	r.Status = Current
 	if d.img.Fingerprint != p.target.BaseImage {
-		r.Status, r.Latest = UpdateAvailable, p.ref.Tag+"@"+short(d.img.Digest)
+		r.Status, r.Latest, r.LatestDigest = UpdateAvailable, p.ref.Tag+"@"+short(d.img.Digest), d.img.Digest
 		p.rebuilt = &d.img
 	}
 	if p.target.Policy.Track != policy.TrackSemver {
 		return
 	}
 	if tags.err != nil {
-		r.Status, r.Latest, r.Reason = Error, "", reason(tags.err)
+		fail(r, reason(tags.err))
 		return
 	}
 	pol := p.target.Policy
@@ -295,9 +304,9 @@ func decide(p *plan, d *digestOutcome, tags *tagsOutcome) {
 	})
 	switch {
 	case !ok:
-		r.Status, r.Latest, r.Reason = Error, "", "track=semver needs a version tag, not "+p.ref.Tag
+		fail(r, "track=semver needs a version tag, not "+p.ref.Tag)
 	case len(newer) > 0:
-		r.Status, r.Latest = UpdateAvailable, newer[0]
+		r.Status, r.Latest, r.LatestDigest = UpdateAvailable, newer[0], ""
 		p.candidates = newer
 	}
 }
@@ -335,8 +344,8 @@ func (e *Engine) cool(ctx context.Context, plans []plan) {
 func (e *Engine) coolOne(ctx context.Context, p *plan, cd time.Duration, now time.Time, images *memo[lookupKey, registry.Image]) {
 	r := p.result
 	var held string
-	settle := func(status Status, latest string) {
-		r.Status, r.Latest = status, latest
+	settle := func(status Status, latest, digest string) {
+		r.Status, r.Latest, r.LatestDigest = status, latest, digest
 		if held != "" {
 			r.Reason = held
 		}
@@ -347,16 +356,16 @@ func (e *Engine) coolOne(ctx context.Context, p *plan, cd time.Duration, now tim
 		k := lookupKey{ref: ref.String(), platform: p.platform.String()}
 		img, err := images.do(k, func() (registry.Image, error) { return e.image(ctx, ref, p.platform, k) })
 		if err != nil {
-			r.Status, r.Latest, r.Reason = Error, "", reason(err)
+			fail(r, reason(err))
 			return
 		}
 		until, err := e.ripeAt(ctx, ref, img, cd)
 		if err != nil {
-			r.Status, r.Latest, r.Reason = Error, "", reason(err)
+			fail(r, reason(err))
 			return
 		}
 		if !now.Before(until) {
-			settle(UpdateAvailable, tag)
+			settle(UpdateAvailable, tag, img.Digest)
 			return
 		}
 		if held == "" {
@@ -366,19 +375,54 @@ func (e *Engine) coolOne(ctx context.Context, p *plan, cd time.Duration, now tim
 	if p.rebuilt != nil {
 		until, err := e.ripeAt(ctx, p.ref, *p.rebuilt, cd)
 		if err != nil {
-			r.Status, r.Latest, r.Reason = Error, "", reason(err)
+			fail(r, reason(err))
 			return
 		}
 		latest := p.ref.Tag + "@" + short(p.rebuilt.Digest)
 		if !now.Before(until) {
-			settle(UpdateAvailable, latest)
+			settle(UpdateAvailable, latest, p.rebuilt.Digest)
 			return
 		}
 		if held == "" {
 			held = heldReason(latest, until)
 		}
 	}
-	settle(Current, "")
+	settle(Current, "", "")
+}
+
+// pinDigests does Options.Pin; a failed lookup leaves the update on the tag.
+func (e *Engine) pinDigests(ctx context.Context, plans []plan) {
+	var (
+		wg     sync.WaitGroup
+		sem    = make(chan struct{}, e.concurrency)
+		images = newMemo[lookupKey, registry.Image]()
+	)
+	for i := range plans {
+		p := &plans[i]
+		r := p.result
+		if r.Status != UpdateAvailable || r.LatestDigest != "" {
+			continue
+		}
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			ref := p.ref
+			ref.Tag, ref.Digest = r.Latest, ""
+			k := lookupKey{ref: ref.String(), platform: p.platform.String()}
+			img, err := images.do(k, func() (registry.Image, error) { return e.image(ctx, ref, p.platform, k) })
+			if err != nil {
+				e.log.Warn().Err(err).Str("ref", ref.String()).Msg("could not pin the digest, an update rebuilds from the tag")
+				return
+			}
+			r.LatestDigest = img.Digest
+		})
+	}
+	wg.Wait()
+}
+
+// fail clears what an earlier step found, so an error never carries a latest ref or digest.
+func fail(r *Result, msg string) {
+	r.Status, r.Latest, r.LatestDigest, r.Reason = Error, "", "", msg
 }
 
 // ripeAt is zero for an unknown age; reproducible builds set the epoch.

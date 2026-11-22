@@ -54,6 +54,21 @@ func TestRunnerUpdates(t *testing.T) {
 	}
 }
 
+func TestRunnerPinsTheCheckedDigest(t *testing.T) {
+	t.Parallel()
+	const pin = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	f := newFake()
+	res := autoResult("web")
+	res.LatestDigest = pin
+	done := runner(true).Run(context.Background(), f, []check.Result{res})
+	if len(done) != 1 || done[0].Outcome.Status != Updated {
+		t.Fatalf("done %+v", done)
+	}
+	if len(f.rebuilds) != 1 || f.rebuilds[0].Alias != "library/nginx:1.28-alpine@"+pin {
+		t.Errorf("rebuilds %+v, want the alias pinned to %s", f.rebuilds, pin)
+	}
+}
+
 func TestRunnerSkips(t *testing.T) {
 	t.Parallel()
 	notifyOnly := autoResult("web")

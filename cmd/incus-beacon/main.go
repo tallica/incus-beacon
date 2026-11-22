@@ -180,14 +180,14 @@ func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, std
 	// A claim first: an interrupted update can leave it current on an ungated image.
 	if t := targets[0]; t.Claim != "" {
 		if c.DryRun {
-			o := update.Preview(ctx, srv, reg, t, "", opts)
+			o := update.Preview(ctx, srv, reg, t, update.Next{}, opts)
 			fmt.Fprintf(stdout, "%s/%s: would refuse: %s\n", t.Project, t.Instance, o.Reason)
 			return fmt.Errorf("%s: %s", update.Refused, o.Reason)
 		}
-		o, err := update.Apply(ctx, srv, reg, t, "", opts)
+		o, err := update.Apply(ctx, srv, reg, t, update.Next{}, opts)
 		return reportUpdate(stdout, t.Project+"/"+t.Instance, o, err)
 	}
-	r := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown}, logger).Run(ctx, targets)[0]
+	r := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: true}, logger).Run(ctx, targets)[0]
 	name := r.Target.Project + "/" + r.Target.Instance
 	if r.Status != check.UpdateAvailable {
 		reason := ""
@@ -197,21 +197,21 @@ func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, std
 		_, err := fmt.Fprintf(stdout, "%s: %s, nothing to update%s\n", name, r.Status, reason)
 		return err
 	}
-	to, err := update.NextRef(r.Current, r.Latest)
+	next, err := update.NextOf(r)
 	if err != nil {
 		return err
 	}
 	if c.DryRun {
-		o := update.Preview(ctx, srv, reg, r.Target, to, opts)
+		o := update.Preview(ctx, srv, reg, r.Target, next, opts)
 		if o.Status != update.Ready {
-			fmt.Fprintf(stdout, "%s: would refuse %s\n", name, to)
+			fmt.Fprintf(stdout, "%s: would refuse %s\n", name, next.Ref)
 			return fmt.Errorf("%s: %s", update.Refused, o.Reason)
 		}
 		fmt.Fprintf(stdout, "%s: would update from %s to %s\n", name, o.From, o.To)
 		printOutcome(stdout, o, "would snapshot", "would drop")
 		return nil
 	}
-	o, err := update.Apply(ctx, srv, reg, r.Target, to, opts)
+	o, err := update.Apply(ctx, srv, reg, r.Target, next, opts)
 	return reportUpdate(stdout, name, o, err)
 }
 
@@ -284,7 +284,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	if err != nil {
 		return err
 	}
-	engine := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown}, logger)
+	engine := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update}, logger)
 	sender, err := notify.New(notify.Options{
 		URLs:    c.NotifyURLs,
 		URLFile: c.NotifyURLFile,
