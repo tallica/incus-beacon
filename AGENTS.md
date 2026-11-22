@@ -109,9 +109,10 @@ Message format, types, scopes, branch flow and pull requests are in
   anything not verified, and unpushed commits by short hash and subject.
 - If work stops midway, say exactly what ran, what didn't, and what state things
   are left in.
-- Handoffs for the next session go in `sessions/YYYY-MM-DD_<topic>.md` (local
-  only, never committed). Write a new dated file each time; link earlier ones
-  rather than repeating them.
+- Handoffs for the next session go in `sessions/YYYY-MM-DD_NN_<topic>.md` (local
+  only, never committed). `NN` counts that day's files from `01`, so the highest
+  is the latest. Write a new file each time; link earlier ones rather than
+  repeating them.
 
 Start a handoff from [docs/templates/handoff.md](docs/templates/handoff.md).
 

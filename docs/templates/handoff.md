@@ -1,8 +1,9 @@
 # Handoff: <goal> (YYYY-MM-DD)
 
-<!-- Saved as sessions/YYYY-MM-DD_<topic>.md, which is never
-committed. Write a new dated file each time; link earlier ones
-instead of repeating them. Delete sections that would be empty. -->
+<!-- Saved as sessions/YYYY-MM-DD_NN_<topic>.md, named as AGENTS.md
+says, which is never committed. Write a new file each time; link
+earlier ones instead of repeating them. Delete sections that would
+be empty. -->
 
 Read AGENTS.md first. Rules that bite in this piece of work:
 
@@ -12,7 +13,7 @@ Read AGENTS.md first. Rules that bite in this piece of work:
 - <anything environment-specific: which targets are safe to touch, which are
   production>
 
-Earlier: [YYYY-MM-DD_<topic>.md](YYYY-MM-DD_<topic>.md)
+Earlier: [YYYY-MM-DD_NN_<topic>.md](YYYY-MM-DD_NN_<topic>.md)
 
 ## Context
 
