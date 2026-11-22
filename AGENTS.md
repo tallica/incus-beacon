@@ -27,8 +27,9 @@ the one map of where each kind of fact lives; everywhere else links to the home:
 
 Pre-1.0, released as 0.x: `check`, `status`, `serve`, `install`, `upgrade` and
 `uninstall` work against a real Incus, with notifications, and so do `update`
-and `serve --update`. Go 1.27, built static with `CGO_ENABLED=0`. No dependency
-is pinned below its latest release.
+and `serve --update`; what is still unconfirmed is marked "to verify" in
+README.md. Go 1.27, built static with `CGO_ENABLED=0`. No dependency is pinned
+below its latest release.
 
 ## Working on this
 
