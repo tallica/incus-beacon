@@ -77,6 +77,8 @@ func commonOf(cfg *config.Config) config.Common {
 		return cfg.Status.Common
 	case cfg.Install != nil:
 		return cfg.Install.Common
+	case cfg.Configure != nil:
+		return cfg.Configure.Common
 	case cfg.Upgrade != nil:
 		return cfg.Upgrade.Common
 	case cfg.Uninstall != nil:
@@ -102,6 +104,8 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 		err = runUpdate(ctx, cfg.Update, logger, stdout)
 	case config.CmdInstall:
 		err = runInstall(ctx, cfg.Install, logger)
+	case config.CmdConfigure:
+		err = runConfigure(ctx, cfg.Configure, logger)
 	case config.CmdUpgrade:
 		err = runUpgrade(ctx, cfg.Upgrade, logger)
 	case config.CmdUninstall:
@@ -490,6 +494,41 @@ func imageFor(image string, logger zerolog.Logger) string {
 			Msg("unreleased build: the image may be older than this installer; give --image to choose")
 	}
 	return image
+}
+
+func runConfigure(ctx context.Context, c *config.Configure, logger zerolog.Logger) error {
+	if _, err := notify.New(notify.Options{URLs: c.NotifyURLs}); err != nil {
+		return err
+	}
+	// Built before connecting, so a misspelt name panics in any test that runs configure.
+	opts := install.ConfigureOptions{
+		APIURL:       given(c, "api-url", &c.APIURL),
+		Projects:     given(c, "project", &c.Projects),
+		Watch:        given(c, "watch", &c.Watch),
+		Events:       given(c, "events", &c.Events),
+		Track:        given(c, "track", &c.Track),
+		NotifyURLs:   given(c, "notify-url", &c.NotifyURLs),
+		NotifyErrs:   given(c, "notify-errors", &c.NotifyErrs),
+		Interval:     given(c, "interval", &c.Interval),
+		Cooldown:     given(c, "cooldown", &c.Cooldown),
+		Update:       given(c, "update", &c.Update),
+		UpdateWindow: given(c, "update-window", &c.UpdateWindow),
+		Wait:         c.Wait,
+		Log:          logger,
+	}
+	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
+	if err != nil {
+		return err
+	}
+	opts.Name = install.ResolveName(srv, c.Name, logger)
+	return install.Configure(ctx, srv, opts)
+}
+
+func given[T any](c *config.Configure, flagName string, v *T) *T {
+	if c.Given(flagName) {
+		return v
+	}
+	return nil
 }
 
 func runUpgrade(ctx context.Context, c *config.Upgrade, logger zerolog.Logger) error {

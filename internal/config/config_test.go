@@ -410,3 +410,66 @@ func TestRemoteProject(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigureFlags(t *testing.T) {
+	t.Parallel()
+	cfg, err := parse(t, nil, CmdConfigure, "--name", "b", "--interval", "1h", "--notify-url=", "--update=false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.Configure
+	if c.Name != "b" || c.Wait != 2*time.Minute || c.Interval != time.Hour || len(c.NotifyURLs) != 0 || c.Update {
+		t.Errorf("configure config %+v", c)
+	}
+	for _, name := range []string{"interval", "notify-url", "update"} {
+		if !c.Given(name) {
+			t.Errorf("--%s given but not Given", name)
+		}
+	}
+	if c.Given("events") || c.Given("watch") {
+		t.Error("Given holds flags not given")
+	}
+	cfg, err = parse(t, map[string]string{"BEACON_COOLDOWN": "1h", "BEACON_PROJECT": "apps", "BEACON_INTERVAL": "1s"}, CmdConfigure, "--events")
+	if err != nil {
+		t.Fatalf("BEACON_* setting variables: %v, want them ignored", err)
+	}
+	if c := cfg.Configure; c.Given("cooldown") || c.Given("project") || len(c.Projects) != 0 {
+		t.Errorf("configure took settings from BEACON_* variables: %+v", c)
+	}
+	cfg, err = parse(t, map[string]string{"BEACON_LOG_LEVEL": "debug"}, CmdConfigure, "--events")
+	if err != nil || cfg.Configure.LogLevel != "debug" {
+		t.Errorf("BEACON_LOG_LEVEL: %v, want it still read", err)
+	}
+	for _, args := range [][]string{
+		{},
+		{"--name", "b", "--wait", "1m"},
+		{"--interval", "30s"},
+		{"--track", "latest"},
+		{"--wait", "0s", "--events"},
+		{"--image", "x", "--events"},
+	} {
+		if _, err := parse(t, nil, append([]string{CmdConfigure}, args...)...); !errors.Is(err, ErrUsage) {
+			t.Errorf("configure %v: err %v, want a usage error", args, err)
+		}
+	}
+}
+
+func TestConfigureGivenRefusesUnknownNames(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		if recover() == nil {
+			t.Error("Given of an unknown flag did not panic")
+		}
+	}()
+	(&Configure{}).Given("intreval")
+}
+
+func TestCheckServeEnv(t *testing.T) {
+	t.Parallel()
+	if err := CheckServeEnv(map[string]string{"BEACON_INTERVAL": "1h"}); err != nil {
+		t.Errorf("valid env: %v", err)
+	}
+	if err := CheckServeEnv(map[string]string{"BEACON_NOTIFY_ERRORS": "true"}); err == nil {
+		t.Error("notify-errors with nowhere to notify: no error")
+	}
+}

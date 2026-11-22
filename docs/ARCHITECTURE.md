@@ -9,8 +9,8 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
   and record them, changing only their own `user.incus-beacon.*` keys. Only
   `update`, and `serve --update` for instances that set `update=auto`, stop,
   rebuild or restart an instance, one at a time, and only after the safety steps
-  under [Updating](#updating). `install` and `uninstall` create and remove only
-  beacon's own instance, volume and certificate.
+  under [Updating](#updating). `install`, `configure`, `upgrade` and `uninstall`
+  touch only beacon's own instance, volume and certificate.
 - **Incus is the state.** The beacon keeps no database. What it last concluded
   about an instance is stored on that instance, so a restarted or replaced
   container picks up where the last one left off. Lazyincus and the `incus` CLI
@@ -28,23 +28,23 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Components
 
-| Package             | Job                                                                                                                                       | Depends on                              |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                              | everything below                        |
-| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                                  |
-| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                                 | zerolog                                 |
-| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                                  |
-| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust       |
-| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                      |
-| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                        |
-| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                      |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy                |
-| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                                 |
-| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                            |
-| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares     | incus, registry, check, policy, metrics |
-| `internal/install`  | `install`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                                       | policy, registry, semver, update        |
-| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics                   |
-| `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                       | stdlib                                  |
+| Package             | Job                                                                                                                                       | Depends on                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                              | everything below                         |
+| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                                   |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                                 | zerolog                                  |
+| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                                   |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust        |
+| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                       |
+| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                         |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                       |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy                 |
+| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                                  |
+| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                             |
+| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares     | incus, registry, check, policy, metrics  |
+| `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                          | config, policy, registry, semver, update |
+| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics                    |
+| `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                       | stdlib                                   |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
@@ -338,6 +338,18 @@ Refs are normalised with Docker conventions: `nginx` becomes
   it needs no registry. Verified on Incus 7.6 only; older servers keep the old
   image's `oci.*` keys through a rebuild, harmless while the image's entrypoint
   stays the same (to verify).
+- **Reconfiguring the installed instance (`configure`):** it builds the new
+  config, then has `config` parse `serve` from the resulting `BEACON_*`
+  variables, so a setting serve would refuse is refused before anything changes.
+  A running instance is stopped before the certificate's project restriction,
+  the notification URL file and the config change, so serve never runs with the
+  certificate and its environment disagreeing. Config writes set only the keys
+  that differ, on the instance's current config, so a key someone else changed
+  meanwhile survives both the change and the rollback. A change to the
+  instance's own policy keys alone, such as `track`, needs no restart. Readiness
+  is `upgrade`'s `/ready` gate; the rollback puts the three back and passes the
+  same gate. A stopped instance is changed and left stopped, checked only by
+  that parse. Not yet run against a real Incus (to verify).
 - **From a host (CLI):** an `incus` CLI remote (`--remote`, or the CLI's
   default), which reuses that remote's certificates or local socket.
 

@@ -19,6 +19,7 @@ const (
 	CmdStatus    = "status"
 	CmdServe     = "serve"
 	CmdInstall   = "install"
+	CmdConfigure = "configure"
 	CmdUpdate    = "update"
 	CmdUpgrade   = "upgrade"
 	CmdUninstall = "uninstall"
@@ -51,7 +52,7 @@ var groups = []struct {
 	cmds  []string
 }{
 	{"Watching instances:", []string{CmdCheck, CmdStatus, CmdServe, CmdUpdate}},
-	{"Running beacon on Incus:", []string{CmdInstall, CmdUpgrade, CmdUninstall}},
+	{"Running beacon on Incus:", []string{CmdInstall, CmdConfigure, CmdUpgrade, CmdUninstall}},
 	{"", []string{CmdVersion}},
 }
 
@@ -70,6 +71,7 @@ var summaries = map[string]string{
 	CmdServe:     "run checks on an interval and record results",
 	CmdUpdate:    "move one watched instance to its newer image, with rollback",
 	CmdInstall:   "create beacon's own serve instance, joined with a trust token",
+	CmdConfigure: "change the settings of beacon's own instance, with rollback",
 	CmdUpgrade:   "move beacon's own instance to a newer beacon release",
 	CmdUninstall: "remove beacon's instance, its volume and its certificate",
 	CmdVersion:   "print the version",
@@ -153,7 +155,7 @@ type Install struct {
 	Wait        time.Duration
 }
 
-// Settings are what install gives the instance; README shows how to set the rest.
+// Settings are what install gives the instance and configure changes; README shows how to set the rest.
 type Settings struct {
 	APIURL       string
 	Events       bool
@@ -164,6 +166,23 @@ type Settings struct {
 	Cooldown     time.Duration
 	Update       bool
 	UpdateWindow string
+}
+
+// Configure binds the same settings as install; only those Given change.
+type Configure struct {
+	Common
+	Settings
+	Name  string
+	Wait  time.Duration
+	given map[string]bool
+}
+
+// Given reports whether the setting flag name was on the command line; it panics on a name bindSettings doesn't bind.
+func (c *Configure) Given(name string) bool {
+	if !slices.Contains(settingFlags, name) {
+		panic("config: " + name + " is not a configure setting")
+	}
+	return c.given[name]
 }
 
 type Update struct {
@@ -202,6 +221,7 @@ type Config struct {
 	Serve     *Serve
 	Update    *Update
 	Install   *Install
+	Configure *Configure
 	Upgrade   *Upgrade
 	Uninstall *Uninstall
 }
@@ -342,6 +362,25 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			}
 			return errors.Join(errs...)
 		}
+	case CmdConfigure:
+		c := &Configure{Common: Common{Watch: WatchAll}}
+		bindLog(fs, &c.Common)
+		bindRemoteProject(fs, &c.Common)
+		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
+		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
+		bindSettings(fs, &c.Common, &c.Settings)
+		cfg.Configure = c
+		validate = func() error {
+			errs := []error{c.Common.validate(), c.Settings.validate()}
+			if c.Wait <= 0 {
+				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
+			}
+			// A bare configure is a usage mistake; settings already as given are a no-op install.Configure reports.
+			if !slices.ContainsFunc(settingFlags, c.Given) {
+				errs = append(errs, errors.New("no setting given; see incus-beacon configure -h"))
+			}
+			return errors.Join(errs...)
+		}
 	case CmdUpgrade:
 		c := &Upgrade{Common: Common{Watch: WatchAll}}
 		bindLog(fs, &c.Common)
@@ -384,7 +423,14 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 	if fs.NArg() > 0 {
 		return nil, fmt.Errorf("%w: unexpected argument %q", ErrUsage, fs.Arg(0))
 	}
-	if err := applyEnv(fs, getenv); err != nil {
+	var envSkip []string
+	if c := cfg.Configure; c != nil {
+		// Only the command line counts: a BEACON_PROJECT exported for check must not narrow the instance.
+		c.given = map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { c.given[f.Name] = true })
+		envSkip = settingFlags
+	}
+	if err := applyEnv(fs, getenv, envSkip); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUsage, err)
 	}
 	if err := validate(); err != nil {
@@ -467,6 +513,15 @@ func bindSettings(fs *flag.FlagSet, c *Common, s *Settings) {
 	fs.StringVar(&s.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in the instance's local time (UTC unless TZ is set), when its updates may run (default: any time)")
 }
 
+// settingFlags names the flags bindSettings binds, for Configure.Given.
+var settingFlags = func() []string {
+	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	bindSettings(fs, &Common{}, &Settings{})
+	var names []string
+	fs.VisitAll(func(f *flag.Flag) { names = append(names, f.Name) })
+	return names
+}()
+
 func (s *Settings) validate() error {
 	var errs []error
 	if s.Track != "" && s.Track != "digest" && s.Track != "semver" {
@@ -484,6 +539,12 @@ func (s *Settings) validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// CheckServeEnv parses serve from env, the BEACON_* variables an instance would run with.
+func CheckServeEnv(env map[string]string) error {
+	_, err := Parse([]string{CmdServe}, func(k string) string { return env[k] }, io.Discard)
+	return err
 }
 
 func bindUpdate(fs *flag.FlagSet, c *UpdateFlags) {
@@ -570,12 +631,12 @@ func oneOf(name, v string, allowed ...string) error {
 	return fmt.Errorf("%s %q: must be one of %s", name, v, strings.Join(allowed, ", "))
 }
 
-func applyEnv(fs *flag.FlagSet, getenv func(string) string) error {
+func applyEnv(fs *flag.FlagSet, getenv func(string) string, skip []string) error {
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	var errs []error
 	fs.VisitAll(func(f *flag.Flag) {
-		if set[f.Name] {
+		if set[f.Name] || slices.Contains(skip, f.Name) {
 			return
 		}
 		env := EnvName(f.Name)

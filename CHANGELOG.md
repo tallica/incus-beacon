@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `incus-beacon configure` changes the settings `install` gave beacon's
+  instance, then restarts it, rolling back if `/ready` never answers.
+
 ## [0.6.0-beta.2] - 2026-11-22
 
 ### Added

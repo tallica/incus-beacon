@@ -47,20 +47,20 @@ go under Removed, security fixes under Security.
 Scopes name the area touched (a package, component or doc). Keep the list short
 and consistent:
 
-| Scope      | Area                                                     |
-| ---------- | -------------------------------------------------------- |
-| `cli`      | `cmd/incus-beacon`, `internal/config`, `internal/report` |
-| `incus`    | `internal/incus`, `internal/policy`: Incus API and keys  |
-| `registry` | `internal/registry`: OCI registry access, auth, backoff  |
-| `check`    | `internal/check`, `internal/semver`: update detection    |
-| `notify`   | `internal/notify`                                        |
-| `serve`    | `internal/serve`: daemon loop and health endpoints       |
-| `update`   | `internal/update`: rebuild, health gate and rollback     |
-| `install`  | `internal/install`: install, upgrade and uninstall       |
-| `deploy`   | Containerfile, image publishing, deployment recipes      |
-| `docs`     | Docs not tied to one area above                          |
-| `deps`     | Dependency bumps, as Dependabot writes them              |
-| `release`  | The `chore(release)` commit that cuts a version          |
+| Scope      | Area                                                          |
+| ---------- | ------------------------------------------------------------- |
+| `cli`      | `cmd/incus-beacon`, `internal/config`, `internal/report`      |
+| `incus`    | `internal/incus`, `internal/policy`: Incus API and keys       |
+| `registry` | `internal/registry`: OCI registry access, auth, backoff       |
+| `check`    | `internal/check`, `internal/semver`: update detection         |
+| `notify`   | `internal/notify`                                             |
+| `serve`    | `internal/serve`: daemon loop and health endpoints            |
+| `update`   | `internal/update`: rebuild, health gate and rollback          |
+| `install`  | `internal/install`: install, configure, upgrade and uninstall |
+| `deploy`   | Containerfile, image publishing, deployment recipes           |
+| `docs`     | Docs not tied to one area above                               |
+| `deps`     | Dependency bumps, as Dependabot writes them                   |
+| `release`  | The `chore(release)` commit that cuts a version               |
 
 ## Branches
 

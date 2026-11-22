@@ -86,7 +86,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	return fmt.Errorf("%w; rolled back to %s", err, from)
 }
 
-// installed finds the instance called name, refusing one install didn't create; uninstall tolerates any, or none.
+// installed finds the instance for upgrade and configure, refusing one install didn't create; uninstall tolerates any.
 func installed(srv incusclient.InstanceServer, name string, log zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
 	srv, inst, err := findInstance(srv, name, log)
 	if notFound(err) {

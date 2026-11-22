@@ -46,7 +46,7 @@ func TestExitCodes(t *testing.T) {
 // panic. serve is left out, since it retries the remote until it is stopped.
 func TestEveryCommandRuns(t *testing.T) {
 	t.Parallel()
-	extra := map[string][]string{config.CmdUpdate: {"--instance", "web"}}
+	extra := map[string][]string{config.CmdUpdate: {"--instance", "web"}, config.CmdConfigure: {"--events"}}
 	for _, cmd := range config.Commands {
 		if cmd == config.CmdVersion || cmd == config.CmdServe {
 			continue

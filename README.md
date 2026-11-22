@@ -72,12 +72,28 @@ addresses; `--api-url` overrides that. `install` waits until the instance has
 joined, then removes the spent token file. `incus-beacon uninstall` removes the
 instance, its volume and its certificate, finding the instance in whichever
 project it is in. An instance installed before 0.6 is called `incus-beacon`:
-`upgrade` and `uninstall` find it under that name when `--name` isn't given, and
-`install` refuses to add a second beacon beside it.
+`configure`, `upgrade` and `uninstall` find it under that name when `--name`
+isn't given, and `install` refuses to add a second beacon beside it.
 
 `install` passes most of its settings to the instance's `serve` as
-`environment.BEACON_*` keys, which `upgrade` keeps. A `serve` flag `install`
-doesn't take is set the same way, then the instance restarted:
+`environment.BEACON_*` keys, which `upgrade` keeps. `incus-beacon configure`
+changes them later (to verify). It takes the same settings as `install` and
+changes only those given on the command line; `BEACON_*` variables don't count,
+so one exported for `check` can't change the instance. A setting given empty or
+zero, such as `--update-window=` or `--cooldown=0`, or `false`, gets what
+`install` does without that flag:
+
+```sh
+incus-beacon configure --remote <remote> --interval 1h --update
+# --notify-url replaces the stored URLs; --project also re-restricts the certificate
+```
+
+It refuses settings the instance's `serve` would refuse before changing
+anything. A running instance is stopped, changed, started and given up to
+`--wait` (2m) to answer `/ready`; if it doesn't, the old settings go back and
+must come up ready in turn. A stopped instance is only changed, so nothing but
+that first check has run when the settings meet its next start. A `serve` flag
+that `install` doesn't take is set by hand, then the instance restarted:
 
 ```sh
 incus config set incus-beacond environment.BEACON_UPDATE_KEEP=5
@@ -191,6 +207,7 @@ incus-beacon <command> [flags]
 | `serve`     | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` `/metrics` |
 | `update`    | Rebuilds one instance on its newer image, with volume snapshots, a health gate and automatic rollback    |
 | `install`   | Creates beacon's own `serve` instance on Incus, joined with a trust token                                |
+| `configure` | Changes the settings `install` gave beacon's own instance, rolling back if it isn't ready                |
 | `upgrade`   | Moves beacon's own instance to a newer beacon release, rolling back if it isn't ready                    |
 | `uninstall` | Removes beacon's instance, its volume and its certificate                                                |
 | `version`   | Prints the version                                                                                       |
@@ -204,25 +221,25 @@ environment variable named after it: `--server-fingerprint` is
 `BEACON_SERVER_FINGERPRINT`; a flag on the command line wins. The ones most
 often needed:
 
-| Flag                                       | Purpose                                                                                     |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`                    |
-| `--remote <remote>:<project>`              | Also the project `install` puts the instance in                                             |
-| `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                                        |
-| `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)                           |
-| `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir                  |
-| `--token-file`                             | Read the token from a file instead, as `install` sets up                                    |
-| `--project`                                | Project to watch, or several comma-separated; all visible ones by default                   |
-| `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones                 |
-| `--format`                                 | `table` or `json`, for `check` and `status`                                                 |
-| `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`                     |
-| `--cooldown`                               | Report an image only once it is this old, e.g. `48h`; off by default; also `install`        |
-| `--interval`                               | Time between `serve` cycles; `serve` and `install`                                          |
-| `--update`, `--update-window`              | Apply updates to `update=auto` instances, at any time or in a window; `serve` and `install` |
-| `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                                         |
-| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default                  |
-| `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)                       |
-| `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`                   |
+| Flag                                       | Purpose                                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`                              |
+| `--remote <remote>:<project>`              | Also the project beacon's own instance lives in, for `install` and the commands after it              |
+| `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                                                  |
+| `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)                                     |
+| `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir                            |
+| `--token-file`                             | Read the token from a file instead, as `install` sets up                                              |
+| `--project`                                | Project to watch, or several comma-separated; all visible ones by default                             |
+| `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones                           |
+| `--format`                                 | `table` or `json`, for `check` and `status`                                                           |
+| `--events`                                 | Check new, changed and rebuilt instances at once; `serve`, `install` and `configure`                  |
+| `--cooldown`                               | Report an image only once it is this old, e.g. `48h`; off by default; also `install`, `configure`     |
+| `--interval`                               | Time between `serve` cycles; `serve`, `install` and `configure`                                       |
+| `--update`, `--update-window`              | Apply updates to `update=auto` instances, at any time or in a window; `serve`, `install`, `configure` |
+| `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                                                   |
+| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default                            |
+| `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)                                 |
+| `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`                             |
 
 ### Instance keys
 
