@@ -45,17 +45,33 @@ var (
 	versionArgs = []string{"-version", "--version"}
 )
 
+// groups is how usage lists the subcommands; an untitled group follows a blank line.
+var groups = []struct {
+	title string
+	cmds  []string
+}{
+	{"Watching instances:", []string{CmdCheck, CmdStatus, CmdServe, CmdUpdate}},
+	{"Running beacon on Incus:", []string{CmdInstall, CmdUpgrade, CmdUninstall}},
+	{"", []string{CmdVersion}},
+}
+
 // Commands lists the subcommands in the order usage shows them.
-var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdUpdate, CmdInstall, CmdUpgrade, CmdUninstall, CmdVersion}
+var Commands = func() []string {
+	var all []string
+	for _, g := range groups {
+		all = append(all, g.cmds...)
+	}
+	return all
+}()
 
 var summaries = map[string]string{
 	CmdCheck:     "check registries for newer images and print what can be updated",
 	CmdStatus:    "show the update status already recorded on instances",
 	CmdServe:     "run checks on an interval and record results",
-	CmdUpdate:    "rebuild one instance on its newer image, rolling back if it fails",
-	CmdInstall:   "create a serve instance on Incus that joins with a trust token",
-	CmdUpgrade:   "rebuild that instance on a newer image, rolling back if it isn't ready",
-	CmdUninstall: "remove that instance, its volume and its certificate",
+	CmdUpdate:    "move one watched instance to its newer image, with rollback",
+	CmdInstall:   "create beacon's own serve instance, joined with a trust token",
+	CmdUpgrade:   "move beacon's own instance to a newer beacon release",
+	CmdUninstall: "remove beacon's instance, its volume and its certificate",
 	CmdVersion:   "print the version",
 }
 
@@ -379,10 +395,18 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 
 func Usage(out io.Writer) {
 	fmt.Fprintln(out, "Usage: incus-beacon <command> [flags]")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Commands:")
+	width := 0
 	for _, c := range Commands {
-		fmt.Fprintf(out, "  %-8s %s\n", c, summaries[c])
+		width = max(width, len(c))
+	}
+	for _, g := range groups {
+		fmt.Fprintln(out)
+		if g.title != "" {
+			fmt.Fprintln(out, g.title)
+		}
+		for _, c := range g.cmds {
+			fmt.Fprintf(out, "  %-*s  %s\n", width, c, summaries[c])
+		}
 	}
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Run 'incus-beacon <command> -h' for its flags. Every flag can also be set")

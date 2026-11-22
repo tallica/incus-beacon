@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Changed
+
+- `incus-beacon -h` groups the commands that watch instances apart from those
+  that run beacon itself, so `update` and `upgrade` no longer read alike.
+
 ## [0.6.0-beta.1] - 2026-11-22
 
 ### Added

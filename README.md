@@ -180,9 +180,9 @@ incus-beacon <command> [flags]
 | `status`    | Prints what is recorded on the instances, without asking any registry                                    |
 | `serve`     | Checks on start and every `--interval` (6h, ±10%), records results, serves `/health` `/ready` `/metrics` |
 | `update`    | Rebuilds one instance on its newer image, with volume snapshots, a health gate and automatic rollback    |
-| `install`   | Creates a `serve` instance on Incus that joins with a trust token                                        |
-| `upgrade`   | Rebuilds that instance on a newer image, rolling back if it isn't ready                                  |
-| `uninstall` | Removes that instance, its volume and its certificate                                                    |
+| `install`   | Creates beacon's own `serve` instance on Incus, joined with a trust token                                |
+| `upgrade`   | Moves beacon's own instance to a newer beacon release, rolling back if it isn't ready                    |
+| `uninstall` | Removes beacon's instance, its volume and its certificate                                                |
 | `version`   | Prints the version                                                                                       |
 
 The same binary also answers to `incus-beacond`, as the image's entry point
