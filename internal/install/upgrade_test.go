@@ -101,6 +101,7 @@ func TestUpgradeRefuses(t *testing.T) {
 		{"missing", func(f *fake) { delete(f.instances, "incus-beacon") }, "ghcr.io/tallica/incus-beacon:0.5", "install it first"},
 		{"no base image", func(f *fake) { delete(f.instances["incus-beacon"].Config, "volatile.base_image") }, "ghcr.io/tallica/incus-beacon:0.5", "no base image"},
 		{"bad image", func(*fake) {}, "incus-beacon:0.5", "want registry/repository"},
+		{"mistyped image", func(*fake) {}, "image=ghcr.io/tallica/incus-beacon:0.5", "not a valid reference"},
 	}
 	for _, tt := range tests {
 		f := installedFake()

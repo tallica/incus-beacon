@@ -296,6 +296,19 @@ func TestInstall(t *testing.T) {
 	}
 }
 
+func TestInstallRefusesAMalformedImageFirst(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	o := opts()
+	o.Image = "image=ghcr.io/tallica/incus-beacon:0.1"
+	if err := Install(context.Background(), f, o); err == nil || !strings.Contains(err.Error(), "not a valid reference") {
+		t.Fatalf("err %v, want the image refused", err)
+	}
+	if len(f.calls) != 0 || len(f.volumes) != 0 || len(f.tokenOps) != 0 {
+		t.Errorf("calls %v, want nothing created", f.calls)
+	}
+}
+
 func TestInstallStoresNotifyURLsInTheVolume(t *testing.T) {
 	t.Parallel()
 	f := newFake()

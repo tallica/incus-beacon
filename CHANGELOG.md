@@ -18,6 +18,11 @@ get an entry.
 - `incus-beacon configure` changes the settings `install` gave beacon's
   instance, then restarts it, rolling back if `/ready` never answers.
 
+### Fixed
+
+- `install` and `upgrade` refuse a malformed `--image`, such as one with a stray
+  `image=`, before stopping or creating anything.
+
 ## [0.6.0-beta.2] - 2026-11-22
 
 ### Added

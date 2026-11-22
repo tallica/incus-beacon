@@ -4,6 +4,7 @@ package update
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,11 +12,17 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 )
 
+// imageRef is the OCI reference grammar, digests sha256 only as in ParseRef; Incus rejects a bad ref only once the instance has stopped.
+var imageRef = regexp.MustCompile(`^[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*(?::[0-9]+)?/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[\w][\w.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$`)
+
 // SplitImage turns registry/repo:tag into the OCI source Incus pulls from.
 func SplitImage(ref string) (server, alias string, err error) {
 	host, rest, ok := strings.Cut(ref, "/")
-	if !ok || !strings.ContainsAny(host, ".:") || rest == "" {
+	if !ok || !strings.ContainsAny(host, ".:") {
 		return "", "", fmt.Errorf("image %q: want registry/repository[:tag]", ref)
+	}
+	if !imageRef.MatchString(ref) {
+		return "", "", fmt.Errorf("image %q: not a valid reference; want host[:port]/repository[:tag][@sha256:digest], the repository in lower case", ref)
 	}
 	return "https://" + host, rest, nil
 }
