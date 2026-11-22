@@ -52,6 +52,9 @@ not work. An idea that needs more than a paragraph gets its own file in
   MB) and adds many linked modules; built-in senders plus `--notify-command`
   cover the rest. Go plugins can't load into a static `CGO_ENABLED=0` binary, so
   it can't be optional at run time either (2026-11-07).
+- **A notification when an update starts** — every update already ends in an
+  outcome message, most finish in 20-40s, and a start message would double the
+  noise (2026-11-22).
 - **Copying the lazyincus upstream-check code** — the maintainer chose a fresh
   implementation; lazyincus stays a reference (2026-11-04).
 - **Unix-socket-only access to Incus** — unproven inside OCI containers and
