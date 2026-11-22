@@ -24,7 +24,7 @@ Co-Authored-By: ...
 ```
 
 - Subject: lowercase, imperative, plain English, no trailing period:
-  `fix(api): stop dropping the last page of results`.
+  `fix(update): hold a claim for one health wait, not two`.
 - Body: why and what it affects, not how it works. Omit it for trivial commits.
 
 | Type       | Use for                    | CHANGELOG section         |
@@ -40,7 +40,7 @@ Co-Authored-By: ...
 | `chore`    | Anything else              | none                      |
 | `revert`   | Reverting a commit         | as the reverted change    |
 
-A breaking change adds `!` after the type (`feat(api)!: …`) and a
+A breaking change adds `!` after the type (`feat(cli)!: …`) and a
 `BREAKING CHANGE:` footer; its CHANGELOG line is marked **Breaking**. Removals
 go under Removed, security fixes under Security.
 
@@ -55,8 +55,12 @@ and consistent:
 | `check`    | `internal/check`, `internal/semver`: update detection    |
 | `notify`   | `internal/notify`                                        |
 | `serve`    | `internal/serve`: daemon loop and health endpoints       |
+| `update`   | `internal/update`: rebuild, health gate and rollback     |
+| `install`  | `internal/install`: install, upgrade and uninstall       |
 | `deploy`   | Containerfile, image publishing, deployment recipes      |
 | `docs`     | Docs not tied to one area above                          |
+| `deps`     | Dependency bumps, as Dependabot writes them              |
+| `release`  | The `chore(release)` commit that cuts a version          |
 
 ## Branches
 
@@ -67,7 +71,7 @@ and consistent:
 
 ## Pull requests
 
-- Title: in commit format (`feat(api): …`); CI lints it with the commits.
+- Title: in commit format (`feat(cli): …`); CI lints it with the commits.
 - Body follows [the PR template](.github/pull_request_template.md): what changed
   for users, how it works, and a test plan whose unchecked boxes say plainly
   what wasn't verified.

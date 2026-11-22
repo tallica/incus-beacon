@@ -6,7 +6,7 @@ export default {
   ignores: [(message) => /^build\(deps(-dev)?\): Bump /.test(message)],
   rules: {
     "body-max-line-length": [0],
-    // Once the scopes settle, enforce them, in step with their docs:
-    // "scope-enum": [2, "always", ["api", "docs", "deps", "release", "ci"]],
+    // Once the scopes settle, enforce CONTRIBUTING.md's scope table with
+    // "scope-enum"; doc-named scopes such as readme are in use too.
   },
 };
