@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -54,9 +55,21 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if old == "" {
 		return fmt.Errorf("instance %s records no base image to roll back to", opts.Name)
 	}
-	audit := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image).Logger()
+	fields := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image)
+	addLog := inst.Devices[logDev] == nil
+	if addLog {
+		fields = fields.Str("log_volume", LogVolumeName(opts.Name))
+	}
+	audit := fields.Logger()
 	log.AuditBegin(audit, "upgrade").Send()
 	defer func() { log.AuditEnd(audit, "upgrade", err).Send() }()
+
+	// The device decides, not the key: unsetting BEACON_AUDIT_LOG turns the log off, and must stay off.
+	if addLog {
+		if err := addLogVolume(ctx, srv, opts.Name, inst.Devices[stateDev]["pool"], opts.Log); err != nil {
+			return err
+		}
+	}
 
 	if inst.StatusCode != api.Stopped {
 		if err := update.SetState(ctx, srv, opts.Name, "stop"); err != nil {
@@ -91,6 +104,46 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 		return errors.Join(err, fmt.Errorf("roll back to %s: %w", from, rerr))
 	}
 	return fmt.Errorf("%w; rolled back to %s", err, from)
+}
+
+// addLogVolume gives the instance the log volume, device and audit path, through the instance's current ETag.
+func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, pool string, logger zerolog.Logger) error {
+	if pool == "" {
+		return fmt.Errorf("instance %s records no pool on its %s device", name, stateDev)
+	}
+	vol := LogVolumeName(name)
+	created, err := ensureLogVolume(srv, pool, vol, logger)
+	if err != nil {
+		return err
+	}
+	// findInstance drops the ETag, so the update reads its own.
+	inst, etag, err := srv.GetInstance(name)
+	if err == nil {
+		put := inst.Writable()
+		put.Config = with(put.Config, "environment.BEACON_AUDIT_LOG", auditFile)
+		put.Devices = with(put.Devices, logDev, disk(pool, vol, logDir))
+		var op incusclient.Operation
+		if op, err = srv.UpdateInstance(name, put, etag); err == nil {
+			err = op.WaitContext(ctx)
+		}
+	}
+	if err != nil {
+		err = fmt.Errorf("add the %s device to %s: %w", logDev, name, err)
+		if created {
+			err = errors.Join(err, srv.DeleteStoragePoolVolume(pool, "custom", vol))
+		}
+		return err
+	}
+	logger.Info().Str("instance", name).Str("volume", vol).Str("path", logDir).Msg("log volume attached")
+	return nil
+}
+
+// with is a copy of m, which may be nil, with k set to v; the copy leaves the instance just read untouched.
+func with[V any](m map[string]V, k string, v V) map[string]V {
+	c := make(map[string]V, len(m)+1)
+	maps.Copy(c, m)
+	c[k] = v
+	return c
 }
 
 // installed finds the instance for upgrade and configure, refusing one install didn't create; uninstall tolerates any.

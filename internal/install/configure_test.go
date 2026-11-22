@@ -19,6 +19,9 @@ import (
 )
 
 func (f *fake) UpdateInstance(name string, put api.InstancePut, _ string) (incusclient.Operation, error) {
+	if f.failUpdate != nil {
+		return nil, f.failUpdate
+	}
 	f.calls = append(f.calls, "update instance "+name)
 	f.instances[name].InstancePut = put
 	f.instances[name].Config = maps.Clone(put.Config)

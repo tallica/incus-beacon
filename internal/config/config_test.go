@@ -292,8 +292,12 @@ func TestInstallFlags(t *testing.T) {
 		}
 	}
 	cfg, err = parse(t, nil, CmdUninstall, "--name", "b")
-	if err != nil || cfg.Uninstall.Name != "b" {
+	if err != nil || cfg.Uninstall.Name != "b" || cfg.Uninstall.DeleteLog {
 		t.Errorf("uninstall: %+v, %v", cfg.Uninstall, err)
+	}
+	cfg, err = parse(t, nil, CmdUninstall, "--delete-log")
+	if err != nil || !cfg.Uninstall.DeleteLog {
+		t.Errorf("uninstall --delete-log: %+v, %v", cfg.Uninstall, err)
 	}
 	cfg, err = parse(t, nil, CmdUpgrade, "--name", "b", "--force")
 	if u := cfg.Upgrade; err != nil || u.Name != "b" || !u.Force || u.Wait != 2*time.Minute || u.Image != "" {

@@ -559,9 +559,10 @@ func runUninstall(ctx context.Context, c *config.Uninstall, logger, audit zerolo
 		return err
 	}
 	return install.Uninstall(ctx, srv, install.UninstallOptions{
-		Name:  install.ResolveName(srv, c.Name, logger),
-		Log:   logger,
-		Audit: audit,
+		Name:      install.ResolveName(srv, c.Name, logger),
+		DeleteLog: c.DeleteLog,
+		Log:       logger,
+		Audit:     audit,
 	})
 }
 

@@ -20,6 +20,10 @@ get an entry.
 - `--audit-log` makes `serve`, `update`, `install`, `configure`, `upgrade` and
   `uninstall` append a JSON line per change and update outcome to a size-rotated
   file.
+- `install` gives beacon's instance a `<name>-log` volume at
+  `/var/log/incus-beacon` holding its audit log; `upgrade` adds it to older
+  installs.
+- `uninstall` keeps the log volume; `--delete-log` removes it too.
 
 ### Fixed
 

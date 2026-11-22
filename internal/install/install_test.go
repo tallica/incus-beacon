@@ -40,6 +40,7 @@ type fake struct {
 	fileData     map[string]string
 	states       []string
 	failCreate   error
+	failUpdate   error // every instance update's
 	failCert     error // every certificate update's
 	joins        bool  // the instance redeems its token when started
 	calls        []string
@@ -150,9 +151,27 @@ func (f *fake) DeleteCertificate(fp string) error {
 }
 
 func (f *fake) CreateStoragePoolVolume(pool string, v api.StorageVolumesPost) error {
+	if _, ok := f.volumes[pool+"/"+v.Name]; ok {
+		return api.StatusErrorf(http.StatusConflict, "Volume by that name already exists") // as Incus answers
+	}
 	f.calls = append(f.calls, "create volume "+v.Name)
 	f.volumes[pool+"/"+v.Name] = v
 	return nil
+}
+
+func (f *fake) GetStoragePoolNames() ([]string, error) {
+	pools := map[string]bool{"default": true}
+	for key := range f.volumes {
+		pools[strings.Split(key, "/")[0]] = true
+	}
+	return slices.Sorted(maps.Keys(pools)), nil
+}
+
+func (f *fake) GetStoragePoolVolume(pool, _, name string) (*api.StorageVolume, string, error) {
+	if _, ok := f.volumes[pool+"/"+name]; !ok {
+		return nil, "", errNotFound
+	}
+	return &api.StorageVolume{Name: name, Type: "custom"}, "", nil
 }
 
 func (f *fake) DeleteStoragePoolVolume(pool, _, name string) error {
@@ -293,9 +312,11 @@ func TestInstall(t *testing.T) {
 	if err := Install(context.Background(), f, o); err != nil {
 		t.Fatal(err)
 	}
-	vol, ok := f.volumes["default/incus-beacon-state"]
-	if !ok || vol.Config["initial.uid"] != "65534" || vol.Config["initial.gid"] != "65534" {
-		t.Errorf("volume %+v, want one owned by 65534", vol)
+	for _, name := range []string{"incus-beacon-state", "incus-beacon-log"} {
+		vol, ok := f.volumes["default/"+name]
+		if !ok || vol.Config["initial.uid"] != "65534" || vol.Config["initial.gid"] != "65534" {
+			t.Errorf("volume %s %+v, want one owned by 65534", name, vol)
+		}
 	}
 	inst := f.instances["incus-beacon"]
 	if inst == nil {
@@ -306,6 +327,7 @@ func TestInstall(t *testing.T) {
 		"environment.BEACON_TOKEN_FILE": tokenFile,
 		"environment.BEACON_PROJECT":    "apps",
 		"environment.BEACON_EVENTS":     "true",
+		"environment.BEACON_AUDIT_LOG":  "/var/log/incus-beacon/audit.log",
 		"user.incus-beacon.track":       "semver",
 	}
 	for k, v := range wantEnv {
@@ -318,6 +340,9 @@ func TestInstall(t *testing.T) {
 	}
 	if d := inst.Devices[stateDev]; d["source"] != "incus-beacon-state" || d["path"] != stateDir {
 		t.Errorf("state device %v", d)
+	}
+	if d := inst.Devices[logDev]; d["type"] != "disk" || d["pool"] != "default" || d["source"] != "incus-beacon-log" || d["path"] != "/var/log/incus-beacon" {
+		t.Errorf("log device %v", d)
 	}
 	if a := f.files[tokenFile]; a.Mode != 0o400 || a.UID != imageUID || f.fileData[tokenFile] == "" {
 		t.Errorf("token file %+v", a)
@@ -355,8 +380,8 @@ func TestInstallStoresNotifyURLsInTheVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range checkAudit(t, &buf, "install begin", "install done") {
-		if r["image"] != o.Image || r["pool"] != "default" || r["volume"] != "incus-beacon-state" {
-			t.Errorf("record %v: want image, pool and volume", r)
+		if r["image"] != o.Image || r["pool"] != "default" || r["volume"] != "incus-beacon-state" || r["log_volume"] != "incus-beacon-log" {
+			t.Errorf("record %v: want image, pool and both volumes", r)
 		}
 	}
 	if strings.Contains(buf.String(), "example.com") {
@@ -450,9 +475,34 @@ func TestInstallRollsBack(t *testing.T) {
 	if r := checkAudit(t, &buf, "install begin", "install failed"); !strings.Contains(fmt.Sprint(r[1]["error"]), "image not found") {
 		t.Errorf("failed record %v, want the error", r[1])
 	}
-	want := []string{"create volume incus-beacon-state", "create token", "delete token", "delete volume incus-beacon-state"}
+	want := []string{"create volume incus-beacon-state", "create volume incus-beacon-log", "create token", "delete token", "delete volume incus-beacon-log", "delete volume incus-beacon-state"}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("calls %v, want %v", f.calls, want)
+	}
+}
+
+func TestInstallReusesALogVolume(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.volumes["default/incus-beacon-log"] = api.StorageVolumesPost{Name: "incus-beacon-log"}
+	if err := Install(context.Background(), f, opts()); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(f.calls, "create volume incus-beacon-log") {
+		t.Errorf("calls %v, want the old log volume reused", f.calls)
+	}
+	if d := f.instances["incus-beacon"].Devices[logDev]; d["source"] != "incus-beacon-log" {
+		t.Errorf("log device %v, want the reused volume", d)
+	}
+
+	f = newFake()
+	f.volumes["default/incus-beacon-log"] = api.StorageVolumesPost{Name: "incus-beacon-log"}
+	f.failCreate = errors.New("image not found")
+	if err := Install(context.Background(), f, opts()); err == nil {
+		t.Fatal("want the failed create")
+	}
+	if _, ok := f.volumes["default/incus-beacon-log"]; !ok || slices.Contains(f.calls, "delete volume incus-beacon-log") {
+		t.Errorf("calls %v, want the reused log volume left by the rollback", f.calls)
 	}
 }
 
@@ -545,6 +595,58 @@ func TestUninstall(t *testing.T) {
 	if len(f.certs) != 1 || f.certs[0].Name != "someone-else" {
 		t.Errorf("certs left %v", f.certs)
 	}
+	if _, ok := f.volumes["default/incus-beacon-log"]; !ok {
+		t.Error("log volume deleted without --delete-log")
+	}
+	if r[1]["kept_volume"] != "incus-beacon-log" {
+		t.Errorf("kept_volume %v, want the log volume", r[1]["kept_volume"])
+	}
+}
+
+func TestUninstallDeleteLog(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	if err := Install(context.Background(), f, opts()); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	o := UninstallOptions{Name: "incus-beacon", DeleteLog: true, Log: zerolog.Nop(), Audit: zerolog.New(&buf)}
+	if err := Uninstall(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	r := checkAudit(t, &buf, "uninstall begin", "uninstall done")
+	if got := fmt.Sprint(r[1]["removed"]); !strings.Contains(got, "volume incus-beacon-log") {
+		t.Errorf("removed %s, want the log volume", got)
+	}
+	if len(f.volumes) != 0 {
+		t.Errorf("volumes left %v", slices.Collect(maps.Keys(f.volumes)))
+	}
+	// Run again with nothing left, it finds no log volume and is no error.
+	if err := Uninstall(context.Background(), f, o); err != nil {
+		t.Errorf("second uninstall: %v", err)
+	}
+}
+
+func TestUninstallFindsVolumesOnAnotherPoolOnceTheInstanceIsGone(t *testing.T) {
+	t.Parallel()
+	for _, del := range []bool{false, true} {
+		f := newFake()
+		f.volumes["fast/incus-beacon-state"] = api.StorageVolumesPost{Name: "incus-beacon-state"}
+		f.volumes["fast/incus-beacon-log"] = api.StorageVolumesPost{Name: "incus-beacon-log"}
+		var buf bytes.Buffer
+		o := UninstallOptions{Name: "incus-beacon", DeleteLog: del, Log: zerolog.Nop(), Audit: zerolog.New(&buf)}
+		if err := Uninstall(context.Background(), f, o); err != nil {
+			t.Fatal(err)
+		}
+		r := checkAudit(t, &buf, "uninstall begin", "uninstall done")
+		_, logLeft := f.volumes["fast/incus-beacon-log"]
+		if _, ok := f.volumes["fast/incus-beacon-state"]; ok || logLeft == del {
+			t.Errorf("--delete-log=%t: volumes left %v", del, slices.Collect(maps.Keys(f.volumes)))
+		}
+		if want := map[bool]any{false: "incus-beacon-log", true: nil}[del]; r[1]["kept_volume"] != want {
+			t.Errorf("--delete-log=%t: kept_volume %v, want %v", del, r[1]["kept_volume"], want)
+		}
+	}
 }
 
 func TestUninstallNothingThere(t *testing.T) {
@@ -553,8 +655,8 @@ func TestUninstallNothingThere(t *testing.T) {
 	if err := Uninstall(context.Background(), newFake(), UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)}); err != nil {
 		t.Errorf("err %v", err)
 	}
-	if r := checkAudit(t, &buf, "uninstall begin", "uninstall done"); r[1]["removed"] != nil {
-		t.Errorf("done record %v, want nothing removed", r[1])
+	if r := checkAudit(t, &buf, "uninstall begin", "uninstall done"); r[1]["removed"] != nil || r[1]["kept_volume"] != nil {
+		t.Errorf("done record %v, want nothing removed or kept", r[1])
 	}
 }
 

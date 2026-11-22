@@ -29,6 +29,9 @@ const (
 	secretsDir = "/run/secrets"
 	tokenFile  = secretsDir + "/token"
 	stateDev   = "state"
+	logDir     = "/var/log/incus-beacon"
+	logDev     = "log"
+	auditFile  = logDir + "/audit.log"
 	notifyFile = "notify-urls"
 	imageUID   = 65534
 	imageRepo  = "ghcr.io/tallica/incus-beacon"
@@ -77,6 +80,9 @@ func ResolveName(srv incusclient.InstanceServer, name string, logger zerolog.Log
 
 // VolumeName is the state volume of the instance called name.
 func VolumeName(name string) string { return name + "-state" }
+
+// LogVolumeName is the volume holding the audit log of the instance called name.
+func LogVolumeName(name string) string { return name + "-log" }
 
 var release = regexp.MustCompile(`^v?(\d+)\.(\d+)\.\d+$`)
 
@@ -139,7 +145,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		return err
 	}
 
-	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Logger()
+	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Str("log_volume", LogVolumeName(opts.Name)).Logger()
 	log.AuditBegin(audit, "install").Send()
 	defer func() { log.AuditEnd(audit, "install", err).Send() }()
 
@@ -152,19 +158,20 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	}
 
 	vol := VolumeName(opts.Name)
-	err = srv.CreateStoragePoolVolume(pool, api.StorageVolumesPost{
-		Name: vol,
-		Type: "custom",
-		StorageVolumePut: api.StorageVolumePut{Config: map[string]string{
-			"initial.uid": fmt.Sprint(imageUID),
-			"initial.gid": fmt.Sprint(imageUID),
-		}},
-	})
-	if err != nil {
-		return fmt.Errorf("create volume %s: %w", vol, err)
+	if err := createVolume(srv, pool, vol); err != nil {
+		return err
 	}
 	undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", vol) })
 	opts.Log.Info().Str("pool", pool).Str("volume", vol).Msg("volume created")
+
+	logVol := LogVolumeName(opts.Name)
+	created, err := ensureLogVolume(srv, pool, logVol, opts.Log)
+	if err != nil {
+		return rollback(err)
+	}
+	if created {
+		undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", logVol) })
+	}
 
 	if len(opts.NotifyURLs) > 0 {
 		if err := writeNotifyURLs(srv, pool, vol, opts.NotifyURLs); err != nil {
@@ -182,6 +189,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	env := map[string]string{
 		"environment.BEACON_INCUS":      apiURL,
 		"environment.BEACON_TOKEN_FILE": tokenFile,
+		"environment.BEACON_AUDIT_LOG":  auditFile,
 	}
 	if len(opts.Projects) > 0 {
 		env["environment.BEACON_PROJECT"] = strings.Join(opts.Projects, ",")
@@ -219,9 +227,10 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		},
 		InstancePut: api.InstancePut{
 			Config: env,
-			Devices: map[string]map[string]string{stateDev: {
-				"type": "disk", "pool": pool, "source": vol, "path": stateDir,
-			}},
+			Devices: map[string]map[string]string{
+				stateDev: disk(pool, vol, stateDir),
+				logDev:   disk(pool, logVol, logDir),
+			},
 		},
 	})
 	if err == nil {
@@ -252,9 +261,10 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 }
 
 type UninstallOptions struct {
-	Name  string
-	Log   zerolog.Logger
-	Audit zerolog.Logger // as for Options
+	Name      string
+	DeleteLog bool // also the log volume, which is otherwise kept for reading after the uninstall
+	Log       zerolog.Logger
+	Audit     zerolog.Logger // as for Options
 }
 
 // Uninstall tolerates any of its parts being gone already.
@@ -268,10 +278,14 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 	audit := log.AuditFor(opts.Audit, log.Process(), project, name)
 	log.AuditBegin(audit, "uninstall").Send()
 	var removed []string
+	kept := ""
 	defer func() {
 		e := log.AuditEnd(audit, "uninstall", err)
 		if len(removed) > 0 {
 			e = e.Strs("removed", removed)
+		}
+		if kept != "" {
+			e = e.Str("kept_volume", kept)
 		}
 		e.Send()
 	}()
@@ -294,18 +308,32 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 	case !notFound(ferr):
 		errs = append(errs, ferr)
 	}
-	if pool == "" {
-		pool, _, _ = profileDefaults(srv)
-	}
-	if pool != "" {
-		vol := VolumeName(name)
-		err := srv.DeleteStoragePoolVolume(pool, "custom", vol)
+	for _, vol := range []string{VolumeName(name), LogVolumeName(name)} {
+		p := pool
+		if p == "" {
+			found, err := poolOf(srv, vol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			p = found
+		}
 		switch {
-		case err == nil:
-			removed = append(removed, "volume "+vol)
-			logger.Info().Str("volume", vol).Msg("volume deleted")
-		case !notFound(err):
-			errs = append(errs, fmt.Errorf("delete volume %s: %w", vol, err))
+		case p == "": // in no pool: gone already
+		case vol == LogVolumeName(name) && !opts.DeleteLog:
+			if ok, err := volumeExists(srv, p, vol); err != nil {
+				errs = append(errs, err)
+			} else if ok {
+				kept = vol
+				logger.Info().Str("pool", p).Str("volume", vol).Msg("log volume kept; uninstall --delete-log removes it")
+			}
+		default:
+			if deleted, err := deleteVolume(srv, p, vol); err != nil {
+				errs = append(errs, err)
+			} else if deleted {
+				removed = append(removed, "volume "+vol)
+				logger.Info().Str("pool", p).Str("volume", vol).Msg("volume deleted")
+			}
 		}
 	}
 	if err := revokeTokens(srv, name, logger); err != nil {
@@ -327,6 +355,76 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
+	err := srv.CreateStoragePoolVolume(pool, api.StorageVolumesPost{
+		Name: vol,
+		Type: "custom",
+		StorageVolumePut: api.StorageVolumePut{Config: map[string]string{
+			"initial.uid": fmt.Sprint(imageUID),
+			"initial.gid": fmt.Sprint(imageUID),
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("create volume %s: %w", vol, err)
+	}
+	return nil
+}
+
+// ensureLogVolume reuses any log volume of that name, records and all; created says whether this call made it.
+func ensureLogVolume(srv incusclient.InstanceServer, pool, vol string, logger zerolog.Logger) (created bool, err error) {
+	err = createVolume(srv, pool, vol)
+	switch {
+	case err == nil:
+		logger.Info().Str("pool", pool).Str("volume", vol).Msg("log volume created")
+		return true, nil
+	case api.StatusErrorCheck(err, http.StatusConflict): // Incus's only conflict here is the name being taken
+		logger.Info().Str("pool", pool).Str("volume", vol).Msg("reusing the log volume")
+		return false, nil
+	}
+	return false, err
+}
+
+func disk(pool, vol, path string) map[string]string {
+	return map[string]string{"type": "disk", "pool": pool, "source": vol, "path": path}
+}
+
+// deleteVolume treats a missing volume as deleted already.
+func deleteVolume(srv incusclient.InstanceServer, pool, vol string) (deleted bool, err error) {
+	err = srv.DeleteStoragePoolVolume(pool, "custom", vol)
+	switch {
+	case err == nil:
+		return true, nil
+	case notFound(err):
+		return false, nil
+	}
+	return false, fmt.Errorf("delete volume %s: %w", vol, err)
+}
+
+// poolOf finds the pool holding the custom volume vol, once no instance device names it; "" when none does.
+func poolOf(srv incusclient.InstanceServer, vol string) (string, error) {
+	pools, err := srv.GetStoragePoolNames()
+	if err != nil {
+		return "", fmt.Errorf("list storage pools: %w", err)
+	}
+	for _, p := range pools {
+		if ok, err := volumeExists(srv, p, vol); err != nil || ok {
+			return p, err
+		}
+	}
+	return "", nil
+}
+
+func volumeExists(srv incusclient.InstanceServer, pool, vol string) (bool, error) {
+	_, _, err := srv.GetStoragePoolVolume(pool, "custom", vol)
+	switch {
+	case err == nil:
+		return true, nil
+	case notFound(err):
+		return false, nil
+	}
+	return false, fmt.Errorf("read volume %s: %w", vol, err)
 }
 
 // findInstance also searches other projects; the server it returns uses the instance's.

@@ -63,17 +63,23 @@ incus-beacon install --remote <remote>
 In the remote's current project, or the one after the colon, it creates a volume
 `incus-beacond-state` owned by uid 65534, a one-time trust token (restricted to
 `--project` when given) and an instance `incus-beacond` from
-`ghcr.io/tallica/incus-beacon` at this version's `major.minor`. The token
-reaches the instance as a file, not as config. The instance gets
+`ghcr.io/tallica/incus-beacon` at this version's `major.minor`. A second volume,
+`incus-beacond-log`, is mounted at `/var/log/incus-beacon` and holds the
+instance's [audit log](#audit-log). Both go on the default profile's root pool,
+or `--storage-pool`. `install` reuses a log volume of that name, such as one an
+earlier uninstall kept, and appends to its records. The token reaches the
+instance as a file, not as config. The instance gets
 `user.incus-beacon.track=semver` when the image tag is a version, so it also
 reports newer releases of itself; `--track` overrides that. The instance dials
 `core.https_address`, or the address of its bridge when Incus listens on all
 addresses; `--api-url` overrides that. `install` waits until the instance has
 joined, then removes the spent token file. `incus-beacon uninstall` removes the
-instance, its volume and its certificate, finding the instance in whichever
-project it is in. An instance installed before 0.6 is called `incus-beacon`:
-`configure`, `upgrade` and `uninstall` find it under that name when `--name`
-isn't given, and `install` refuses to add a second beacon beside it.
+instance, its state volume and its certificate, finding the instance in
+whichever project it is in, and its volumes on whichever pool they are on. It
+keeps the log volume unless given `--delete-log`. An instance installed before
+0.6 is called `incus-beacon`: `configure`, `upgrade` and `uninstall` find it
+under that name when `--name` isn't given, and `install` refuses to add a second
+beacon beside it.
 
 `install` passes most of its settings to the instance's `serve` as
 `environment.BEACON_*` keys, which `upgrade` keeps. `incus-beacon configure`
@@ -102,11 +108,12 @@ incus restart incus-beacond
 
 When the instance reports a newer release of itself, install that release of the
 CLI and run `incus-beacon upgrade --remote <remote>`. It rebuilds the instance
-from the image `install` would pick, or `--image`, keeping its config, volume
+from the image `install` would pick, or `--image`, keeping its config, volumes
 and certificate, and waits up to `--wait` (2m) for `/ready`. If that never
-answers, it rebuilds the instance back onto the image it ran before. It refuses
-an older version tag without `--force`, and an instance with snapshots, which
-Incus can't rebuild.
+answers, it rebuilds the instance back onto the image it ran before. An instance
+without a `log` device gets the log volume first, and keeps it even if the
+upgrade rolls back. It refuses an older version tag without `--force`, and an
+instance with snapshots, which Incus can't rebuild.
 
 Check it:
 `incus exec incus-beacond -- wget -q -O - http://127.0.0.1:9153/ready`, or
@@ -209,7 +216,7 @@ incus-beacon <command> [flags]
 | `install`   | Creates beacon's own `serve` instance on Incus, joined with a trust token                                |
 | `configure` | Changes the settings `install` gave beacon's own instance, rolling back if it isn't ready                |
 | `upgrade`   | Moves beacon's own instance to a newer beacon release, rolling back if it isn't ready                    |
-| `uninstall` | Removes beacon's instance, its volume and its certificate                                                |
+| `uninstall` | Removes beacon's instance, its state volume and its certificate; `--delete-log` also its log volume      |
 | `version`   | Prints the version                                                                                       |
 
 The same binary also answers to `incus-beacond`, as the image's entry point
@@ -400,40 +407,55 @@ Every record has `time` (UTC), `event`, `version`, `by` (the process, as
 `to` (the refs); from the claim on, `op` is the claim's snapshot name, which
 links the records of one update.
 
-| `event`                                  | Written when                                 | Also has                                           |
-| ---------------------------------------- | -------------------------------------------- | -------------------------------------------------- |
-| `update.claim`                           | the instance is claimed                      | `from_image`, `digest`, `dropped`, `kept`          |
-| `update.takeover`                        | an abandoned claim is taken over             | `from_image`, `dropped`, `reason`                  |
-| `update.step`                            | a step begins, is done or failed             | `step`, `phase`, `error`                           |
-| `update.undo`                            | an undo begins, is done or failed            | `step`, `phase`, `error`                           |
-| `snapshot.create`                        | a volume is snapshotted                      | `snapshot` (`pool/volume/name`), `error`           |
-| `snapshot.restore`                       | a volume is restored                         | `snapshot`, `error`                                |
-| `snapshot.prune`                         | an old snapshot of beacon's is deleted       | `snapshot`, `error`                                |
-| `update.release`                         | the claim is dropped and the outcome written | only on success; else the outcome has the `error`  |
-| `update.outcome`                         | the update ends, refusals included           | `status`, `reason`, `from_image`, `image`, `error` |
-| `install`                                | `install` begins, is done or failed          | `phase`, `image`, `pool`, `volume`, `error`        |
-| `configure`                              | `configure` begins, is done or failed        | `phase`, `settings`, `error`                       |
-| `upgrade`                                | `upgrade` begins, is done or failed          | `phase`, `from`, `from_image`, `image`, `error`    |
-| `uninstall`                              | `uninstall` begins, is done or failed        | `phase`, `removed`, `error`                        |
-| `configure.rollback`, `upgrade.rollback` | the command rolls back                       | `phase`, `error`, and the command's own fields     |
+| `event`                                  | Written when                                 | Also has                                                      |
+| ---------------------------------------- | -------------------------------------------- | ------------------------------------------------------------- |
+| `update.claim`                           | the instance is claimed                      | `from_image`, `digest`, `dropped`, `kept`                     |
+| `update.takeover`                        | an abandoned claim is taken over             | `from_image`, `dropped`, `reason`                             |
+| `update.step`                            | a step begins, is done or failed             | `step`, `phase`, `error`                                      |
+| `update.undo`                            | an undo begins, is done or failed            | `step`, `phase`, `error`                                      |
+| `snapshot.create`                        | a volume is snapshotted                      | `snapshot` (`pool/volume/name`), `error`                      |
+| `snapshot.restore`                       | a volume is restored                         | `snapshot`, `error`                                           |
+| `snapshot.prune`                         | an old snapshot of beacon's is deleted       | `snapshot`, `error`                                           |
+| `update.release`                         | the claim is dropped and the outcome written | only on success; else the outcome has the `error`             |
+| `update.outcome`                         | the update ends, refusals included           | `status`, `reason`, `from_image`, `image`, `error`            |
+| `install`                                | `install` begins, is done or failed          | `phase`, `image`, `pool`, `volume`, `log_volume`, `error`     |
+| `configure`                              | `configure` begins, is done or failed        | `phase`, `settings`, `error`                                  |
+| `upgrade`                                | `upgrade` begins, is done or failed          | `phase`, `from`, `from_image`, `image`, `log_volume`, `error` |
+| `uninstall`                              | `uninstall` begins, is done or failed        | `phase`, `removed`, `kept_volume`, `error`                    |
+| `configure.rollback`, `upgrade.rollback` | the command rolls back                       | `phase`, `error`, and the command's own fields                |
 
 A field is left out when it doesn't apply. `digest` is what the rebuild was
-pinned to. `dropped` and `kept` name the environment keys the update drops and
-keeps, never their values. The outcome's `image` is the fingerprint the release
-found the instance on, beside the `from_image` it started from; a refusal, which
-never claimed the instance, has neither. Environment values, credentials and
-notification URLs are never written.
+pinned to. An update's `dropped` and `kept` name the environment keys it drops
+and keeps, never their values. The outcome's `image` is the fingerprint the
+release found the instance on, beside the `from_image` it started from; a
+refusal, which never claimed the instance, has neither. Environment values,
+credentials and notification URLs are never written.
 
 ```sh
 jq -c 'select(.op == "incus-beacon-20261122T100405") | {event, step, phase, status}' audit.log
 ```
 
+The instance `install` creates writes to `/var/log/incus-beacon/audit.log` on
+its log volume, set by `environment.BEACON_AUDIT_LOG`. Read it with
+`incus file pull incus-beacond/var/log/incus-beacon/audit.log -` while the
+instance exists, or with
+`incus storage volume file pull <pool> custom/incus-beacond-log audit.log -`
+after an uninstall (to verify), where `<pool>` is the `install` record's `pool`.
+A reused volume holds an earlier install's records too; each install's lines
+start at its `install` record. To turn the log off, run
+`incus config unset incus-beacond environment.BEACON_AUDIT_LOG` and restart the
+instance. `configure` never touches the key, and `upgrade` sets it only on an
+instance without a `log` device, replacing any path set there by hand.
+
 `install`, `configure`, `upgrade` and `uninstall` write only when given
 `--audit-log`, to a file on the host they run on. `install` has no `project`,
-since it creates the instance in the remote's. A refusal, and a `configure` that
-finds the settings already as given, write nothing; `uninstall` always writes,
-even when it finds nothing to remove. `settings` names the `configure` flags
-whose value changed; `removed` lists what `uninstall` deleted.
+since it creates the instance in the remote's. `log_volume` is the log volume
+the command sets out to attach, like `image` and `volume` on a `begin` record:
+always for `install`, and for `upgrade` only when the instance had none. A
+refusal, and a `configure` that finds the settings already as given, write
+nothing; `uninstall` always writes, even when it finds nothing to remove.
+`settings` names the `configure` flags whose value changed; `removed` lists what
+`uninstall` deleted, and `kept_volume` names the log volume it left.
 
 ### Endpoints
 

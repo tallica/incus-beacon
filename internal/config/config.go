@@ -224,7 +224,8 @@ type Upgrade struct {
 
 type Uninstall struct {
 	Common
-	Name string
+	Name      string
+	DeleteLog bool
 	Audit
 }
 
@@ -441,6 +442,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
 		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
+		fs.BoolVar(&c.DeleteLog, "delete-log", false, "also delete the <name>-log volume holding the instance's audit log")
 		bindAudit(fs, &c.Audit)
 		cfg.Uninstall = c
 		validate = func() error { return errors.Join(c.Common.validate(), c.Audit.validate()) }
