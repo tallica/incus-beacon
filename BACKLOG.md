@@ -35,6 +35,10 @@ not work. An idea that needs more than a paragraph gets its own file in
       `docker-compose` manager opening PRs for newer tags, or beacon's webhook
       starting a Semaphore UI task (or a CI job) that runs `incus-compose up`.
       Both untested with incus-compose (to verify).
+- [ ] **Registry credentials for the installed instance** — `install` has no way
+      to give its instance a docker `config.json`, so it can't check private
+      registries; the file would go into the state volume, as `--notify-url`
+      does. One file covers this; the next item is for more than one.
 - [ ] **Per-registry credentials and mirrors in instance keys** — for setups
       where one docker `config.json` isn't enough.
 - [ ] **Changelog links in notifications** — built from the
