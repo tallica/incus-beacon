@@ -64,3 +64,17 @@ func TestPlatformFor(t *testing.T) {
 		t.Error("unknown architecture accepted")
 	}
 }
+
+func TestNormalize(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"nginx:1.28":                  "docker.io/library/nginx:1.28",
+		"docker.io/nginx:1.28-alpine": "docker.io/library/nginx:1.28-alpine",
+		"ghcr.io/example/app:1":       "ghcr.io/example/app:1",
+		"Not A Ref":                   "Not A Ref",
+	} {
+		if got := Normalize(in); got != want {
+			t.Errorf("Normalize(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

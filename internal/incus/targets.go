@@ -13,6 +13,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 
 	"github.com/tallica/incus-beacon/internal/policy"
+	"github.com/tallica/incus-beacon/internal/registry"
 )
 
 const (
@@ -20,14 +21,26 @@ const (
 	RefFromCompose      = "user.image_alias"
 	RefFromUpdateSource = "update_source"
 	RefFromImageKeys    = "image.description"
+	RefFromApplied      = policy.Prefix + "applied"
+	RefFromCurrent      = policy.Prefix + "current"
+)
+
+// incus-compose's image override, honoured where ComposeFeaturesKey lists ComposeFeatureOverride.
+const (
+	ComposeOverrideKey     = "user.incus-compose.image-override"
+	ComposeOverrideOfKey   = "user.incus-compose.image-override-of"
+	ComposeFeaturesKey     = "user.incus-compose.features"
+	ComposeFeatureOverride = "image-override"
 )
 
 type Beacon struct {
 	Status  string
 	Current string
-	Latest  string
-	Error   string
-	Since   string
+	// CurrentImage is the fingerprint Current was tracked for; it outlives the image record.
+	CurrentImage string
+	Latest       string
+	Error        string
+	Since        string
 }
 
 type Target struct {
@@ -37,6 +50,8 @@ type Target struct {
 	BaseImage string
 	Ref       string
 	RefSource string
+	Applied   bool   // Ref is the ref beacon updated to, standing in for Asked
+	Asked     string // the ref RefSource gave; equal to Ref unless Applied
 	ImageRef  string // from the image keys, as launched or last rebuilt
 	Local     bool
 
@@ -47,6 +62,8 @@ type Target struct {
 	PolicyErr error
 	Legacy    []string // policy keys set under their old names
 	Beacon    Beacon
+	Update    Update
+	Claim     string // the update claim, while one holds the instance
 	// LegacyStatus is set while the status keys still use their old names.
 	LegacyStatus bool
 	Inputs       string // the config a check reads, to tell a real change from a status write
@@ -131,13 +148,26 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 		ComposeService: inst.ExpandedConfig["user.label.incus-compose.service"],
 	}
 	t.Beacon, t.LegacyStatus = readBeacon(inst.Config)
+	t.Update = readUpdate(inst.Config)
+	t.Claim = inst.Config[ClaimKey]
 	t.Ref, t.RefSource = resolveRef(srv, t, inst.ExpandedConfig, sources)
+	t.Asked = t.Ref
+	if t.RefSource == RefFromBeacon || t.RefSource == RefFromCompose {
+		t.Ref, t.Applied = applied(t, t.Ref)
+	}
+	// Kept by incus-compose across a recreate that drops beacon's keys; its own terms apply.
+	if c := inst.Config; c["user.incus-compose.managed"] == "true" && c[ComposeOverrideKey] != "" &&
+		c[ComposeOverrideOfKey] == c[RefFromCompose] {
+		t.Ref, t.Applied = c[ComposeOverrideKey], true
+	}
 	return t, true
 }
 
-// inputs covers every key a check may read, minus the ones beacon writes.
+// inputs covers every key a check may read but beacon's own; others may set the override.
 func inputs(inst *api.Instance) string {
 	written := Beacon{}.keys()
+	maps.Copy(written, Update{}.Keys())
+	written[ClaimKey] = ""
 	for _, k := range legacyStatusKeys() {
 		written[k] = ""
 	}
@@ -147,7 +177,7 @@ func inputs(inst *api.Instance) string {
 		if _, ok := written[k]; ok {
 			continue
 		}
-		if k == "volatile.base_image" || k == RefFromCompose || strings.HasPrefix(k, "image.") ||
+		if k == "volatile.base_image" || k == RefFromCompose || k == ComposeOverrideKey || k == ComposeOverrideOfKey || strings.HasPrefix(k, "image.") ||
 			strings.HasPrefix(k, policy.Prefix) || strings.HasPrefix(k, policy.LabelPrefix) ||
 			strings.HasPrefix(k, policy.LegacyPrefix) || strings.HasPrefix(k, policy.LegacyLabelPrefix) {
 			fmt.Fprintf(&b, "\n%s=%s", k, inst.ExpandedConfig[k])
@@ -215,13 +245,25 @@ func readBeacon(config map[string]string) (b Beacon, legacy bool) {
 		prefix = policy.LegacyPrefix
 	}
 	return Beacon{
-		Status:  config[prefix+"status"],
-		Current: config[prefix+"current"],
-		Latest:  config[prefix+"latest"],
-		Error:   config[prefix+"error"],
-		Since:   config[prefix+"since"],
+		Status:       config[prefix+"status"],
+		Current:      config[prefix+"current"],
+		CurrentImage: config[policy.Prefix+"current-image"],
+		Latest:       config[prefix+"latest"],
+		Error:        config[prefix+"error"],
+		Since:        config[prefix+"since"],
 	}, legacy
 }
+
+// applied is the ref beacon updated to, while the asked-for ref is still the one it moved from.
+func applied(t Target, asked string) (string, bool) {
+	if t.Update.Applied != "" && sameRef(asked, t.Update.Requested) {
+		return t.Update.Applied, true
+	}
+	return asked, false
+}
+
+// sameRef compares refs as Docker spells them out, so nginx:1.28 is docker.io/library/nginx:1.28.
+func sameRef(a, b string) bool { return registry.Normalize(a) == registry.Normalize(b) }
 
 // resolveRef follows docs/ARCHITECTURE.md#image-ref-resolution.
 func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]string, sources map[string]*api.ImageSource) (ref, from string) {
@@ -230,6 +272,10 @@ func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]stri
 	}
 	if v := config["user.image_alias"]; v != "" {
 		return v, RefFromCompose
+	}
+	// Beacon's record for this exact image beats Incus's: docs/ARCHITECTURE.md#image-ref-resolution.
+	if u := t.Update; u.Applied != "" && u.AppliedImage == t.BaseImage {
+		return u.Applied, RefFromApplied
 	}
 	key := t.Project + "/" + t.BaseImage
 	src, seen := sources[key]
@@ -244,6 +290,9 @@ func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]stri
 	}
 	if ref := imageKeysRef(config); ref != "" {
 		return ref, RefFromImageKeys
+	}
+	if b := t.Beacon; b.Current != "" && t.BaseImage != "" && b.CurrentImage == t.BaseImage {
+		return b.Current, RefFromCurrent
 	}
 	return "", ""
 }
@@ -273,6 +322,9 @@ func sourceRef(src *api.ImageSource) string {
 	if err != nil || u.Host == "" {
 		return ""
 	}
-	alias, _, _ := strings.Cut(src.Alias, "@")
+	alias, _, pinned := strings.Cut(src.Alias, "@")
+	if i := strings.LastIndex(alias, ":"); pinned && (i < 0 || strings.Contains(alias[i:], "/")) {
+		return ""
+	}
 	return u.Host + strings.TrimSuffix(u.Path, "/") + "/" + alias
 }

@@ -26,9 +26,10 @@ the one map of where each kind of fact lives; everywhere else links to the home:
 ## Status
 
 Pre-1.0, released as 0.x: `check`, `status`, `serve`, `install`, `upgrade` and
-`uninstall` work against a real Incus, with notifications; automatic updates are
-on the backlog. Go 1.27, built static with `CGO_ENABLED=0`. No dependency is
-pinned below its latest release.
+`uninstall` work against a real Incus, with notifications, and so do `update`
+and `serve --update`; what is still unconfirmed is marked "to verify" in
+README.md. Go 1.27, built static with `CGO_ENABLED=0`. No dependency is pinned
+below its latest release.
 
 ## Working on this
 
@@ -108,9 +109,10 @@ Message format, types, scopes, branch flow and pull requests are in
   anything not verified, and unpushed commits by short hash and subject.
 - If work stops midway, say exactly what ran, what didn't, and what state things
   are left in.
-- Handoffs for the next session go in `sessions/YYYY-MM-DD_<topic>.md` (local
-  only, never committed). Write a new dated file each time; link earlier ones
-  rather than repeating them.
+- Handoffs for the next session go in `sessions/YYYY-MM-DD_NN_<topic>.md` (local
+  only, never committed). `NN` counts that day's files from `01`, so the highest
+  is the latest. Write a new file each time; link earlier ones rather than
+  repeating them.
 
 Start a handoff from [docs/templates/handoff.md](docs/templates/handoff.md).
 

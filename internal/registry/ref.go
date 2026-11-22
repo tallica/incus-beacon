@@ -22,6 +22,15 @@ var (
 	tagPattern  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 )
 
+// Normalize spells s out as Docker does (nginx:1.28 is docker.io/library/nginx:1.28), or keeps it.
+func Normalize(s string) string {
+	r, err := ParseRef(s)
+	if err != nil {
+		return s
+	}
+	return r.String()
+}
+
 // ParseRef applies Docker's defaults: docker.io, library/ and latest.
 func ParseRef(s string) (Ref, error) {
 	if s == "" {

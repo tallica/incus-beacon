@@ -20,6 +20,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/semver"
+	"github.com/tallica/incus-beacon/internal/update"
 )
 
 const (
@@ -45,6 +46,26 @@ type Options struct {
 	NotifyErrs  bool
 	Wait        time.Duration
 	Log         zerolog.Logger
+}
+
+// DefaultName is what install calls the instance; legacyName is what it did before 0.6.
+const (
+	DefaultName = "incus-beacond"
+	legacyName  = "incus-beacon"
+)
+
+// ResolveName is name, else the default, else an instance from before 0.6 under the old name.
+func ResolveName(srv incusclient.InstanceServer, name string, log zerolog.Logger) string {
+	if name != "" {
+		return name
+	}
+	if _, _, err := findInstance(srv, DefaultName, log); notFound(err) {
+		if _, _, err := findInstance(srv, legacyName, log); err == nil {
+			log.Info().Str("instance", legacyName).Msg("using the instance from before 0.6")
+			return legacyName
+		}
+	}
+	return DefaultName
 }
 
 // VolumeName is the state volume of the instance called name.
@@ -75,6 +96,12 @@ func trackFor(track, image string) string {
 
 // Install undoes what it created if a step before the start fails.
 func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) error {
+	if opts.Name == "" {
+		if _, _, err := findInstance(srv, legacyName, opts.Log); err == nil {
+			return fmt.Errorf("an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another", legacyName)
+		}
+		opts.Name = DefaultName
+	}
 	if err := checkFree(srv, opts.Name); err != nil {
 		return err
 	}
@@ -100,7 +127,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 			return err
 		}
 	}
-	server, alias, err := splitImage(opts.Image)
+	server, alias, err := update.SplitImage(opts.Image)
 	if err != nil {
 		return err
 	}
@@ -186,7 +213,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if err := pushToken(srv, opts.Name, token); err != nil {
 		return rollback(err)
 	}
-	if err := setState(ctx, srv, opts.Name, "start"); err != nil {
+	if err := update.SetState(ctx, srv, opts.Name, "start"); err != nil {
 		return rollback(fmt.Errorf("start %s: %w", opts.Name, err))
 	}
 
@@ -210,7 +237,7 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 	case err == nil:
 		pool = inst.Devices[stateDev]["pool"]
 		if inst.StatusCode != api.Stopped {
-			if err := setState(ctx, srv, name, "stop"); err != nil {
+			if err := update.SetState(ctx, srv, name, "stop"); err != nil {
 				errs = append(errs, fmt.Errorf("stop %s: %w", name, err))
 			}
 		}
@@ -357,15 +384,6 @@ func detectURL(srv incusclient.InstanceServer, network string) (string, error) {
 	return "https://" + net.JoinHostPort(ip.String(), port), nil
 }
 
-// splitImage turns registry/repo:tag into the OCI source Incus pulls from.
-func splitImage(ref string) (server, alias string, err error) {
-	host, rest, ok := strings.Cut(ref, "/")
-	if !ok || !strings.ContainsAny(host, ".:") || rest == "" {
-		return "", "", fmt.Errorf("image %q: want registry/repository[:tag]", ref)
-	}
-	return "https://" + host, rest, nil
-}
-
 func createToken(srv incusclient.InstanceServer, name string, projects []string) (token, opID string, err error) {
 	op, err := tokens(srv).CreateCertificateToken(api.CertificatesPost{
 		CertificatePut: api.CertificatePut{
@@ -457,14 +475,6 @@ func writeNotifyURLs(srv incusclient.InstanceServer, pool, vol string, urls []st
 		return fmt.Errorf("write %s in %s: %w", notifyFile, vol, err)
 	}
 	return nil
-}
-
-func setState(ctx context.Context, srv incusclient.InstanceServer, name, action string) error {
-	op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"}, "")
-	if err != nil {
-		return err
-	}
-	return op.WaitContext(ctx)
 }
 
 func deleteInstance(srv incusclient.InstanceServer, name string) error {

@@ -16,6 +16,9 @@ import (
 const (
 	TrackDigest = "digest"
 	TrackSemver = "semver"
+
+	UpdateNotify = "notify"
+	UpdateAuto   = "auto"
 )
 
 // Key prefixes, newest first; the user.beacon. forms are read until 0.7.
@@ -38,6 +41,9 @@ type Policy struct {
 	// HasCooldown tells an explicit 0, which turns a default off, from unset.
 	Cooldown    time.Duration
 	HasCooldown bool
+	Update      string
+	// Window is nil when the instance sets none, so the daemon's applies.
+	Window *Window
 }
 
 // Key falls back to the incus-compose label form, then to the old names.
@@ -48,6 +54,14 @@ func Key(config map[string]string, name string) string {
 		}
 	}
 	return ""
+}
+
+// current reads a key added after the rename, which has no user.beacon. form.
+func current(config map[string]string, name string) string {
+	if v := config[Prefix+name]; v != "" {
+		return v
+	}
+	return config[LabelPrefix+name]
 }
 
 // Legacy lists the policy keys config sets under their old names.
@@ -65,7 +79,7 @@ func Legacy(config map[string]string) []string {
 
 // Parse still sets Watched on error, so a bad policy is reported, not hidden.
 func Parse(config map[string]string, watchAll bool) (Policy, error) {
-	p := Policy{Watched: watchAll, Image: Key(config, "image"), Track: TrackDigest}
+	p := Policy{Watched: watchAll, Image: Key(config, "image"), Track: TrackDigest, Update: UpdateNotify}
 	var errs []error
 
 	if v := Key(config, "enable"); v != "" {
@@ -97,6 +111,22 @@ func Parse(config map[string]string, watchAll bool) (Policy, error) {
 			errs = append(errs, fmt.Errorf("cooldown %q: not a duration such as 48h", v))
 		} else {
 			p.Cooldown, p.HasCooldown = d, true
+		}
+	}
+
+	switch v := current(config, "update"); v {
+	case "", UpdateNotify:
+	case UpdateAuto:
+		p.Update = UpdateAuto
+	default:
+		errs = append(errs, fmt.Errorf("update %q: must be %s or %s", v, UpdateNotify, UpdateAuto))
+	}
+	if v := current(config, "update-window"); v != "" {
+		w, err := ParseWindow(v)
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			p.Window = &w
 		}
 	}
 

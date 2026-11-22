@@ -6,9 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/tallica/incus-beacon/internal/policy"
 )
 
 const (
@@ -16,18 +19,40 @@ const (
 	CmdStatus    = "status"
 	CmdServe     = "serve"
 	CmdInstall   = "install"
+	CmdUpdate    = "update"
 	CmdUpgrade   = "upgrade"
 	CmdUninstall = "uninstall"
 	CmdVersion   = "version"
 )
 
+// DaemonName is the binary's second name: called by it, no command means serve.
+const DaemonName = "incus-beacond"
+
+// ForProgram prepends serve for DaemonName given no command, or only flags.
+func ForProgram(prog string, args []string) []string {
+	if filepath.Base(prog) != DaemonName {
+		return args
+	}
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") && !slices.Contains(helpArgs, args[0]) && !slices.Contains(versionArgs, args[0]) {
+		return append([]string{CmdServe}, args...)
+	}
+	return args
+}
+
+// Parse takes these in place of a command.
+var (
+	helpArgs    = []string{"-h", "-help", "--help", "help"}
+	versionArgs = []string{"-version", "--version"}
+)
+
 // Commands lists the subcommands in the order usage shows them.
-var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdInstall, CmdUpgrade, CmdUninstall, CmdVersion}
+var Commands = []string{CmdCheck, CmdStatus, CmdServe, CmdUpdate, CmdInstall, CmdUpgrade, CmdUninstall, CmdVersion}
 
 var summaries = map[string]string{
 	CmdCheck:     "check registries for newer images and print what can be updated",
 	CmdStatus:    "show the update status already recorded on instances",
 	CmdServe:     "run checks on an interval and record results",
+	CmdUpdate:    "rebuild one instance on its newer image, rolling back if it fails",
 	CmdInstall:   "create a serve instance on Incus that joins with a trust token",
 	CmdUpgrade:   "rebuild that instance on a newer image, rolling back if it isn't ready",
 	CmdUninstall: "remove that instance, its volume and its certificate",
@@ -89,6 +114,10 @@ type Serve struct {
 	Listen   string
 	Events   bool
 	Notify
+	Update       bool
+	UpdateWindow string        // HH:MM-HH:MM, or empty for any time
+	Window       policy.Window // UpdateWindow parsed; the zero Window is any time
+	UpdateFlags
 }
 
 type Notify struct {
@@ -112,6 +141,21 @@ type Install struct {
 	NotifyErrs  bool
 }
 
+type Update struct {
+	Common
+	Registry
+	Instance string
+	DryRun   bool
+	UpdateFlags
+}
+
+type UpdateFlags struct {
+	StopTimeout time.Duration
+	Wait        time.Duration
+	Settle      time.Duration
+	Keep        int
+}
+
 type Upgrade struct {
 	Common
 	Name  string
@@ -131,6 +175,7 @@ type Config struct {
 	Check     *Check
 	Status    *Status
 	Serve     *Serve
+	Update    *Update
 	Install   *Install
 	Upgrade   *Upgrade
 	Uninstall *Uninstall
@@ -166,11 +211,11 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		return nil, fmt.Errorf("%w: no command given", ErrUsage)
 	}
 	name, rest := args[0], args[1:]
-	switch name {
-	case "-h", "-help", "--help", "help":
+	switch {
+	case slices.Contains(helpArgs, name):
 		Usage(out)
 		return nil, ErrHelp
-	case "-version", "--version":
+	case slices.Contains(versionArgs, name):
 		name = CmdVersion
 	}
 
@@ -184,6 +229,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Check{}
 		bindCommon(fs, &c.Common)
 		bindRegistry(fs, &c.Registry)
+		bindConcurrency(fs, &c.Registry)
 		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
 		fs.BoolVar(&c.Write, "write", false, "also record results in user.incus-beacon.* keys")
@@ -204,6 +250,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Serve{}
 		bindCommon(fs, &c.Common)
 		bindRegistry(fs, &c.Registry)
+		bindConcurrency(fs, &c.Registry)
 		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
 		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
 		fs.BoolVar(&c.Events, "events", false, "also check instances as soon as they are created, updated or rebuilt")
@@ -211,6 +258,9 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.NotifyURLFile, "notify-url-file", "", "file of further --notify-url values, one per line, as install writes it")
 		fs.StringVar(&c.NotifyCommand, "notify-command", "", "program run per notification, with the JSON payload on stdin; arguments split on spaces, no shell")
 		fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when an instance's check starts failing")
+		fs.BoolVar(&c.Update, "update", false, "apply updates to instances that set user.incus-beacon.update=auto")
+		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in local time, when updates may run, unless an instance sets its own (default: any time)")
+		bindUpdate(fs, &c.UpdateFlags)
 		cfg.Serve = c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
@@ -223,6 +273,28 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyURLFile == "" && c.NotifyCommand == "" {
 				errs = append(errs, errors.New("notify-errors needs notify-url, notify-url-file or notify-command"))
 			}
+			if c.UpdateWindow != "" {
+				var err error
+				if c.Window, err = policy.ParseWindow(c.UpdateWindow); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			errs = append(errs, c.UpdateFlags.validate())
+			return errors.Join(errs...)
+		}
+	case CmdUpdate:
+		c := &Update{Registry: Registry{Concurrency: 1}}
+		bindCommon(fs, &c.Common)
+		bindRegistry(fs, &c.Registry)
+		fs.StringVar(&c.Instance, "instance", "", "the instance to update (required)")
+		fs.BoolVar(&c.DryRun, "dry-run", false, "print what would be updated, and change nothing")
+		bindUpdate(fs, &c.UpdateFlags)
+		cfg.Update = c
+		validate = func() error {
+			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate()}
+			if c.Instance == "" {
+				errs = append(errs, errors.New("instance: required"))
+			}
 			return errors.Join(errs...)
 		}
 	case CmdInstall:
@@ -231,7 +303,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindRemoteProject(fs, &c.Common)
 		fs.Var((*csvValue)(&c.Projects), "project", "project to watch, and to restrict the certificate to; comma-separate several (default: all)")
 		fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
-		bindInstance(fs, &c.Name)
+		bindInstance(fs, &c.Name, "incus-beacond, refused beside an incus-beacon from before 0.6")
 		fs.StringVar(&c.Image, "image", "", "image to run (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
 		fs.StringVar(&c.StoragePool, "storage-pool", "", "pool for the state volume (default: the default profile's root pool)")
 		fs.StringVar(&c.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
@@ -258,7 +330,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Upgrade{Common: Common{Watch: WatchAll}}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name)
+		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
 		fs.StringVar(&c.Image, "image", "", "image to rebuild from (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
 		fs.BoolVar(&c.Force, "force", false, "allow an image older than the running one")
 		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
@@ -274,7 +346,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Uninstall{Common: Common{Watch: WatchAll}}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name)
+		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
 		cfg.Uninstall = c
 		validate = func() error { return c.validate() }
 	case CmdVersion:
@@ -289,6 +361,9 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			return nil, ErrHelp
 		}
 		return nil, fmt.Errorf("%w: %w", ErrUsage, err)
+	}
+	if fs.NArg() > 0 && slices.Contains(Commands, fs.Arg(0)) {
+		return nil, fmt.Errorf("%w: unexpected argument %q; give one command, before its flags", ErrUsage, fs.Arg(0))
 	}
 	if fs.NArg() > 0 {
 		return nil, fmt.Errorf("%w: unexpected argument %q", ErrUsage, fs.Arg(0))
@@ -334,8 +409,8 @@ func bindRemoteProject(fs *flag.FlagSet, c *Common) {
 	fs.Var(&remoteValue{c: c, project: true}, "remote", "incus CLI `remote[:project]` to use, the project being where the instance lives (default: the CLI's default remote and its current project)")
 }
 
-func bindInstance(fs *flag.FlagSet, name *string) {
-	fs.StringVar(name, "name", "incus-beacon", "instance name; also names its volume and certificate")
+func bindInstance(fs *flag.FlagSet, name *string, dflt string) {
+	fs.StringVar(name, "name", "", "instance name; also names its volume and certificate (default: "+dflt+")")
 }
 
 func bindCommon(fs *flag.FlagSet, c *Common) {
@@ -353,9 +428,35 @@ func bindCommon(fs *flag.FlagSet, c *Common) {
 	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
 }
 
+func bindUpdate(fs *flag.FlagSet, c *UpdateFlags) {
+	fs.DurationVar(&c.StopTimeout, "update-stop-timeout", 30*time.Second, "how long an instance may take to stop before it is forced")
+	fs.DurationVar(&c.Wait, "update-wait", 5*time.Minute, "how long an updated instance has to become healthy before it is rolled back")
+	fs.DurationVar(&c.Settle, "update-settle", 30*time.Second, "how long an updated instance must keep running")
+	fs.IntVar(&c.Keep, "update-keep", 3, "how many of beacon's snapshots to keep per volume; 0 keeps all")
+}
+
+func (c *UpdateFlags) validate() error {
+	var errs []error
+	for name, d := range map[string]time.Duration{"update-stop-timeout": c.StopTimeout, "update-wait": c.Wait, "update-settle": c.Settle} {
+		if d <= 0 {
+			errs = append(errs, fmt.Errorf("%s %s: must be positive", name, d))
+		}
+	}
+	if c.Settle >= c.Wait {
+		errs = append(errs, fmt.Errorf("update-settle %s: must be shorter than update-wait %s", c.Settle, c.Wait))
+	}
+	if c.Keep < 0 {
+		errs = append(errs, fmt.Errorf("update-keep %d: must not be negative", c.Keep))
+	}
+	return errors.Join(errs...)
+}
+
+func bindConcurrency(fs *flag.FlagSet, c *Registry) {
+	fs.IntVar(&c.Concurrency, "concurrency", 4, "registry lookups run at once")
+}
+
 func bindRegistry(fs *flag.FlagSet, c *Registry) {
 	fs.StringVar(&c.RegistryAuthFile, "registry-auth-file", "", "docker config.json with registry credentials")
-	fs.IntVar(&c.Concurrency, "concurrency", 4, "registry lookups run at once")
 	fs.DurationVar(&c.Timeout, "timeout", 30*time.Second, "timeout for each registry call")
 	fs.DurationVar(&c.Cooldown, "cooldown", 0, "report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
 }

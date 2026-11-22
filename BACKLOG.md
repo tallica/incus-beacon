@@ -14,6 +14,10 @@ not work. An idea that needs more than a paragraph gets its own file in
       in the lazyincus instance and image panels, and leave
       `user.incus-beacon.*` out of its config fingerprint as
       `user.healthcheck.*` already is, so beacon writes don't read as drift.
+- [ ] **Verify updates of incus-compose instances** — waits on incus-compose's
+      image override (lxc/incus-compose#282) reaching a release. Then run an
+      update, `up`, `up --pull always` and a config-change recreate, and drop
+      the README's "to verify".
 
 ## Later
 
@@ -24,9 +28,8 @@ not work. An idea that needs more than a paragraph gets its own file in
 - [ ] **incus-compose token without `.env`** — needs an incus-compose feature
       that puts a trust token into `/run/secrets/token`; beacon already reads
       that path through `--token-file`.
-- [ ] **[Automatic updates](backlogs/automatic-updates.md)** — back up, rebuild
-      on the newer image, health-gate, and roll back; opt-in per instance, never
-      for incus-compose instances, and only on Incus 7.6 or later.
+- [ ] **Update windows by weekday** — `update-window` is daily; a weekly form
+      (`Sat 02:00-05:00`) would keep updates to a maintenance day.
 - [ ] **Updating compose stacks** — a README section on the two paths that
       change the compose file rather than the instance: Renovate's
       `docker-compose` manager opening PRs for newer tags, or beacon's webhook
@@ -40,9 +43,6 @@ not work. An idea that needs more than a paragraph gets its own file in
 
 ## Not planned
 
-- **Rebuilding incus-compose instances** — the compose file is the desired
-  state; why is in [automatic-updates.md](backlogs/automatic-updates.md#scope)
-  (2026-11-07).
 - **beacon editing compose files** — beacon has no access to the repo or host
   that holds them, and Renovate already does this with review in git
   (2026-11-07).
@@ -52,6 +52,9 @@ not work. An idea that needs more than a paragraph gets its own file in
   MB) and adds many linked modules; built-in senders plus `--notify-command`
   cover the rest. Go plugins can't load into a static `CGO_ENABLED=0` binary, so
   it can't be optional at run time either (2026-11-07).
+- **A notification when an update starts** — every update already ends in an
+  outcome message, most finish in 20-40s, and a start message would double the
+  noise (2026-11-22).
 - **Copying the lazyincus upstream-check code** — the maintainer chose a fresh
   implementation; lazyincus stays a reference (2026-11-04).
 - **Unix-socket-only access to Incus** — unproven inside OCI containers and

@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // update windows read TZ; the image has no zoneinfo
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/rs/zerolog"
@@ -25,6 +27,7 @@ import (
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/report"
 	"github.com/tallica/incus-beacon/internal/serve"
+	"github.com/tallica/incus-beacon/internal/update"
 	"github.com/tallica/incus-beacon/internal/version"
 )
 
@@ -37,7 +40,7 @@ const (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	code := run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+	code := run(ctx, config.ForProgram(os.Args[0], os.Args[1:]), os.Getenv, os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
 }
@@ -78,6 +81,8 @@ func commonOf(cfg *config.Config) config.Common {
 		return cfg.Upgrade.Common
 	case cfg.Uninstall != nil:
 		return cfg.Uninstall.Common
+	case cfg.Update != nil:
+		return cfg.Update.Common
 	default:
 		return cfg.Serve.Common
 	}
@@ -93,6 +98,8 @@ func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, st
 		err = runServe(ctx, cfg.Serve, logger)
 	case config.CmdStatus:
 		err = runStatus(ctx, cfg.Status, stdout)
+	case config.CmdUpdate:
+		err = runUpdate(ctx, cfg.Update, logger, stdout)
 	case config.CmdInstall:
 		err = runInstall(ctx, cfg.Install, logger)
 	case config.CmdUpgrade:
@@ -149,6 +156,100 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	return nil
 }
 
+func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, stdout io.Writer) error {
+	srv, err := incus.Connect(ctx, connectOptions(c.Common))
+	if err != nil {
+		return err
+	}
+	targets, err := incus.Targets(ctx, srv, incus.ListOptions{Projects: c.Projects, Instance: c.Instance, WatchAll: c.Watch == config.WatchAll})
+	if err != nil {
+		return err
+	}
+	switch len(targets) {
+	case 0:
+		return fmt.Errorf("%s is not a watched OCI instance in the projects in scope", c.Instance)
+	case 1:
+	default:
+		return fmt.Errorf("%s is in several projects; give --project", c.Instance)
+	}
+	reg, err := registry.New(registry.Options{AuthFile: c.RegistryAuthFile, Timeout: c.Timeout, UserAgent: userAgent()})
+	if err != nil {
+		return err
+	}
+	opts := update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger}
+	// A claim first: an interrupted update can leave it current on an ungated image.
+	if t := targets[0]; t.Claim != "" {
+		if c.DryRun {
+			o := update.Preview(ctx, srv, reg, t, update.Next{}, opts)
+			if o.Status == update.Recover {
+				fmt.Fprintf(stdout, "%s/%s: would roll back to %s: %s\n", t.Project, t.Instance, o.From, o.Reason)
+				return fmt.Errorf("would roll back: %s", o.Reason)
+			}
+			fmt.Fprintf(stdout, "%s/%s: would refuse: %s\n", t.Project, t.Instance, o.Reason)
+			return fmt.Errorf("%s: %s", update.Refused, o.Reason)
+		}
+		o, err := update.Apply(ctx, srv, reg, t, update.Next{}, opts)
+		return reportUpdate(stdout, t.Project+"/"+t.Instance, o, err)
+	}
+	r := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: true}, logger).Run(ctx, targets)[0]
+	name := r.Target.Project + "/" + r.Target.Instance
+	if r.Status != check.UpdateAvailable {
+		reason := ""
+		if r.Reason != "" {
+			reason = ": " + r.Reason
+		}
+		_, err := fmt.Fprintf(stdout, "%s: %s, nothing to update%s\n", name, r.Status, reason)
+		return err
+	}
+	next, err := update.NextOf(r)
+	if err != nil {
+		return err
+	}
+	if c.DryRun {
+		o := update.Preview(ctx, srv, reg, r.Target, next, opts)
+		if o.Status != update.Ready {
+			fmt.Fprintf(stdout, "%s: would refuse %s\n", name, next.Ref)
+			return fmt.Errorf("%s: %s", update.Refused, o.Reason)
+		}
+		fmt.Fprintf(stdout, "%s: would update from %s to %s\n", name, o.From, o.To)
+		printOutcome(stdout, o, "would snapshot", "would drop")
+		return nil
+	}
+	o, err := update.Apply(ctx, srv, reg, r.Target, next, opts)
+	return reportUpdate(stdout, name, o, err)
+}
+
+func reportUpdate(stdout io.Writer, name string, o update.Outcome, err error) error {
+	fmt.Fprintf(stdout, "%s: %s, %s to %s\n", name, o.Status, o.From, o.To)
+	printOutcome(stdout, o, "snapshot", "dropped")
+	if err != nil {
+		return fmt.Errorf("record the outcome: %w", err)
+	}
+	if o.Status != update.Updated {
+		return fmt.Errorf("%s: %s", o.Status, o.Reason)
+	}
+	return nil
+}
+
+func printOutcome(w io.Writer, o update.Outcome, snapshot, dropped string) {
+	for _, v := range o.Snapshots {
+		fmt.Fprintf(w, "  %s %s\n", snapshot, v)
+	}
+	for _, k := range o.Dropped {
+		fmt.Fprintf(w, "  %s %s, which holds an image's own value\n", dropped, k)
+	}
+	why := "an override"
+	if o.OldEnvUnread {
+		why = "an override, or a copy from an old image that can't be read now"
+	}
+	for _, k := range o.Kept {
+		fmt.Fprintf(w, "  kept %s: %s\n", k, why)
+	}
+	for _, v := range o.Unrestored {
+		fmt.Fprintf(w, "  not restored on a rollback: %s, which another instance also uses\n", v)
+	}
+}
+
 // writeResults goes on after a failed write so the report still covers all.
 func writeResults(ctx context.Context, srv incusclient.InstanceServer, results []check.Result, logger zerolog.Logger,
 	onWrite func(t incus.Target, next incus.Beacon),
@@ -187,7 +288,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	if err != nil {
 		return err
 	}
-	engine := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown}, logger)
+	engine := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update}, logger)
 	sender, err := notify.New(notify.Options{
 		URLs:    c.NotifyURLs,
 		URLFile: c.NotifyURLFile,
@@ -201,23 +302,18 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	conn := &incus.Conn{Options: connectOptions(c.Common)}
 	watchAll := c.Watch == config.WatchAll
 	seen := incus.Seen{}
+	runner := &update.Runner{
+		Enabled: c.Update, Window: c.Window, Registry: reg, Metrics: set, Log: logger,
+		Options: update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger},
+	}
+	runner.Init()
 
-	checkAndWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) serve.Summary {
+	checkWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) ([]check.Result, serve.Summary, []notify.Transition) {
 		for _, t := range targets {
 			seen.Record(t)
 		}
 		results := engine.Run(ctx, targets)
 		sum := serve.Summary{Targets: len(results), Statuses: map[incus.Key]check.Status{}}
-		for i := range results {
-			sum.Statuses[results[i].Target.Key()] = results[i].Status
-			switch results[i].Status {
-			case check.UpdateAvailable:
-				sum.Updates++
-			case check.Error:
-				sum.Errors++
-			case check.Current, check.Unknown:
-			}
-		}
 		var changes []notify.Transition
 		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger, func(t incus.Target, next incus.Beacon) {
 			seen.Wrote(t.Key(), next)
@@ -225,6 +321,43 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 				changes = append(changes, notify.NewTransition(t, next))
 			}
 		})
+		for i := range results {
+			sum.Statuses[results[i].Target.Key()] = results[i].Status
+		}
+		return results, sum, changes
+	}
+	// checkAndWrite then applies updates, re-checks what they changed and sends one message.
+	checkAndWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) serve.Summary {
+		results, sum, changes := checkWrite(ctx, srv, targets)
+		var rechecks []incus.Target
+		for _, d := range runner.Run(ctx, srv, results) {
+			if d.Notable {
+				o := d.Outcome
+				changes = notify.WithApplied(changes, notify.NewApplied(d.Target, o.Status, o.From, o.To, o.Reason))
+			}
+			if !d.Changed() {
+				continue
+			}
+			if t, ok, err := incus.TargetOf(ctx, srv, d.Target.Key(), watchAll); err == nil && ok {
+				rechecks = append(rechecks, t)
+			}
+		}
+		// The status keys of an updated instance still describe its old image.
+		if len(rechecks) > 0 {
+			_, re, more := checkWrite(ctx, srv, rechecks)
+			sum.Written, sum.Failed = sum.Written+re.Written, sum.Failed+re.Failed
+			maps.Copy(sum.Statuses, re.Statuses)
+			changes = append(changes, more...)
+		}
+		for _, st := range sum.Statuses {
+			switch st {
+			case check.UpdateAvailable:
+				sum.Updates++
+			case check.Error:
+				sum.Errors++
+			case check.Current, check.Unknown:
+			}
+		}
 		if len(changes) > 0 {
 			sender.Notify(ctx, notify.Batch{Server: serverName(srv, logger), Transitions: changes})
 		}
@@ -362,7 +495,7 @@ func runUpgrade(ctx context.Context, c *config.Upgrade, logger zerolog.Logger) e
 		return err
 	}
 	return install.Upgrade(ctx, srv, install.UpgradeOptions{
-		Name:  c.Name,
+		Name:  install.ResolveName(srv, c.Name, logger),
 		Image: image,
 		Force: c.Force,
 		Wait:  c.Wait,
@@ -375,7 +508,7 @@ func runUninstall(ctx context.Context, c *config.Uninstall, logger zerolog.Logge
 	if err != nil {
 		return err
 	}
-	return install.Uninstall(ctx, srv, c.Name, logger)
+	return install.Uninstall(ctx, srv, install.ResolveName(srv, c.Name, logger), logger)
 }
 
 func connectOptions(c config.Common) incus.ConnectOptions {

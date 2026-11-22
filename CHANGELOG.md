@@ -15,14 +15,35 @@ get an entry.
 
 ### Added
 
+- The binary also answers to `incus-beacond`, which runs `serve`; the image now
+  starts it by that name.
+- `update --instance <name>` rebuilds an instance on its newer image, with
+  volume snapshots and a health gate, and rolls back if it fails.
+- Updates reach incus-compose instances too, when their incus-compose has an
+  image override (`image-override` in `user.incus-compose.features`), and are
+  not reported back while the compose file is unchanged.
+- `serve --update` applies updates to instances set to
+  `user.incus-beacon.update=auto`, within an optional `--update-window`, and
+  notifies each outcome.
 - A cooldown, `--cooldown` or `user.incus-beacon.cooldown`, reports an image
   only once it is that old, so a release pulled within hours is never reported.
 
+### Changed
+
+- **Breaking:** `install` names its instance, state volume and certificate
+  `incus-beacond` (`incus-beacond-state` for the volume); `upgrade` and
+  `uninstall` still find one installed before as `incus-beacon`.
+
 ### Fixed
 
+- An instance whose image Incus recorded by digest no longer reads "no registry
+  ref" once Incus prunes the image: beacon keeps the ref it last tracked for
+  that image, in `user.incus-beacon.current-image`.
 - An instance with a policy error, or not yet checkable, now shows and records
   its image ref in full: `docker.io/library/nginx:1.28`, not
   `docker.io/nginx:1.28`.
+- An instance launched from `repo@digest`, with no tag, is no longer checked
+  against `latest`.
 
 ## [0.5.1] - 2026-11-11
 

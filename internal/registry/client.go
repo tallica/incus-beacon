@@ -153,6 +153,20 @@ func (c *Client) Resolve(ctx context.Context, ref Ref, platform Platform) (Image
 
 // Created reads the image config's created time; zero when it has none.
 func (c *Client) Created(ctx context.Context, ref Ref, img Image) (time.Time, error) {
+	config, err := c.config(ctx, ref, img)
+	if err != nil || config.Created == nil {
+		return time.Time{}, err
+	}
+	return *config.Created, nil
+}
+
+// Env reads the image config's environment, as KEY=value lines.
+func (c *Client) Env(ctx context.Context, ref Ref, img Image) ([]string, error) {
+	config, err := c.config(ctx, ref, img)
+	return config.Config.Env, err
+}
+
+func (c *Client) config(ctx context.Context, ref Ref, img Image) (ocispec.Image, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	repo := c.repo(ref)
@@ -161,16 +175,13 @@ func (c *Client) Created(ctx context.Context, ref Ref, img Image) (time.Time, er
 		return img.Config, rc, err
 	})
 	if err != nil {
-		return time.Time{}, c.classify(ctx, ref, err)
+		return ocispec.Image{}, c.classify(ctx, ref, err)
 	}
 	var config ocispec.Image
 	if err := json.Unmarshal(body, &config); err != nil {
-		return time.Time{}, fmt.Errorf("%s: config: %w", ref, err)
+		return ocispec.Image{}, fmt.Errorf("%s: config: %w", ref, err)
 	}
-	if config.Created == nil {
-		return time.Time{}, nil
-	}
-	return *config.Created, nil
+	return config, nil
 }
 
 var errEnoughTags = errors.New("enough tags")
