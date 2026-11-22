@@ -19,7 +19,7 @@ repo=https://github.com/tallica/incus-beacon
 
 notes=$(awk -v version="$version" '
 	index($0, "## [" version "]") == 1 { found = 1; next }
-	found && (index($0, "## ") == 1 || /^\[[^]]+\]: /) { exit }
+	found && (index($0, "## ") == 1 || /^\[[^]]+\]:( |$)/) { exit }
 	found { lines[++count] = $0 }
 	END {
 		# Skip the blank lines after the heading; $(...) drops those at the end.
