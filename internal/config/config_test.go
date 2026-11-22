@@ -473,3 +473,61 @@ func TestCheckServeEnv(t *testing.T) {
 		t.Error("notify-errors with nowhere to notify: no error")
 	}
 }
+
+func TestAuditFlags(t *testing.T) {
+	t.Parallel()
+	for _, cmd := range [][]string{{CmdServe}, {CmdUpdate, "--instance", "web"}} {
+		cfg, err := parse(t, nil, cmd...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a := cfg.AuditOf(); a != (Audit{AuditLogMaxSize: 10 << 20, AuditLogKeep: 5}) {
+			t.Errorf("%s defaults %+v", cmd[0], a)
+		}
+		vars := map[string]string{"BEACON_AUDIT_LOG": "/var/log/b/audit.log", "BEACON_AUDIT_LOG_MAX_SIZE": "4KiB", "BEACON_AUDIT_LOG_KEEP": "2"}
+		cfg, err = parse(t, vars, cmd...)
+		if err != nil {
+			t.Fatalf("%s from the environment: %v", cmd[0], err)
+		}
+		if a := cfg.AuditOf(); a != (Audit{AuditLog: "/var/log/b/audit.log", AuditLogMaxSize: 4 << 10, AuditLogKeep: 2}) {
+			t.Errorf("%s from the environment: %+v", cmd[0], a)
+		}
+		cfg, err = parse(t, nil, append(cmd, "--audit-log-max-size", "1048577")...)
+		if err != nil {
+			t.Fatalf("%s bytes: %v", cmd[0], err)
+		}
+		if a := cfg.AuditOf(); a.AuditLogMaxSize != 1<<20+1 {
+			t.Errorf("%s bytes: %+v", cmd[0], a)
+		}
+		for _, args := range [][]string{
+			{"--audit-log-max-size", "0"},
+			{"--audit-log-max-size", "-1KiB"},
+			{"--audit-log-max-size", "10MB"},
+			{"--audit-log-max-size", "9999999999999MiB"},
+			{"--audit-log-keep", "-1"},
+		} {
+			if _, err := parse(t, nil, append(cmd, args...)...); !errors.Is(err, ErrUsage) {
+				t.Errorf("%s %v: err %v, want a usage error", cmd[0], args, err)
+			}
+		}
+	}
+	if _, err := parse(t, nil, CmdCheck, "--audit-log", "/tmp/a"); !errors.Is(err, ErrUsage) {
+		t.Errorf("check --audit-log: err %v, want a usage error", err)
+	}
+	cfg, err := parse(t, map[string]string{"BEACON_AUDIT_LOG_MAX_SIZE": "bad"}, CmdCheck)
+	if err != nil {
+		t.Fatalf("check with an audit variable: %v, want it ignored", err)
+	}
+	if a := cfg.AuditOf(); a != (Audit{}) {
+		t.Errorf("check's audit %+v, want none", a)
+	}
+}
+
+func TestSizeValueString(t *testing.T) {
+	t.Parallel()
+	for n, want := range map[int64]string{10 << 20: "10MiB", 4 << 10: "4KiB", 1<<20 + 1: "1048577", 0: "0"} {
+		if got := (*sizeValue)(&n).String(); got != want {
+			t.Errorf("String(%d) = %q, want %q", n, got, want)
+		}
+	}
+}

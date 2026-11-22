@@ -182,7 +182,9 @@ ref is the tracked ref at the `latest` tag.
    snapshots beyond `--update-keep` per volume are pruned, outside the claim, so
    a slow delete can't outlast its lease and get the update rolled back. Pruning
    after a rollback keeps updates that keep failing from piling up snapshots;
-   after `failed` every snapshot stays, for a recovery by hand.
+   after `failed` every snapshot stays, for a recovery by hand. With
+   `--audit-log`, the update also leaves a trail of JSON records there, linked
+   by the claim's snapshot name ([README](../README.md#audit-log)).
 
 A claim holds for 30 minutes plus `--update-wait` past its last step: no step or
 undo waits on the health gate more than once, and the 30 minutes leaves room for
@@ -378,7 +380,8 @@ Refs are normalised with Docker conventions: `nginx` becomes
   right after a launch. `update` retries up to ten times instead, re-reading its
   claim each time, since ic-healthd writes its status while an update runs.
 - **Logs go to stderr and reports to stdout,** so `check --format json` can be
-  piped. Credentials, trust tokens and private keys are never logged.
+  piped; audit records go to `--audit-log` as JSON lines, whatever the format.
+  Credentials, trust tokens and private keys are never logged.
 - **A failed check keeps the last known `user.incus-beacon.latest`.** It sets
   `status=error` and an error reason, so a flaky registry never hides an update
   that was already found.

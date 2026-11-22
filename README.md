@@ -238,6 +238,9 @@ often needed:
 | `--update`, `--update-window`              | Apply updates to `update=auto` instances, at any time or in a window; `serve`, `install`, `configure` |
 | `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                                                   |
 | `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default                            |
+| `--audit-log`                              | File `serve` and `update` append [audit records](#audit-log) to; none by default                      |
+| `--audit-log-max-size`                     | Size past which the audit log is rotated, e.g. `4KiB`; `10MiB` by default                             |
+| `--audit-log-keep`                         | Rotated audit logs kept, `<file>.1` being the newest; 5 by default, and 0 keeps none                  |
 | `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)                                 |
 | `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`                             |
 
@@ -378,6 +381,46 @@ The snapshots are named `incus-beacon-<UTC time>`; the newest `--update-keep`
 (3) per volume are kept. `--update-stop-timeout` (30s) is how long the instance
 may take to stop before it is forced. How it works, and how an interrupted
 update is recovered, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md#updating).
+
+### Audit log
+
+With `--audit-log <file>`, `serve` and `update` append one JSON object per line
+for each change an update makes and for every outcome, refusals included,
+whatever `--log-level` and `--log-format` say. Once the file would grow past
+`--audit-log-max-size` (10MiB), it becomes `<file>.1`, older ones move up, and
+those past `--audit-log-keep` (5) are removed. A record that can't be written is
+warned about once on stderr; the update goes on.
+
+```sh
+incus-beacon serve --update --audit-log /var/log/incus-beacon/audit.log
+```
+
+Every record has `time` (UTC), `event`, `version`, `by` (the process, as
+`host/pid`), `project`, `instance`, `from` and `to` (the refs). From the claim
+on, `op` is the claim's snapshot name, which links the records of one update.
+
+| `event`            | Written when                                 | Also has                                           |
+| ------------------ | -------------------------------------------- | -------------------------------------------------- |
+| `update.claim`     | the instance is claimed                      | `from_image`, `digest`, `dropped`, `kept`          |
+| `update.takeover`  | an abandoned claim is taken over             | `from_image`, `dropped`, `reason`                  |
+| `update.step`      | a step begins, is done or failed             | `step`, `phase`, `error`                           |
+| `update.undo`      | an undo begins, is done or failed            | `step`, `phase`, `error`                           |
+| `snapshot.create`  | a volume is snapshotted                      | `snapshot` (`pool/volume/name`), `error`           |
+| `snapshot.restore` | a volume is restored                         | `snapshot`, `error`                                |
+| `snapshot.prune`   | an old snapshot of beacon's is deleted       | `snapshot`, `error`                                |
+| `update.release`   | the claim is dropped and the outcome written | only on success; else the outcome has the `error`  |
+| `update.outcome`   | the update ends, refusals included           | `status`, `reason`, `from_image`, `image`, `error` |
+
+A field is left out when it doesn't apply. `digest` is what the rebuild was
+pinned to. `dropped` and `kept` name the environment keys the update drops and
+keeps, never their values. The outcome's `image` is the fingerprint the release
+found the instance on, beside the `from_image` it started from; a refusal, which
+never claimed the instance, has neither. Environment values, credentials and
+notification URLs are never written.
+
+```sh
+jq -c 'select(.op == "incus-beacon-20261122T100405") | {event, step, phase, status}' audit.log
+```
 
 ### Endpoints
 

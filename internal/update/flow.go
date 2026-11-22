@@ -57,6 +57,8 @@ type Options struct {
 	Owner string        // names this process in a claim
 	Now   func() time.Time
 	Log   zerolog.Logger
+	// Audit gets one record per change made; the zero Logger writes none.
+	Audit zerolog.Logger
 	// pruneWait bounds the wait only: Incus finishes a delete it has accepted.
 	pruneWait time.Duration
 }
@@ -139,10 +141,12 @@ func Apply(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t 
 }
 
 func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) *updater {
+	from := registry.Normalize(t.Ref)
 	return &updater{
 		srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts, digest: next.Digest,
-		log: opts.Log.With().Str("project", t.Project).Str("instance", t.Instance).Str("to", next.Ref).Logger(),
-		o:   Outcome{From: registry.Normalize(t.Ref), To: next.Ref},
+		log:   opts.Log.With().Str("project", t.Project).Str("instance", t.Instance).Str("to", next.Ref).Logger(),
+		audit: opts.Audit.With().Str("by", opts.Owner).Str("project", t.Project).Str("instance", t.Instance).Str("from", from).Str("to", next.Ref).Logger(),
+		o:     Outcome{From: from, To: next.Ref},
 	}
 }
 
@@ -152,7 +156,9 @@ type updater struct {
 	t      incus.Target
 	opts   Options
 	log    zerolog.Logger
+	audit  zerolog.Logger
 	digest string // Next.Digest
+	image  string // volatile.base_image as the release found it
 
 	inst *api.Instance
 	c    claim
@@ -270,6 +276,12 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 	if err := u.acquire(ctx); err != nil {
 		return u.busy("claim the instance: " + err.Error())
 	}
+	u.audit = u.audit.With().Str("op", u.c.Snapshot).Logger()
+	claimed := u.audit.Log().Str("event", "update.claim").Str("from_image", u.c.From).Strs("dropped", u.o.Dropped).Strs("kept", u.o.Kept)
+	if u.digest != "" {
+		claimed = claimed.Str("digest", u.digest)
+	}
+	claimed.Send()
 	u.log.Info().Msg("updating")
 	for i, s := range u.steps() {
 		if err := u.begin(ctx, i); err != nil {
@@ -278,9 +290,12 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 			}
 			return u.unwind(ctx, i-1, "record the claim: "+err.Error())
 		}
+		u.stepEvent("update.step", s.name, "begin").Send()
 		if err := u.bounded(ctx, s.do); err != nil {
+			u.stepEvent("update.step", s.name, "failed").Err(err).Send()
 			return u.unwind(ctx, i, s.name+": "+err.Error())
 		}
+		u.stepEvent("update.step", s.name, "done").Send()
 	}
 	u.o.Status = Updated
 	u.log.Info().Msg("updated")
@@ -290,39 +305,58 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 // releaseAndPrune prunes outside the claim: docs/ARCHITECTURE.md#updating says why.
 func (u *updater) releaseAndPrune(ctx context.Context) (Outcome, error) {
 	if err := u.release(ctx); err != nil {
-		return u.o, err
+		return u.outcome(err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, u.opts.pruneWait)
 	defer cancel()
 	u.prune(ctx)
-	return u.o, nil
+	return u.outcome(nil)
+}
+
+// outcome audits u.o, with err the failure to record it on the instance, and returns both.
+func (u *updater) outcome(err error) (Outcome, error) {
+	e := u.audit.Log().Str("event", "update.outcome").Str("status", u.o.Status)
+	if u.o.Reason != "" {
+		e = e.Str("reason", u.o.Reason)
+	}
+	if u.image != "" {
+		e = e.Str("from_image", u.c.From).Str("image", u.image)
+	}
+	e.Err(err).Send()
+	return u.o, err
 }
 
 func (u *updater) refuse(ctx context.Context, reason string) (Outcome, error) {
 	u.o.Status, u.o.Reason = Refused, reason
 	u.log.Warn().Str("reason", reason).Msg("update refused")
 	_, err := incus.WriteUpdate(ctx, u.srv, u.t, u.record(""))
-	return u.o, err
+	return u.outcome(err)
 }
 
 // busy refuses without writing: another process's update owns the instance's keys.
 func (u *updater) busy(reason string) (Outcome, error) {
 	u.o.Status, u.o.Reason = Refused, reason
 	u.log.Warn().Str("reason", reason).Msg("update refused")
-	return u.o, nil
+	return u.outcome(nil)
 }
 
 // abandon stops without touching the instance: the process that took the claim owns it now.
 func (u *updater) abandon(err error) (Outcome, error) {
 	u.o.Status, u.o.Reason = Failed, err.Error()
 	u.log.Error().Err(err).Msg("update abandoned")
-	return u.o, nil
+	return u.outcome(nil)
+}
+
+func (u *updater) stepEvent(event, name, phase string) *zerolog.Event {
+	return u.audit.Log().Str("event", event).Str("step", name).Str("phase", phase)
 }
 
 // recover rolls back an update whose claim expired, from what the claim recorded.
 func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 	u.c, u.o.To, u.o.From = c, c.To, cmp.Or(c.FromRef, u.o.From)
 	u.log = u.opts.Log.With().Str("project", u.t.Project).Str("instance", u.t.Instance).Str("to", c.To).Logger()
+	u.audit = u.opts.Audit.With().Str("by", u.opts.Owner).Str("project", u.t.Project).Str("instance", u.t.Instance).
+		Str("from", u.o.From).Str("to", c.To).Str("op", c.Snapshot).Logger()
 	for _, v := range c.Volumes {
 		pool, name, _ := strings.Cut(v, "/")
 		u.vols = append(u.vols, volume{pool: pool, name: name})
@@ -338,6 +372,8 @@ func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 	}); err != nil {
 		return u.refuse(ctx, "take over the abandoned claim of "+c.Owner+": "+err.Error())
 	}
+	u.audit.Log().Str("event", "update.takeover").Str("from_image", c.From).
+		Strs("dropped", slices.Sorted(maps.Keys(c.Dropped))).Str("reason", cause).Send()
 	u.log.Warn().Str("reason", cause).Msg("recovering")
 	return u.unwind(ctx, u.c.Step, cause)
 }
@@ -361,7 +397,7 @@ func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome,
 		// Nothing changed, so the image is not to blame.
 		u.o.Status = Refused
 		u.log.Warn().Str("reason", cause).Msg("update stopped before any step")
-		return u.o, u.release(ctx)
+		return u.outcome(u.release(ctx))
 	}
 	u.log.Warn().Str("reason", cause).Msg("rolling back")
 	steps := u.steps()
@@ -375,11 +411,14 @@ func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome,
 		} else if err != nil {
 			u.log.Warn().Err(err).Msg("claim not renewed; rolling back anyway")
 		}
+		u.stepEvent("update.undo", steps[i].name, "begin").Send()
 		if err := u.bounded(ctx, steps[i].undo); err != nil {
+			u.stepEvent("update.undo", steps[i].name, "failed").Err(err).Send()
 			u.o.Status, u.o.Reason = Failed, cause+"; roll back "+steps[i].name+": "+err.Error()
 			u.log.Error().Str("reason", u.o.Reason).Msg("rollback failed")
-			return u.o, u.release(ctx)
+			return u.outcome(u.release(ctx))
 		}
+		u.stepEvent("update.undo", steps[i].name, "done").Send()
 	}
 	u.o.Status = RolledBack
 	u.log.Warn().Str("reason", cause).Msg("rolled back")
@@ -492,12 +531,13 @@ func (u *updater) begin(ctx context.Context, i int) error {
 
 // release drops the claim and records the outcome in the same write.
 func (u *updater) release(ctx context.Context) error {
-	return u.write(context.WithoutCancel(ctx), func(cfg map[string]string) error {
+	err := u.write(context.WithoutCancel(ctx), func(cfg map[string]string) error {
 		if err := u.ours(cfg); err != nil {
 			return err
 		}
 		delete(cfg, incus.ClaimKey)
-		for k, v := range u.record(cfg["volatile.base_image"]).Keys() {
+		u.image = cfg["volatile.base_image"]
+		for k, v := range u.record(u.image).Keys() {
 			if v == "" {
 				delete(cfg, k)
 			} else {
@@ -506,6 +546,10 @@ func (u *updater) release(ctx context.Context) error {
 		}
 		return nil
 	})
+	if err == nil {
+		u.audit.Log().Str("event", "update.release").Send()
+	}
+	return err
 }
 
 func (u *updater) refusal() string {
@@ -774,10 +818,12 @@ func (u *updater) snapshot(ctx context.Context) error {
 		if err == nil {
 			err = op.WaitContext(ctx)
 		}
+		snap := v.pool + "/" + v.name + "/" + u.c.Snapshot
+		u.audit.Log().Str("event", "snapshot.create").Str("snapshot", snap).Err(err).Send()
 		if err != nil {
 			return fmt.Errorf("%s/%s: %w", v.pool, v.name, err)
 		}
-		u.o.Snapshots = append(u.o.Snapshots, v.pool+"/"+v.name+"/"+u.c.Snapshot)
+		u.o.Snapshots = append(u.o.Snapshots, snap)
 	}
 	return nil
 }
@@ -799,6 +845,7 @@ func (u *updater) restore(ctx context.Context) error {
 			put.Restore = u.c.Snapshot
 			err = u.srv.UpdateStoragePoolVolume(v.pool, "custom", v.name, put, etag)
 		}
+		u.audit.Log().Str("event", "snapshot.restore").Str("snapshot", v.pool+"/"+v.name+"/"+u.c.Snapshot).Err(err).Send()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s/%s: %w", v.pool, v.name, err))
 		}
@@ -829,8 +876,10 @@ func (u *updater) prune(ctx context.Context) {
 			if err == nil {
 				err = op.WaitContext(ctx)
 			}
+			snap := v.pool + "/" + v.name + "/" + n
+			u.audit.Log().Str("event", "snapshot.prune").Str("snapshot", snap).Err(err).Send()
 			if err != nil {
-				u.log.Warn().Err(err).Str("snapshot", v.pool+"/"+v.name+"/"+n).Msg("snapshot not pruned")
+				u.log.Warn().Err(err).Str("snapshot", snap).Msg("snapshot not pruned")
 			}
 		}
 	}

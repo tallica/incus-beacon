@@ -32,6 +32,13 @@ incus console <instance> --show-log
 incus info <instance> --show-log
 ```
 
+With an [audit log](../../README.md#audit-log), its records show the step that
+failed, with its error, and each undo after it:
+
+```sh
+jq -c 'select(.instance == "<instance>") | {time, op, event, step, phase, error}' <audit-log>
+```
+
 A newer image is tried on its own. To retry the same one, after fixing the
 cause, remove the failure record:
 

@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,6 +113,13 @@ type Registry struct {
 	Cooldown         time.Duration
 }
 
+// Audit holds where update records go; an empty AuditLog writes none.
+type Audit struct {
+	AuditLog        string
+	AuditLogMaxSize int64
+	AuditLogKeep    int
+}
+
 type Check struct {
 	Common
 	Registry
@@ -136,6 +145,7 @@ type Serve struct {
 	UpdateWindow string        // HH:MM-HH:MM, or empty for any time
 	Window       policy.Window // UpdateWindow parsed; the zero Window is any time
 	UpdateFlags
+	Audit
 }
 
 type Notify struct {
@@ -191,6 +201,7 @@ type Update struct {
 	Instance string
 	DryRun   bool
 	UpdateFlags
+	Audit
 }
 
 type UpdateFlags struct {
@@ -224,6 +235,17 @@ type Config struct {
 	Configure *Configure
 	Upgrade   *Upgrade
 	Uninstall *Uninstall
+}
+
+// AuditOf is the command's Audit; the zero Audit, which writes nothing, for commands without the flags.
+func (c *Config) AuditOf() Audit {
+	switch {
+	case c.Update != nil:
+		return c.Update.Audit
+	case c.Serve != nil:
+		return c.Serve.Audit
+	}
+	return Audit{}
 }
 
 const (
@@ -306,6 +328,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.BoolVar(&c.Update, "update", false, "apply updates to instances that set user.incus-beacon.update=auto")
 		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in local time, when updates may run, unless an instance sets its own (default: any time)")
 		bindUpdate(fs, &c.UpdateFlags)
+		bindAudit(fs, &c.Audit)
 		cfg.Serve = c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
@@ -324,7 +347,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 					errs = append(errs, err)
 				}
 			}
-			errs = append(errs, c.UpdateFlags.validate())
+			errs = append(errs, c.UpdateFlags.validate(), c.Audit.validate())
 			return errors.Join(errs...)
 		}
 	case CmdUpdate:
@@ -334,9 +357,10 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.Instance, "instance", "", "the instance to update (required)")
 		fs.BoolVar(&c.DryRun, "dry-run", false, "print what would be updated, and change nothing")
 		bindUpdate(fs, &c.UpdateFlags)
+		bindAudit(fs, &c.Audit)
 		cfg.Update = c
 		validate = func() error {
-			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate()}
+			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate(), c.Audit.validate()}
 			if c.Instance == "" {
 				errs = append(errs, errors.New("instance: required"))
 			}
@@ -570,6 +594,24 @@ func (c *UpdateFlags) validate() error {
 	return errors.Join(errs...)
 }
 
+func bindAudit(fs *flag.FlagSet, c *Audit) {
+	c.AuditLogMaxSize = 10 << 20
+	fs.StringVar(&c.AuditLog, "audit-log", "", "file to append a JSON line to per update step, undo, snapshot and outcome (default: none)")
+	fs.Var((*sizeValue)(&c.AuditLogMaxSize), "audit-log-max-size", "`size` past which the audit log is rotated: bytes, or a whole number of KiB or MiB")
+	fs.IntVar(&c.AuditLogKeep, "audit-log-keep", 5, "how many rotated audit logs to keep, <file>.1 being the newest; 0 keeps none")
+}
+
+func (c *Audit) validate() error {
+	var errs []error
+	if c.AuditLogMaxSize <= 0 {
+		errs = append(errs, fmt.Errorf("audit-log-max-size %d: must be positive", c.AuditLogMaxSize))
+	}
+	if c.AuditLogKeep < 0 {
+		errs = append(errs, fmt.Errorf("audit-log-keep %d: must not be negative", c.AuditLogKeep))
+	}
+	return errors.Join(errs...)
+}
+
 func bindConcurrency(fs *flag.FlagSet, c *Registry) {
 	fs.IntVar(&c.Concurrency, "concurrency", 4, "registry lookups run at once")
 }
@@ -662,6 +704,40 @@ func (c *csvValue) Set(v string) error {
 			*c = append(*c, p)
 		}
 	}
+	return nil
+}
+
+// sizeValue is a byte count, optionally with a KiB or MiB suffix.
+type sizeValue int64
+
+var sizeUnits = []struct {
+	suffix string
+	shift  uint
+}{{"MiB", 20}, {"KiB", 10}}
+
+func (v *sizeValue) String() string {
+	n := int64(*v)
+	for _, u := range sizeUnits {
+		if n != 0 && n%(1<<u.shift) == 0 {
+			return strconv.FormatInt(n>>u.shift, 10) + u.suffix
+		}
+	}
+	return strconv.FormatInt(n, 10)
+}
+
+func (v *sizeValue) Set(s string) error {
+	num, shift := s, uint(0)
+	for _, u := range sizeUnits {
+		if n, ok := strings.CutSuffix(s, u.suffix); ok {
+			num, shift = n, u.shift
+			break
+		}
+	}
+	n, err := strconv.ParseInt(num, 10, 64)
+	if err != nil || n > math.MaxInt64>>shift {
+		return fmt.Errorf("%q: want bytes, or a whole number of KiB or MiB", s)
+	}
+	*v = sizeValue(n << shift)
 	return nil
 }
 
