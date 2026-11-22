@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Added
+
+- `install --update`, `--update-window`, `--cooldown` and `--interval` set those
+  `serve` settings on the instance it creates.
+
 ### Changed
 
 - `incus-beacon -h` groups the commands that watch instances apart from those

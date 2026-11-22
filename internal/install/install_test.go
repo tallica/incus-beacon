@@ -16,6 +16,8 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/pkg/sftp"
 	"github.com/rs/zerolog"
+
+	"github.com/tallica/incus-beacon/internal/config"
 )
 
 // fake implements the calls install makes; any other call panics on the nil
@@ -550,5 +552,55 @@ func TestDetectURL(t *testing.T) {
 	f.httpsAddress = ""
 	if _, err := detectURL(f, "incusbr0"); err == nil || !strings.Contains(err.Error(), "--api-url") {
 		t.Errorf("unset address: err %v", err)
+	}
+}
+
+// serveFrom parses serve the way the instance does, from the environment install wrote.
+func serveFrom(t *testing.T, inst *api.Instance) *config.Serve {
+	t.Helper()
+	getenv := func(name string) string {
+		if name == "BEACON_STATE_DIR" {
+			return stateDir // the image's Containerfile sets it, not install
+		}
+		return inst.Config["environment."+name]
+	}
+	cfg, err := config.Parse([]string{config.CmdServe}, getenv, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Serve
+}
+
+func TestInstallServeSettingsReachServe(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	o := opts()
+	o.Interval = time.Hour
+	o.Cooldown = 48 * time.Hour
+	o.Update = true
+	o.UpdateWindow = "02:00-05:00"
+	if err := Install(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	s := serveFrom(t, f.instances["incus-beacon"])
+	if s.Interval != time.Hour || s.Cooldown != 48*time.Hour || !s.Update || s.UpdateWindow != "02:00-05:00" {
+		t.Errorf("serve on the installed instance: %+v", s)
+	}
+}
+
+func TestInstallLeavesServeDefaults(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	if err := Install(context.Background(), f, opts()); err != nil {
+		t.Fatal(err)
+	}
+	inst := f.instances["incus-beacon"]
+	for _, k := range []string{"INTERVAL", "COOLDOWN", "UPDATE", "UPDATE_WINDOW"} {
+		if v, ok := inst.Config["environment.BEACON_"+k]; ok {
+			t.Errorf("BEACON_%s = %q with no setting given", k, v)
+		}
+	}
+	if s := serveFrom(t, inst); s.Interval != 6*time.Hour || s.Cooldown != 0 || s.Update || s.UpdateWindow != "" {
+		t.Errorf("serve defaults on the installed instance: %+v", s)
 	}
 }

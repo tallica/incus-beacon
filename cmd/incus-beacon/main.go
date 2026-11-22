@@ -460,18 +460,22 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 		return err
 	}
 	return install.Install(ctx, srv, install.Options{
-		Name:        c.Name,
-		Image:       image,
-		StoragePool: c.StoragePool,
-		APIURL:      c.APIURL,
-		Projects:    c.Projects,
-		Watch:       c.Watch,
-		Events:      c.Events,
-		Track:       c.Track,
-		NotifyURLs:  c.NotifyURLs,
-		NotifyErrs:  c.NotifyErrs,
-		Wait:        c.Wait,
-		Log:         logger,
+		Name:         c.Name,
+		Image:        image,
+		StoragePool:  c.StoragePool,
+		APIURL:       c.APIURL,
+		Projects:     c.Projects,
+		Watch:        c.Watch,
+		Events:       c.Events,
+		Track:        c.Track,
+		NotifyURLs:   c.NotifyURLs,
+		NotifyErrs:   c.NotifyErrs,
+		Interval:     c.Interval,
+		Cooldown:     c.Cooldown,
+		Update:       c.Update,
+		UpdateWindow: c.UpdateWindow,
+		Wait:         c.Wait,
+		Log:          logger,
 	})
 }
 

@@ -57,6 +57,7 @@ incus-beacon install --remote <remote>
 # add --events to check new and rebuilt instances at once, not on the interval
 # add --track digest to report only rebuilds of the instance's own tag
 # add --notify-url <url> (repeatable) and --notify-errors for notifications
+# add --update, --update-window, --cooldown or --interval, as serve takes them
 ```
 
 In the remote's current project, or the one after the colon, it creates a volume
@@ -73,6 +74,15 @@ instance, its volume and its certificate, finding the instance in whichever
 project it is in. An instance installed before 0.6 is called `incus-beacon`:
 `upgrade` and `uninstall` find it under that name when `--name` isn't given, and
 `install` refuses to add a second beacon beside it.
+
+`install` passes most of its settings to the instance's `serve` as
+`environment.BEACON_*` keys, which `upgrade` keeps. A `serve` flag `install`
+doesn't take is set the same way, then the instance restarted:
+
+```sh
+incus config set incus-beacond environment.BEACON_UPDATE_KEEP=5
+incus restart incus-beacond
+```
 
 When the instance reports a newer release of itself, install that release of the
 CLI and run `incus-beacon upgrade --remote <remote>`. It rebuilds the instance
@@ -194,24 +204,25 @@ environment variable named after it: `--server-fingerprint` is
 `BEACON_SERVER_FINGERPRINT`; a flag on the command line wins. The ones most
 often needed:
 
-| Flag                                       | Purpose                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`         |
-| `--remote <remote>:<project>`              | Also the project `install` puts the instance in                                  |
-| `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                             |
-| `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)                |
-| `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir       |
-| `--token-file`                             | Read the token from a file instead, as `install` sets up                         |
-| `--project`                                | Project to watch, or several comma-separated; all visible ones by default        |
-| `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones      |
-| `--format`                                 | `table` or `json`, for `check` and `status`                                      |
-| `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`          |
-| `--cooldown`                               | Report an image only once it is this old, e.g. `48h`; off by default             |
-| `--update`, `--update-window`              | Let `serve` apply updates to `update=auto` instances, at any time or in a window |
-| `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                              |
-| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default       |
-| `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)            |
-| `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`        |
+| Flag                                       | Purpose                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `--remote`                                 | An `incus` CLI remote; the CLI's default when neither this nor `--incus`                    |
+| `--remote <remote>:<project>`              | Also the project `install` puts the instance in                                             |
+| `--incus`, `--client-cert`, `--client-key` | Connect over HTTPS with a trusted client certificate                                        |
+| `--server-fingerprint`                     | Pin the server's certificate (SHA-256, as `incus info` prints it)                           |
+| `--token`, `--state-dir`                   | Join with a one-time trust token; keep the certificate it earns in the dir                  |
+| `--token-file`                             | Read the token from a file instead, as `install` sets up                                    |
+| `--project`                                | Project to watch, or several comma-separated; all visible ones by default                   |
+| `--watch`                                  | `all` OCI instances (default), or `opt-in` to watch only `enable=true` ones                 |
+| `--format`                                 | `table` or `json`, for `check` and `status`                                                 |
+| `--events`                                 | Check new, changed and rebuilt instances at once; `serve` and `install`                     |
+| `--cooldown`                               | Report an image only once it is this old, e.g. `48h`; off by default; also `install`        |
+| `--interval`                               | Time between `serve` cycles; `serve` and `install`                                          |
+| `--update`, `--update-window`              | Apply updates to `update=auto` instances, at any time or in a window; `serve` and `install` |
+| `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                                         |
+| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default                  |
+| `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)                       |
+| `--log-color`                              | Console log colour: `auto` (default, terminals only), `never` or `always`                   |
 
 ### Instance keys
 

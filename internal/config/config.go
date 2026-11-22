@@ -155,6 +155,11 @@ type Install struct {
 	Track       string
 	NotifyURLs  []string
 	NotifyErrs  bool
+	// The serve settings install passes on; README shows how to set the rest.
+	Interval     time.Duration
+	Cooldown     time.Duration
+	Update       bool
+	UpdateWindow string
 }
 
 type Update struct {
@@ -328,6 +333,10 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.Track, "track", "", "how the instance follows its own image: digest or semver (default: semver for a version tag, else digest)")
 		fs.Var((*urlsValue)(&c.NotifyURLs), "notify-url", "where the instance sends notifications; stored in its state volume, not its config")
 		fs.BoolVar(&c.NotifyErrs, "notify-errors", false, "have the instance also notify when a check starts failing")
+		fs.DurationVar(&c.Interval, "interval", 0, "time between the instance's check cycles (default: serve's 6h)")
+		fs.DurationVar(&c.Cooldown, "cooldown", 0, "have the instance report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
+		fs.BoolVar(&c.Update, "update", false, "have the instance apply updates to instances that set user.incus-beacon.update=auto")
+		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in the instance's local time (UTC unless TZ is set), when its updates may run (default: any time)")
 		cfg.Install = c
 		validate = func() error {
 			errs := []error{c.validate()}
@@ -339,6 +348,17 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			}
 			if c.NotifyErrs && len(c.NotifyURLs) == 0 {
 				errs = append(errs, errors.New("notify-errors needs notify-url"))
+			}
+			if c.Interval != 0 && c.Interval < time.Minute {
+				errs = append(errs, fmt.Errorf("interval %s: must be at least 1m", c.Interval))
+			}
+			if c.Cooldown < 0 {
+				errs = append(errs, fmt.Errorf("cooldown %s: must not be negative", c.Cooldown))
+			}
+			if c.UpdateWindow != "" {
+				if _, err := policy.ParseWindow(c.UpdateWindow); err != nil {
+					errs = append(errs, err)
+				}
 			}
 			return errors.Join(errs...)
 		}

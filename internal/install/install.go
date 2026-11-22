@@ -44,8 +44,13 @@ type Options struct {
 	Track       string
 	NotifyURLs  []string
 	NotifyErrs  bool
-	Wait        time.Duration
-	Log         zerolog.Logger
+	// Serve settings for the instance; a zero value leaves serve's default.
+	Interval     time.Duration
+	Cooldown     time.Duration
+	Update       bool
+	UpdateWindow string
+	Wait         time.Duration
+	Log          zerolog.Logger
 }
 
 // DefaultName is what install calls the instance; legacyName is what it did before 0.6.
@@ -180,6 +185,18 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	}
 	if opts.Events {
 		env["environment.BEACON_EVENTS"] = "true"
+	}
+	if opts.Interval > 0 {
+		env["environment.BEACON_INTERVAL"] = opts.Interval.String()
+	}
+	if opts.Cooldown > 0 {
+		env["environment.BEACON_COOLDOWN"] = opts.Cooldown.String()
+	}
+	if opts.Update {
+		env["environment.BEACON_UPDATE"] = "true"
+	}
+	if opts.UpdateWindow != "" {
+		env["environment.BEACON_UPDATE_WINDOW"] = opts.UpdateWindow
 	}
 	env[policy.Prefix+"track"] = trackFor(opts.Track, opts.Image)
 	if len(opts.NotifyURLs) > 0 {

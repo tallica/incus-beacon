@@ -274,6 +274,23 @@ func TestInstallFlags(t *testing.T) {
 	if _, err := parse(t, nil, CmdInstall, "--client-cert", "c"); !errors.Is(err, ErrUsage) {
 		t.Errorf("install took a connection flag it doesn't use: err %v", err)
 	}
+	cfg, err = parse(t, nil, CmdInstall, "--update", "--update-window", "02:00-05:00", "--cooldown", "48h", "--interval", "1h")
+	if c := cfg.Install; err != nil || !c.Update || c.UpdateWindow != "02:00-05:00" || c.Cooldown != 48*time.Hour || c.Interval != time.Hour {
+		t.Errorf("install serve settings: %+v, %v", c, err)
+	}
+	cfg, err = parse(t, nil, CmdInstall)
+	if c := cfg.Install; err != nil || c.Update || c.UpdateWindow != "" || c.Cooldown != 0 || c.Interval != 0 {
+		t.Errorf("install leaves serve's defaults unset: %+v, %v", c, err)
+	}
+	for _, args := range [][]string{
+		{"--update-window", "25:00-26:00"},
+		{"--interval", "30s"},
+		{"--cooldown", "-1h"},
+	} {
+		if _, err := parse(t, nil, append([]string{CmdInstall}, args...)...); !errors.Is(err, ErrUsage) {
+			t.Errorf("install %v: err %v, want a usage error", args, err)
+		}
+	}
 	cfg, err = parse(t, nil, CmdUninstall, "--name", "b")
 	if err != nil || cfg.Uninstall.Name != "b" {
 		t.Errorf("uninstall: %+v, %v", cfg.Uninstall, err)
