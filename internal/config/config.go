@@ -146,16 +146,20 @@ type Notify struct {
 // Install binds only the log, remote and watch settings of Common.
 type Install struct {
 	Common
+	Settings
 	Name        string
 	Image       string
 	StoragePool string
-	APIURL      string
 	Wait        time.Duration
-	Events      bool
-	Track       string
-	NotifyURLs  []string
-	NotifyErrs  bool
-	// The serve settings install passes on; README shows how to set the rest.
+}
+
+// Settings are what install gives the instance; README shows how to set the rest.
+type Settings struct {
+	APIURL       string
+	Events       bool
+	Track        string
+	NotifyURLs   []string
+	NotifyErrs   bool
 	Interval     time.Duration
 	Cooldown     time.Duration
 	Update       bool
@@ -322,43 +326,19 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		c := &Install{}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
-		fs.Var((*csvValue)(&c.Projects), "project", "project to watch, and to restrict the certificate to; comma-separate several (default: all)")
-		fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
 		bindInstance(fs, &c.Name, "incus-beacond, refused beside an incus-beacon from before 0.6")
 		fs.StringVar(&c.Image, "image", "", "image to run (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
 		fs.StringVar(&c.StoragePool, "storage-pool", "", "pool for the state volume (default: the default profile's root pool)")
-		fs.StringVar(&c.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
 		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
-		fs.BoolVar(&c.Events, "events", false, "have the instance check instances as soon as they are created, updated or rebuilt")
-		fs.StringVar(&c.Track, "track", "", "how the instance follows its own image: digest or semver (default: semver for a version tag, else digest)")
-		fs.Var((*urlsValue)(&c.NotifyURLs), "notify-url", "where the instance sends notifications; stored in its state volume, not its config")
-		fs.BoolVar(&c.NotifyErrs, "notify-errors", false, "have the instance also notify when a check starts failing")
-		fs.DurationVar(&c.Interval, "interval", 0, "time between the instance's check cycles (default: serve's 6h)")
-		fs.DurationVar(&c.Cooldown, "cooldown", 0, "have the instance report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
-		fs.BoolVar(&c.Update, "update", false, "have the instance apply updates to instances that set user.incus-beacon.update=auto")
-		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in the instance's local time (UTC unless TZ is set), when its updates may run (default: any time)")
+		bindSettings(fs, &c.Common, &c.Settings)
 		cfg.Install = c
 		validate = func() error {
-			errs := []error{c.validate()}
+			errs := []error{c.Common.validate(), c.Settings.validate()}
 			if c.Wait <= 0 {
 				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
 			}
-			if c.Track != "" && c.Track != "digest" && c.Track != "semver" {
-				errs = append(errs, fmt.Errorf("track %q: must be digest or semver", c.Track))
-			}
 			if c.NotifyErrs && len(c.NotifyURLs) == 0 {
 				errs = append(errs, errors.New("notify-errors needs notify-url"))
-			}
-			if c.Interval != 0 && c.Interval < time.Minute {
-				errs = append(errs, fmt.Errorf("interval %s: must be at least 1m", c.Interval))
-			}
-			if c.Cooldown < 0 {
-				errs = append(errs, fmt.Errorf("cooldown %s: must not be negative", c.Cooldown))
-			}
-			if c.UpdateWindow != "" {
-				if _, err := policy.ParseWindow(c.UpdateWindow); err != nil {
-					errs = append(errs, err)
-				}
 			}
 			return errors.Join(errs...)
 		}
@@ -470,6 +450,40 @@ func bindCommon(fs *flag.FlagSet, c *Common) {
 
 	fs.Var((*csvValue)(&c.Projects), "project", "project to watch; comma-separate several (default: all)")
 	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
+}
+
+// bindSettings binds install's settings; never with bindCommon, which binds --project and --watch too.
+func bindSettings(fs *flag.FlagSet, c *Common, s *Settings) {
+	fs.Var((*csvValue)(&c.Projects), "project", "project to watch, and to restrict the certificate to; comma-separate several (default: all)")
+	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
+	fs.StringVar(&s.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
+	fs.BoolVar(&s.Events, "events", false, "have the instance check instances as soon as they are created, updated or rebuilt")
+	fs.StringVar(&s.Track, "track", "", "how the instance follows its own image: digest or semver (default: semver for a version tag, else digest)")
+	fs.Var((*urlsValue)(&s.NotifyURLs), "notify-url", "where the instance sends notifications; stored in its state volume, not its config")
+	fs.BoolVar(&s.NotifyErrs, "notify-errors", false, "have the instance also notify when a check starts failing")
+	fs.DurationVar(&s.Interval, "interval", 0, "time between the instance's check cycles (default: serve's 6h)")
+	fs.DurationVar(&s.Cooldown, "cooldown", 0, "have the instance report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
+	fs.BoolVar(&s.Update, "update", false, "have the instance apply updates to instances that set user.incus-beacon.update=auto")
+	fs.StringVar(&s.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in the instance's local time (UTC unless TZ is set), when its updates may run (default: any time)")
+}
+
+func (s *Settings) validate() error {
+	var errs []error
+	if s.Track != "" && s.Track != "digest" && s.Track != "semver" {
+		errs = append(errs, fmt.Errorf("track %q: must be digest or semver", s.Track))
+	}
+	if s.Interval != 0 && s.Interval < time.Minute {
+		errs = append(errs, fmt.Errorf("interval %s: must be at least 1m", s.Interval))
+	}
+	if s.Cooldown < 0 {
+		errs = append(errs, fmt.Errorf("cooldown %s: must not be negative", s.Cooldown))
+	}
+	if s.UpdateWindow != "" {
+		if _, err := policy.ParseWindow(s.UpdateWindow); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func bindUpdate(fs *flag.FlagSet, c *UpdateFlags) {
