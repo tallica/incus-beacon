@@ -173,9 +173,11 @@ ref is the tracked ref at the `latest` tag.
 5. **Release** the claim and record the outcome in one write, with `applied` and
    `applied-image` naming the ref and image the instance is left on:
    `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback
-   failed too) or `refused`. After a success, beacon's snapshots beyond
-   `--update-keep` per volume are pruned, outside the claim, so a slow delete
-   can't outlast its lease and get the update rolled back.
+   failed too) or `refused`. After `updated` or `rolled-back`, beacon's
+   snapshots beyond `--update-keep` per volume are pruned, outside the claim, so
+   a slow delete can't outlast its lease and get the update rolled back. Pruning
+   after a rollback keeps updates that keep failing from piling up snapshots;
+   after `failed` every snapshot stays, for a recovery by hand.
 
 A claim holds for 30 minutes plus twice `--update-wait` past its last step. A
 claim older than that is taken as abandoned by a process that died. The next

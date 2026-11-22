@@ -424,6 +424,9 @@ func TestApplyRollsBackWhenTheInstanceStops(t *testing.T) {
 		cfg["user.incus-beacon.applied"] != oldRef || cfg["user.incus-beacon.applied-image"] != "fp-old" {
 		t.Errorf("update keys %v", cfg)
 	}
+	if snaps := f.volSnaps["default/web-data"]; len(snaps) != 4 || slices.Contains(snaps, "incus-beacon-20260101T000000") {
+		t.Errorf("snapshots %v; want a rollback to prune the oldest of beacon's too", snaps)
+	}
 }
 
 func withHealth(f *fake, report func(n int) string) *fake {
@@ -482,6 +485,9 @@ func TestApplyFailsWhenTheRollbackFails(t *testing.T) {
 	}
 	if f.inst.Config["user.incus-beacon.update-status"] != Failed {
 		t.Errorf("update keys %v", f.inst.Config)
+	}
+	if snaps := f.volSnaps["default/web-data"]; len(snaps) != 5 {
+		t.Errorf("snapshots %v; want every one kept after a failed rollback", snaps)
 	}
 }
 
@@ -660,7 +666,7 @@ func TestApplyPrunesAfterTheRelease(t *testing.T) {
 	f := newFake()
 	f.hangDel = true
 	opts := options()
-	opts.Lease = 100 * time.Millisecond
+	opts.Lease, opts.pruneWait = time.Minute, 100*time.Millisecond
 	o, err := Apply(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef}, opts)
 	if err != nil || o.Status != Updated {
 		t.Fatalf("outcome %+v, %v; want a hung prune to leave the update standing", o, err)

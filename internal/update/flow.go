@@ -56,6 +56,8 @@ type Options struct {
 	Owner string        // names this process in a claim
 	Now   func() time.Time
 	Log   zerolog.Logger
+	// pruneWait bounds the wait only: Incus finishes a delete it has accepted.
+	pruneWait time.Duration
 }
 
 func (o Options) withDefaults() Options {
@@ -64,6 +66,7 @@ func (o Options) withDefaults() Options {
 	o.Settle = cmp.Or(o.Settle, 30*time.Second)
 	o.Lease = cmp.Or(o.Lease, 30*time.Minute+2*o.Wait)
 	o.Every = cmp.Or(o.Every, 2*time.Second)
+	o.pruneWait = cmp.Or(o.pruneWait, 5*time.Minute)
 	if o.Owner == "" {
 		host, _ := os.Hostname()
 		o.Owner = cmp.Or(host, "incus-beacon") + "/" + strconv.Itoa(os.Getpid())
@@ -276,11 +279,15 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 	}
 	u.o.Status = Updated
 	u.log.Info().Msg("updated")
+	return u.releaseAndPrune(ctx)
+}
+
+// releaseAndPrune prunes outside the claim: docs/ARCHITECTURE.md#updating says why.
+func (u *updater) releaseAndPrune(ctx context.Context) (Outcome, error) {
 	if err := u.release(ctx); err != nil {
 		return u.o, err
 	}
-	// Outside the claim: docs/ARCHITECTURE.md#updating says why.
-	ctx, cancel := context.WithTimeout(ctx, u.opts.Lease)
+	ctx, cancel := context.WithTimeout(ctx, u.opts.pruneWait)
 	defer cancel()
 	u.prune(ctx)
 	return u.o, nil
@@ -364,7 +371,7 @@ func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome,
 	}
 	u.o.Status = RolledBack
 	u.log.Warn().Str("reason", cause).Msg("rolled back")
-	return u.o, u.release(ctx)
+	return u.releaseAndPrune(ctx)
 }
 
 // bounded keeps a step or undo inside the claim's lease, so a hung call can't race a takeover.
