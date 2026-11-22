@@ -277,8 +277,9 @@ They change only when a value does, so a quiet check leaves no trace in
 
 `update --instance <name>` updates one instance that `check` finds
 `update-available`, then prints what it did. `--dry-run` runs the same checks
-and prints what it would do, without changing anything; like a real run, it
-exits non-zero when the update would be refused.
+and prints what it would do without changing anything: an interrupted update is
+reported as one it would roll back, and left as it is. Like a real run, it exits
+non-zero when it would refuse or roll back.
 
 ```sh
 incus-beacon update --remote site --instance web --dry-run

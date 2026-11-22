@@ -30,8 +30,9 @@ const (
 	RolledBack = "rolled-back"
 	Failed     = "failed" // the rollback failed too
 	Refused    = "refused"
-	// Ready is Preview's outcome when Apply would go ahead; it is never written.
-	Ready = "ready"
+	// Ready and Recover are Preview's outcomes, never written: Apply would update, or roll back an interrupted update.
+	Ready   = "ready"
+	Recover = "recover"
 )
 
 const (
@@ -192,7 +193,11 @@ func Preview(ctx context.Context, srv incusclient.InstanceServer, reg Registry, 
 		return u.o
 	}
 	if u.c.Owner != "" {
-		u.o.Status, u.o.Reason = Refused, "an interrupted update by "+u.c.Owner+" would be rolled back first"
+		step, cause := u.interrupted(u.c)
+		u.o.Status, u.o.Reason, u.o.To, u.o.From = Recover, cause, u.c.To, cmp.Or(u.c.FromRef, u.o.From)
+		if step < 0 {
+			u.o.Status = Refused
+		}
 		return u.o
 	}
 	u.o.Status = Ready
@@ -322,8 +327,8 @@ func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 		pool, name, _ := strings.Cut(v, "/")
 		u.vols = append(u.vols, volume{pool: pool, name: name})
 	}
-	steps := u.steps()
-	u.c.Step = min(c.Step, len(steps)-1)
+	var cause string
+	u.c.Step, cause = u.interrupted(c)
 	u.c.Owner, u.c.Expires = u.opts.Owner, u.opts.Now().Add(u.opts.Lease)
 	if err := u.write(ctx, func(cfg map[string]string) error {
 		if cfg[incus.ClaimKey] == "" {
@@ -333,12 +338,19 @@ func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 	}); err != nil {
 		return u.refuse(ctx, "take over the abandoned claim of "+c.Owner+": "+err.Error())
 	}
-	cause := "the update by " + c.Owner + " was interrupted"
-	if u.c.Step >= 0 {
-		cause += " at " + steps[u.c.Step].name
-	}
 	u.log.Warn().Str("reason", cause).Msg("recovering")
 	return u.unwind(ctx, u.c.Step, cause)
+}
+
+// interrupted gives the last step c began, -1 for none, and the reason a rollback from it carries.
+func (u *updater) interrupted(c claim) (int, string) {
+	steps := u.steps()
+	step := min(c.Step, len(steps)-1)
+	cause := "the update by " + c.Owner + " was interrupted"
+	if step < 0 {
+		return step, cause + " before its first step"
+	}
+	return step, cause + " at " + steps[step].name
 }
 
 func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome, error) {

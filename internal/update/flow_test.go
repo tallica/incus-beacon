@@ -343,6 +343,30 @@ func TestApplyRefusesWhileClaimed(t *testing.T) {
 	}
 }
 
+func TestPreviewAnAbandonedClaim(t *testing.T) {
+	t.Parallel()
+	expired := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tt := range []struct {
+		step   int
+		status string
+		reason string
+	}{
+		{stepIndex(t, "rebuild"), Recover, "by other/7 was interrupted at rebuild"},
+		{-1, Refused, "by other/7 was interrupted before its first step"},
+	} {
+		f := newFake()
+		raw := claimJSON(t, claim{Owner: "other/7", Expires: expired, Step: tt.step, To: newRef, FromRef: oldRef, From: "fp-old"})
+		f.inst.Config[incus.ClaimKey] = raw
+		o := Preview(context.Background(), f, fakeRegistry{}, target(), Next{}, options())
+		if o.Status != tt.status || !strings.Contains(o.Reason, tt.reason) || o.From != oldRef || o.To != newRef {
+			t.Errorf("step %d: outcome %+v", tt.step, o)
+		}
+		if f.inst.Config[incus.ClaimKey] != raw || len(f.states) != 0 || len(f.rebuilds) != 0 {
+			t.Errorf("step %d: preview changed the instance: config %v, states %v", tt.step, f.inst.Config, f.states)
+		}
+	}
+}
+
 func TestApplyRecoversAnAbandonedClaim(t *testing.T) {
 	t.Parallel()
 	f := newFake()

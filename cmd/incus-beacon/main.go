@@ -181,6 +181,10 @@ func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, std
 	if t := targets[0]; t.Claim != "" {
 		if c.DryRun {
 			o := update.Preview(ctx, srv, reg, t, update.Next{}, opts)
+			if o.Status == update.Recover {
+				fmt.Fprintf(stdout, "%s/%s: would roll back to %s: %s\n", t.Project, t.Instance, o.From, o.Reason)
+				return fmt.Errorf("would roll back: %s", o.Reason)
+			}
 			fmt.Fprintf(stdout, "%s/%s: would refuse: %s\n", t.Project, t.Instance, o.Reason)
 			return fmt.Errorf("%s: %s", update.Refused, o.Reason)
 		}
