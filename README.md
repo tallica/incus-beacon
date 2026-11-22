@@ -90,10 +90,10 @@ it lives in another project.
 
 #### By hand
 
-The image runs `incus-beacond`, which is `serve` (not yet tried on a published
-image, to verify), as uid 65534, listens on port 9153 and keeps its client
-certificate in `/var/lib/incus-beacon`. It joins Incus with a one-time trust
-token, which also carries the server's fingerprint for pinning.
+The image runs `incus-beacond`, which is `serve`, as uid 65534, listens on port
+9153 and keeps its client certificate in `/var/lib/incus-beacon`. It joins Incus
+with a one-time trust token, which also carries the server's fingerprint for
+pinning.
 
 1. Create a volume owned by uid 65534, so the certificate survives the instance
    being rebuilt for a new image:
