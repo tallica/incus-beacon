@@ -28,15 +28,9 @@ var readyProbe = []string{"wget", "-q", "-O", "/dev/null", "http://127.0.0.1:915
 
 // Upgrade follows docs/ARCHITECTURE.md#connecting-to-incus.
 func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOptions) error {
-	srv, inst, err := findInstance(srv, opts.Name, opts.Log)
-	if notFound(err) {
-		return fmt.Errorf("instance %s not found; install it first", opts.Name)
-	}
+	srv, inst, err := installed(srv, opts.Name, opts.Log)
 	if err != nil {
 		return err
-	}
-	if inst.Devices[stateDev]["source"] != VolumeName(opts.Name) || inst.Config["environment.BEACON_TOKEN_FILE"] != tokenFile {
-		return fmt.Errorf("instance %s was not created by install", opts.Name)
 	}
 	server, alias, err := update.SplitImage(opts.Image)
 	if err != nil {
@@ -70,7 +64,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 		err = update.SetState(ctx, srv, opts.Name, "start")
 	}
 	if err == nil {
-		err = update.Poll(ctx, opts.Wait, 2*time.Second, func(ctx context.Context) error { return probe(ctx, srv, opts.Name) })
+		err = waitReady(ctx, srv, opts.Name, opts.Wait)
 	}
 	if err == nil {
 		opts.Log.Info().Str("instance", opts.Name).Str("image", opts.Image).Msg("upgraded and ready")
@@ -92,6 +86,21 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	return fmt.Errorf("%w; rolled back to %s", err, from)
 }
 
+// installed finds the instance called name, refusing one install didn't create; uninstall tolerates any, or none.
+func installed(srv incusclient.InstanceServer, name string, log zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+	srv, inst, err := findInstance(srv, name, log)
+	if notFound(err) {
+		return srv, nil, fmt.Errorf("instance %s not found; install it first", name)
+	}
+	if err != nil {
+		return srv, nil, err
+	}
+	if inst.Devices[stateDev]["source"] != VolumeName(name) || inst.Config["environment.BEACON_TOKEN_FILE"] != tokenFile {
+		return srv, nil, fmt.Errorf("instance %s was not created by install", name)
+	}
+	return srv, inst, nil
+}
+
 // older is true only for two version tags of one shape, such as 0.4 and 0.5.
 func older(tag, than string) bool {
 	v, ok := semver.Parse(tag)
@@ -106,6 +115,10 @@ func tagOf(ref string) string {
 		return ""
 	}
 	return ref[i+1:]
+}
+
+func waitReady(ctx context.Context, srv incusclient.InstanceServer, name string, wait time.Duration) error {
+	return update.Poll(ctx, wait, 2*time.Second, func(ctx context.Context) error { return probe(ctx, srv, name) })
 }
 
 func probe(ctx context.Context, srv incusclient.InstanceServer, name string) error {
