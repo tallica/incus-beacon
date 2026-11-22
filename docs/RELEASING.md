@@ -18,6 +18,12 @@ version, not after every fix.
 - **minor**: new features, flags or settings.
 - **patch**: fixes only.
 
+A beta is the next version with a `-beta.N` suffix, such as `v0.6.0-beta.1`.
+GitHub marks it a prerelease, and its image is tagged only with that version,
+not `major.minor` or `latest`. A beta binary's `install` defaults to `latest`,
+so installing the beta needs
+`--image ghcr.io/tallica/incus-beacon:X.Y.Z-beta.N`.
+
 ## Steps
 
 1. `git fetch -q` and confirm `master` is clean and up to date with its remote.
