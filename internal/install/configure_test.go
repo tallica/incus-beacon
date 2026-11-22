@@ -1,7 +1,10 @@
 package install
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -11,6 +14,8 @@ import (
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
+
+	"github.com/tallica/incus-beacon/internal/config"
 )
 
 func (f *fake) UpdateInstance(name string, put api.InstancePut, _ string) (incusclient.Operation, error) {
@@ -31,6 +36,9 @@ func (f *fake) GetCertificate(fp string) (*api.Certificate, string, error) {
 
 func (f *fake) UpdateCertificate(fp string, put api.CertificatePut, _ string) error {
 	f.calls = append(f.calls, "update cert "+fp)
+	if f.failCert != nil {
+		return f.failCert
+	}
 	for i := range f.certs {
 		if f.certs[i].Fingerprint == fp {
 			f.certs[i].CertificatePut = put
@@ -61,8 +69,15 @@ func TestConfigure(t *testing.T) {
 	o.Update = new(true)
 	o.UpdateWindow = new("02:00-05:00")
 	o.Watch = new("opt-in")
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
 	if err := Configure(context.Background(), f, o); err != nil {
 		t.Fatal(err)
+	}
+	for _, r := range checkAudit(t, &buf, "configure begin", "configure done") {
+		if got := fmt.Sprint(r["settings"]); got != "[watch interval update update-window]" {
+			t.Errorf("settings %s, want the four changed", got)
+		}
 	}
 	s := serveFrom(t, f.instances["incus-beacon"])
 	if s.Interval != time.Hour || !s.Update || s.UpdateWindow != "02:00-05:00" || s.Watch != "opt-in" {
@@ -108,8 +123,16 @@ func TestConfigureNotifyURLs(t *testing.T) {
 	o := configureOpts()
 	o.NotifyURLs = &[]string{"https://example.com/hook"}
 	o.NotifyErrs = new(true)
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
 	if err := Configure(context.Background(), f, o); err != nil {
 		t.Fatal(err)
+	}
+	if r := checkAudit(t, &buf, "configure begin", "configure done"); fmt.Sprint(r[0]["settings"]) != "[notify-url notify-errors]" {
+		t.Errorf("settings %v, want notify-url and notify-errors", r[0]["settings"])
+	}
+	if strings.Contains(buf.String(), "example.com") {
+		t.Errorf("a notification URL reached the audit log: %s", buf.String())
 	}
 	if got := f.readVolumeFile(t, "/"+notifyFile); got != "https://example.com/hook\n" {
 		t.Errorf("volume file %q", got)
@@ -155,9 +178,14 @@ func TestConfigureRollsBack(t *testing.T) {
 	o.Interval = new(time.Hour)
 	o.NotifyURLs = &[]string{"https://example.com/new"}
 	o.Projects = &[]string{"apps"}
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
 	err := Configure(context.Background(), f, o)
 	if err == nil || !strings.Contains(err.Error(), "not ready within") || !strings.Contains(err.Error(), "rolled back to the old settings, which are ready") {
 		t.Fatalf("err %v, want not ready and rolled back", err)
+	}
+	if r := checkAudit(t, &buf, "configure begin", "configure.rollback begin", "configure.rollback done", "configure failed"); fmt.Sprint(r[0]["settings"]) != "[project notify-url interval]" {
+		t.Errorf("settings %v, want project, notify-url and interval", r[0]["settings"])
 	}
 	if got := f.instances["incus-beacon"].Config; !maps.Equal(got, want) {
 		t.Errorf("config %v, want %v", got, want)
@@ -170,6 +198,44 @@ func TestConfigureRollsBack(t *testing.T) {
 	}
 	if !slices.Equal(f.states, []string{"stop", "start", "stop", "start"}) {
 		t.Errorf("states %v", f.states)
+	}
+}
+
+func TestSettingKeysCoverEveryFlag(t *testing.T) {
+	t.Parallel()
+	flags := make([]string, 0, len(settingKeys))
+	for _, s := range settingKeys {
+		flags = append(flags, s.flag)
+	}
+	want := config.SettingFlags()
+	slices.Sort(flags)
+	slices.Sort(want)
+	if !slices.Equal(flags, want) {
+		t.Errorf("settingKeys names %v, want configure's flags %v", flags, want)
+	}
+}
+
+func TestConfigureRollsBackAFailedWrite(t *testing.T) {
+	t.Parallel()
+	f := configuredFake()
+	f.failCert = errors.New("certificate locked")
+	o := configureOpts()
+	o.Interval = new(time.Hour)
+	o.Projects = &[]string{"apps"}
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
+	if err := Configure(context.Background(), f, o); err == nil || !strings.Contains(err.Error(), "certificate locked") {
+		t.Fatalf("err %v, want the certificate update's", err)
+	}
+	r := checkAudit(t, &buf, "configure begin", "configure.rollback begin", "configure.rollback failed", "configure failed")
+	if !strings.Contains(fmt.Sprint(r[2]["error"]), "certificate locked") {
+		t.Errorf("rollback record %v, want the undo's error", r[2])
+	}
+	if _, ok := f.instances["incus-beacon"].Config[envPrefix+"INTERVAL"]; ok {
+		t.Error("interval kept, want the instance keys undone")
+	}
+	if !slices.Equal(f.states, []string{"stop", "start"}) {
+		t.Errorf("states %v, want it started again", f.states)
 	}
 }
 
@@ -227,9 +293,14 @@ func TestConfigureWithoutRestart(t *testing.T) {
 		f := configuredFake()
 		o := configureOpts()
 		tt.setup(f, &o)
+		var buf bytes.Buffer
+		o.Audit = zerolog.New(&buf)
 		if err := Configure(context.Background(), f, o); err != nil {
 			t.Errorf("%s: %v", tt.name, err)
 			continue
+		}
+		if tt.calls == nil && buf.Len() > 0 {
+			t.Errorf("%s: audited %s, want a no-op unrecorded", tt.name, buf.String())
 		}
 		if len(f.states) != 0 {
 			t.Errorf("%s: states %v, want no restart", tt.name, f.states)

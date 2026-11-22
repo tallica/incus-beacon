@@ -35,12 +35,13 @@ type ConfigureOptions struct {
 	UpdateWindow *string
 	Wait         time.Duration
 	Log          zerolog.Logger
+	Audit        zerolog.Logger // as for Options; a no-op configure writes none
 }
 
 const envPrefix = "environment.BEACON_"
 
 // Configure follows docs/ARCHITECTURE.md#connecting-to-incus.
-func Configure(ctx context.Context, srv incusclient.InstanceServer, opts ConfigureOptions) error {
+func Configure(ctx context.Context, srv incusclient.InstanceServer, opts ConfigureOptions) (err error) {
 	srv, inst, err := installed(srv, opts.Name, opts.Log)
 	if err != nil {
 		return err
@@ -74,6 +75,9 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 		opts.Log.Info().Str("instance", name).Msg("settings already as given; nothing changed")
 		return nil
 	}
+	audit := auditOf(opts.Audit, inst.Project, name).With().Strs("settings", changed(before, cfg, urlsChange, certChange)).Logger()
+	begin(audit, "configure").Send()
+	defer func() { end(audit, "configure", err).Send() }()
 	running := inst.StatusCode != api.Stopped
 	// A track change alone needs no restart: serve reads policy keys every cycle.
 	restart := running && (urlsChange || !maps.Equal(envOf(cfg), envOf(before)))
@@ -107,11 +111,13 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 		}
 	}
 	if err := apply(before, cfg, newURLs, newProjects); err != nil {
-		err = errors.Join(fmt.Errorf("configure %s: %w", name, err), undo())
+		begin(audit, "configure.rollback").Send()
+		rerr := undo()
 		if restart {
-			err = errors.Join(err, update.SetState(ctx, srv, name, "start"))
+			rerr = errors.Join(rerr, update.SetState(ctx, srv, name, "start"))
 		}
-		return err
+		end(audit, "configure.rollback", rerr).Send()
+		return errors.Join(fmt.Errorf("configure %s: %w", name, err), rerr)
 	}
 	opts.Log.Info().Str("instance", name).Msg("settings changed")
 	switch {
@@ -129,6 +135,7 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 	}
 	err = fmt.Errorf("configure %s: %w", name, err)
 	opts.Log.Warn().Err(err).Msg("rolling back")
+	begin(audit, "configure.rollback").Send()
 	// The old settings come back running, as the instance was before configure, whether the start or the probe failed.
 	rerr := stopIfRunning(ctx, srv, name)
 	if rerr == nil {
@@ -137,10 +144,37 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 	if rerr == nil {
 		rerr = startReady(ctx, srv, name, opts.Wait)
 	}
+	end(audit, "configure.rollback", rerr).Send()
 	if rerr != nil {
 		return errors.Join(err, fmt.Errorf("roll back: %w", rerr))
 	}
 	return fmt.Errorf("%w; rolled back to the old settings, which are ready", err)
+}
+
+// settingKeys maps each configure flag to the instance key it sets.
+var settingKeys = []struct{ flag, key string }{
+	{"api-url", envPrefix + "INCUS"},
+	{"project", envPrefix + "PROJECT"},
+	{"watch", envPrefix + "WATCH"},
+	{"events", envPrefix + "EVENTS"},
+	{"track", policy.Prefix + "track"},
+	{"notify-url", envPrefix + "NOTIFY_URL_FILE"},
+	{"notify-errors", envPrefix + "NOTIFY_ERRORS"},
+	{"interval", envPrefix + "INTERVAL"},
+	{"cooldown", envPrefix + "COOLDOWN"},
+	{"update", envPrefix + "UPDATE"},
+	{"update-window", envPrefix + "UPDATE_WINDOW"},
+}
+
+// changed names the settings that differ, never their values: notify URLs hold tokens.
+func changed(before, after map[string]string, urls, cert bool) []string {
+	var names []string
+	for _, s := range settingKeys {
+		if before[s.key] != after[s.key] || s.flag == "notify-url" && urls || s.flag == "project" && cert {
+			names = append(names, s.flag)
+		}
+	}
+	return names
 }
 
 func configured(srv incusclient.InstanceServer, inst *api.Instance, opts ConfigureOptions) (map[string]string, error) {

@@ -17,9 +17,9 @@ get an entry.
 
 - `incus-beacon configure` changes the settings `install` gave beacon's
   instance, then restarts it, rolling back if `/ready` never answers.
-- `--audit-log` makes `serve` and `update` append one JSON line per update step,
-  undo, snapshot and outcome to a file they rotate by size
-  (`--audit-log-max-size`, `--audit-log-keep`).
+- `--audit-log` makes `serve`, `update`, `install`, `configure`, `upgrade` and
+  `uninstall` append a JSON line per change and update outcome to a size-rotated
+  file.
 
 ### Fixed
 

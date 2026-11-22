@@ -476,7 +476,7 @@ func TestCheckServeEnv(t *testing.T) {
 
 func TestAuditFlags(t *testing.T) {
 	t.Parallel()
-	for _, cmd := range [][]string{{CmdServe}, {CmdUpdate, "--instance", "web"}} {
+	for _, cmd := range [][]string{{CmdServe}, {CmdUpdate, "--instance", "web"}, {CmdInstall}, {CmdConfigure, "--events"}, {CmdUpgrade}, {CmdUninstall}} {
 		cfg, err := parse(t, nil, cmd...)
 		if err != nil {
 			t.Fatal(err)
@@ -511,8 +511,10 @@ func TestAuditFlags(t *testing.T) {
 			}
 		}
 	}
-	if _, err := parse(t, nil, CmdCheck, "--audit-log", "/tmp/a"); !errors.Is(err, ErrUsage) {
-		t.Errorf("check --audit-log: err %v, want a usage error", err)
+	for _, cmd := range []string{CmdCheck, CmdStatus} {
+		if _, err := parse(t, nil, cmd, "--audit-log", "/tmp/a"); !errors.Is(err, ErrUsage) {
+			t.Errorf("%s --audit-log: err %v, want a usage error", cmd, err)
+		}
 	}
 	cfg, err := parse(t, map[string]string{"BEACON_AUDIT_LOG_MAX_SIZE": "bad"}, CmdCheck)
 	if err != nil {

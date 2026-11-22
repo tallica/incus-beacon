@@ -63,6 +63,12 @@ type Options struct {
 	pruneWait time.Duration
 }
 
+// Process names this process as host/pid, in a claim and as an audit record's by.
+func Process() string {
+	host, _ := os.Hostname()
+	return cmp.Or(host, "incus-beacon") + "/" + strconv.Itoa(os.Getpid())
+}
+
 func (o Options) withDefaults() Options {
 	o.StopTimeout = cmp.Or(o.StopTimeout, 30*time.Second)
 	o.Wait = cmp.Or(o.Wait, 5*time.Minute)
@@ -70,10 +76,7 @@ func (o Options) withDefaults() Options {
 	o.Lease = cmp.Or(o.Lease, 30*time.Minute+o.Wait)
 	o.Every = cmp.Or(o.Every, 2*time.Second)
 	o.pruneWait = cmp.Or(o.pruneWait, 5*time.Minute)
-	if o.Owner == "" {
-		host, _ := os.Hostname()
-		o.Owner = cmp.Or(host, "incus-beacon") + "/" + strconv.Itoa(os.Getpid())
-	}
+	o.Owner = cmp.Or(o.Owner, Process())
 	if o.Now == nil {
 		o.Now = time.Now
 	}

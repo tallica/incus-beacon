@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
@@ -39,6 +40,7 @@ func installedFake() *fake {
 	f := newFake()
 	f.instances["incus-beacon"] = &api.Instance{
 		Name:       "incus-beacon",
+		Project:    "default",
 		StatusCode: api.Running,
 		InstancePut: api.InstancePut{
 			Config: map[string]string{
@@ -60,8 +62,16 @@ func upgradeOpts(image string) UpgradeOptions {
 func TestUpgrade(t *testing.T) {
 	t.Parallel()
 	f := installedFake()
-	if err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")); err != nil {
+	o := upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
+	if err := Upgrade(context.Background(), f, o); err != nil {
 		t.Fatal(err)
+	}
+	for _, r := range checkAudit(t, &buf, "upgrade begin", "upgrade done") {
+		if r["project"] != "default" || r["from"] != oldImage || r["from_image"] != "fp-old" || r["image"] != o.Image {
+			t.Errorf("record %v: want project, from, from_image and image", r)
+		}
 	}
 	want := []api.InstanceSource{{Type: "image", Protocol: "oci", Server: "https://ghcr.io", Alias: "tallica/incus-beacon:0.5"}}
 	if !reflect.DeepEqual(f.rebuilds, want) {
@@ -95,10 +105,14 @@ func TestUpgradeRollsBackAFailedRebuild(t *testing.T) {
 	t.Parallel()
 	f := installedFake()
 	f.failRebuild = errors.New("Failed getting remote image info")
-	err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5"))
+	o := upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
+	err := Upgrade(context.Background(), f, o)
 	if err == nil || !strings.Contains(err.Error(), "rolled back to "+oldImage) {
 		t.Fatalf("err %v, want rolled back", err)
 	}
+	checkAudit(t, &buf, "upgrade begin", "upgrade.rollback begin", "upgrade.rollback done", "upgrade failed")
 	if !slices.Equal(f.states, []string{"stop", "start"}) || f.instances["incus-beacon"].StatusCode != api.Running {
 		t.Errorf("states %v, want the instance started again without a second stop", f.states)
 	}
@@ -134,12 +148,18 @@ func TestUpgradeRefuses(t *testing.T) {
 	for _, tt := range tests {
 		f := installedFake()
 		tt.setup(f)
-		err := Upgrade(context.Background(), f, upgradeOpts(tt.image))
+		o := upgradeOpts(tt.image)
+		var buf bytes.Buffer
+		o.Audit = zerolog.New(&buf)
+		err := Upgrade(context.Background(), f, o)
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: err %v, want %q", tt.name, err, tt.want)
 		}
 		if len(f.states) != 0 || len(f.rebuilds) != 0 {
 			t.Errorf("%s: states %v, rebuilds %v, want the instance untouched", tt.name, f.states, f.rebuilds)
+		}
+		if buf.Len() > 0 {
+			t.Errorf("%s: audited %s, want a refusal unrecorded", tt.name, buf.String())
 		}
 	}
 }

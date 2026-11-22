@@ -51,6 +51,7 @@ type Options struct {
 	UpdateWindow string
 	Wait         time.Duration
 	Log          zerolog.Logger
+	Audit        zerolog.Logger // gets begin and done or failed; the zero Logger writes none
 }
 
 // DefaultName is what install calls the instance; legacyName is what it did before 0.6.
@@ -99,8 +100,30 @@ func trackFor(track, image string) string {
 	return policy.TrackDigest
 }
 
+// auditOf adds by, the instance and, where install found it, the instance's project.
+func auditOf(audit zerolog.Logger, project, name string) zerolog.Logger {
+	c := audit.With().Str("by", update.Process())
+	if project != "" {
+		c = c.Str("project", project)
+	}
+	return c.Str("instance", name).Logger()
+}
+
+func begin(audit zerolog.Logger, event string) *zerolog.Event {
+	return audit.Log().Str("event", event).Str("phase", "begin")
+}
+
+// end is event's done record, or failed with err.
+func end(audit zerolog.Logger, event string, err error) *zerolog.Event {
+	phase := "done"
+	if err != nil {
+		phase = "failed"
+	}
+	return audit.Log().Str("event", event).Str("phase", phase).Err(err)
+}
+
 // Install undoes what it created if a step before the start fails.
-func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) error {
+func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) (err error) {
 	if opts.Name == "" {
 		if _, _, err := findInstance(srv, legacyName, opts.Log); err == nil {
 			return fmt.Errorf("an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another", legacyName)
@@ -136,6 +159,10 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if err != nil {
 		return err
 	}
+
+	audit := auditOf(opts.Audit, "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Logger()
+	begin(audit, "install").Send()
+	defer func() { end(audit, "install", err).Send() }()
 
 	var undo []func() error
 	rollback := func(err error) error {
@@ -245,13 +272,34 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	return nil
 }
 
+type UninstallOptions struct {
+	Name  string
+	Log   zerolog.Logger
+	Audit zerolog.Logger // as for Options
+}
+
 // Uninstall tolerates any of its parts being gone already.
-func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string, log zerolog.Logger) error {
+func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts UninstallOptions) (err error) {
+	name, log := opts.Name, opts.Log
+	srv, inst, ferr := findInstance(srv, name, log)
+	project := ""
+	if ferr == nil {
+		project = inst.Project
+	}
+	audit := auditOf(opts.Audit, project, name)
+	begin(audit, "uninstall").Send()
+	var removed []string
+	defer func() {
+		e := end(audit, "uninstall", err)
+		if len(removed) > 0 {
+			e = e.Strs("removed", removed)
+		}
+		e.Send()
+	}()
 	var errs []error
 	pool := ""
-	srv, inst, err := findInstance(srv, name, log)
 	switch {
-	case err == nil:
+	case ferr == nil:
 		pool = inst.Devices[stateDev]["pool"]
 		if inst.StatusCode != api.Stopped {
 			if err := update.SetState(ctx, srv, name, "stop"); err != nil {
@@ -261,10 +309,11 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 		if err := deleteInstance(srv, name); err != nil {
 			errs = append(errs, fmt.Errorf("delete %s: %w", name, err))
 		} else {
+			removed = append(removed, "instance "+name)
 			log.Info().Str("instance", name).Msg("instance deleted")
 		}
-	case !notFound(err):
-		errs = append(errs, err)
+	case !notFound(ferr):
+		errs = append(errs, ferr)
 	}
 	if pool == "" {
 		pool, _, _ = profileDefaults(srv)
@@ -274,6 +323,7 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 		err := srv.DeleteStoragePoolVolume(pool, "custom", vol)
 		switch {
 		case err == nil:
+			removed = append(removed, "volume "+vol)
 			log.Info().Str("volume", vol).Msg("volume deleted")
 		case !notFound(err):
 			errs = append(errs, fmt.Errorf("delete volume %s: %w", vol, err))
@@ -293,6 +343,7 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 		if err := srv.DeleteCertificate(c.Fingerprint); err != nil {
 			errs = append(errs, fmt.Errorf("remove certificate %s: %w", c.Fingerprint, err))
 		} else {
+			removed = append(removed, "certificate "+c.Fingerprint)
 			log.Info().Str("certificate", c.Name).Msg("certificate removed")
 		}
 	}

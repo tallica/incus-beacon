@@ -21,13 +21,14 @@ type UpgradeOptions struct {
 	Force bool // allow a downgrade
 	Wait  time.Duration
 	Log   zerolog.Logger
+	Audit zerolog.Logger // as for Options
 }
 
 // readyProbe is the image's own HEALTHCHECK.
 var readyProbe = []string{"wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9153/ready"}
 
 // Upgrade follows docs/ARCHITECTURE.md#connecting-to-incus.
-func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOptions) error {
+func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOptions) (err error) {
 	srv, inst, err := installed(srv, opts.Name, opts.Log)
 	if err != nil {
 		return err
@@ -52,6 +53,9 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if old == "" {
 		return fmt.Errorf("instance %s records no base image to roll back to", opts.Name)
 	}
+	audit := auditOf(opts.Audit, inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image).Logger()
+	begin(audit, "upgrade").Send()
+	defer func() { end(audit, "upgrade", err).Send() }()
 
 	if inst.StatusCode != api.Stopped {
 		if err := update.SetState(ctx, srv, opts.Name, "stop"); err != nil {
@@ -73,6 +77,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 
 	err = fmt.Errorf("upgrade %s to %s: %w", opts.Name, opts.Image, err)
 	opts.Log.Warn().Err(err).Str("image", from).Msg("rolling back")
+	begin(audit, "upgrade.rollback").Send()
 	rerr := stopIfRunning(ctx, srv, opts.Name)
 	if rerr == nil {
 		rerr = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old})
@@ -80,6 +85,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if rerr == nil {
 		rerr = update.SetState(ctx, srv, opts.Name, "start")
 	}
+	end(audit, "upgrade.rollback", rerr).Send()
 	if rerr != nil {
 		return errors.Join(err, fmt.Errorf("roll back to %s: %w", from, rerr))
 	}
