@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.6.0-beta.1] - 2026-11-22
+
 ### Added
 
 - The binary also answers to `incus-beacond`, which runs `serve`; the image now
@@ -164,7 +166,10 @@ get an entry.
 - Release archives carry THIRD_PARTY_NOTICES.md with the licence and NOTICE text
   of every module the binary links, not only direct dependencies.
 
-[Unreleased]: https://github.com/tallica/incus-beacon/compare/v0.5.1...master
+[Unreleased]:
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.1...master
+[0.6.0-beta.1]:
+  https://github.com/tallica/incus-beacon/compare/v0.5.1...v0.6.0-beta.1
 [0.5.1]: https://github.com/tallica/incus-beacon/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/tallica/incus-beacon/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/tallica/incus-beacon/compare/v0.3.0...v0.4.0
