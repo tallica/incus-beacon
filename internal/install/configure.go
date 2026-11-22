@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/tallica/incus-beacon/internal/config"
+	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/update"
 )
@@ -75,9 +76,9 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 		opts.Log.Info().Str("instance", name).Msg("settings already as given; nothing changed")
 		return nil
 	}
-	audit := auditOf(opts.Audit, inst.Project, name).With().Strs("settings", changed(before, cfg, urlsChange, certChange)).Logger()
-	begin(audit, "configure").Send()
-	defer func() { end(audit, "configure", err).Send() }()
+	audit := log.AuditFor(opts.Audit, log.Process(), inst.Project, name).With().Strs("settings", changed(before, cfg, urlsChange, certChange)).Logger()
+	log.AuditBegin(audit, "configure").Send()
+	defer func() { log.AuditEnd(audit, "configure", err).Send() }()
 	running := inst.StatusCode != api.Stopped
 	// A track change alone needs no restart: serve reads policy keys every cycle.
 	restart := running && (urlsChange || !maps.Equal(envOf(cfg), envOf(before)))
@@ -111,12 +112,12 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 		}
 	}
 	if err := apply(before, cfg, newURLs, newProjects); err != nil {
-		begin(audit, "configure.rollback").Send()
+		log.AuditBegin(audit, "configure.rollback").Send()
 		rerr := undo()
 		if restart {
 			rerr = errors.Join(rerr, update.SetState(ctx, srv, name, "start"))
 		}
-		end(audit, "configure.rollback", rerr).Send()
+		log.AuditEnd(audit, "configure.rollback", rerr).Send()
 		return errors.Join(fmt.Errorf("configure %s: %w", name, err), rerr)
 	}
 	opts.Log.Info().Str("instance", name).Msg("settings changed")
@@ -135,7 +136,7 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 	}
 	err = fmt.Errorf("configure %s: %w", name, err)
 	opts.Log.Warn().Err(err).Msg("rolling back")
-	begin(audit, "configure.rollback").Send()
+	log.AuditBegin(audit, "configure.rollback").Send()
 	// The old settings come back running, as the instance was before configure, whether the start or the probe failed.
 	rerr := stopIfRunning(ctx, srv, name)
 	if rerr == nil {
@@ -144,7 +145,7 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 	if rerr == nil {
 		rerr = startReady(ctx, srv, name, opts.Wait)
 	}
-	end(audit, "configure.rollback", rerr).Send()
+	log.AuditEnd(audit, "configure.rollback", rerr).Send()
 	if rerr != nil {
 		return errors.Join(err, fmt.Errorf("roll back: %w", rerr))
 	}

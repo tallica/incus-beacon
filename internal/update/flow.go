@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"os"
 	"path"
 	"slices"
 	"strconv"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/incus"
+	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/registry"
 )
 
@@ -63,12 +63,6 @@ type Options struct {
 	pruneWait time.Duration
 }
 
-// Process names this process as host/pid, in a claim and as an audit record's by.
-func Process() string {
-	host, _ := os.Hostname()
-	return cmp.Or(host, "incus-beacon") + "/" + strconv.Itoa(os.Getpid())
-}
-
 func (o Options) withDefaults() Options {
 	o.StopTimeout = cmp.Or(o.StopTimeout, 30*time.Second)
 	o.Wait = cmp.Or(o.Wait, 5*time.Minute)
@@ -76,7 +70,7 @@ func (o Options) withDefaults() Options {
 	o.Lease = cmp.Or(o.Lease, 30*time.Minute+o.Wait)
 	o.Every = cmp.Or(o.Every, 2*time.Second)
 	o.pruneWait = cmp.Or(o.pruneWait, 5*time.Minute)
-	o.Owner = cmp.Or(o.Owner, Process())
+	o.Owner = cmp.Or(o.Owner, log.Process())
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -148,7 +142,7 @@ func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, ne
 	return &updater{
 		srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts, digest: next.Digest,
 		log:   opts.Log.With().Str("project", t.Project).Str("instance", t.Instance).Str("to", next.Ref).Logger(),
-		audit: opts.Audit.With().Str("by", opts.Owner).Str("project", t.Project).Str("instance", t.Instance).Str("from", from).Str("to", next.Ref).Logger(),
+		audit: log.AuditFor(opts.Audit, opts.Owner, t.Project, t.Instance).With().Str("from", from).Str("to", next.Ref).Logger(),
 		o:     Outcome{From: from, To: next.Ref},
 	}
 }
@@ -293,12 +287,12 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 			}
 			return u.unwind(ctx, i-1, "record the claim: "+err.Error())
 		}
-		u.stepEvent("update.step", s.name, "begin").Send()
-		if err := u.bounded(ctx, s.do); err != nil {
-			u.stepEvent("update.step", s.name, "failed").Err(err).Send()
+		log.AuditBegin(u.audit, "update.step").Str("step", s.name).Send()
+		err := u.bounded(ctx, s.do)
+		log.AuditEnd(u.audit, "update.step", err).Str("step", s.name).Send()
+		if err != nil {
 			return u.unwind(ctx, i, s.name+": "+err.Error())
 		}
-		u.stepEvent("update.step", s.name, "done").Send()
 	}
 	u.o.Status = Updated
 	u.log.Info().Msg("updated")
@@ -350,16 +344,11 @@ func (u *updater) abandon(err error) (Outcome, error) {
 	return u.outcome(nil)
 }
 
-func (u *updater) stepEvent(event, name, phase string) *zerolog.Event {
-	return u.audit.Log().Str("event", event).Str("step", name).Str("phase", phase)
-}
-
 // recover rolls back an update whose claim expired, from what the claim recorded.
 func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 	u.c, u.o.To, u.o.From = c, c.To, cmp.Or(c.FromRef, u.o.From)
 	u.log = u.opts.Log.With().Str("project", u.t.Project).Str("instance", u.t.Instance).Str("to", c.To).Logger()
-	u.audit = u.opts.Audit.With().Str("by", u.opts.Owner).Str("project", u.t.Project).Str("instance", u.t.Instance).
-		Str("from", u.o.From).Str("to", c.To).Str("op", c.Snapshot).Logger()
+	u.audit = log.AuditFor(u.opts.Audit, u.opts.Owner, u.t.Project, u.t.Instance).With().Str("from", u.o.From).Str("to", c.To).Str("op", c.Snapshot).Logger()
 	for _, v := range c.Volumes {
 		pool, name, _ := strings.Cut(v, "/")
 		u.vols = append(u.vols, volume{pool: pool, name: name})
@@ -414,14 +403,14 @@ func (u *updater) unwind(ctx context.Context, begun int, cause string) (Outcome,
 		} else if err != nil {
 			u.log.Warn().Err(err).Msg("claim not renewed; rolling back anyway")
 		}
-		u.stepEvent("update.undo", steps[i].name, "begin").Send()
-		if err := u.bounded(ctx, steps[i].undo); err != nil {
-			u.stepEvent("update.undo", steps[i].name, "failed").Err(err).Send()
+		log.AuditBegin(u.audit, "update.undo").Str("step", steps[i].name).Send()
+		err := u.bounded(ctx, steps[i].undo)
+		log.AuditEnd(u.audit, "update.undo", err).Str("step", steps[i].name).Send()
+		if err != nil {
 			u.o.Status, u.o.Reason = Failed, cause+"; roll back "+steps[i].name+": "+err.Error()
 			u.log.Error().Str("reason", u.o.Reason).Msg("rollback failed")
 			return u.outcome(u.release(ctx))
 		}
-		u.stepEvent("update.undo", steps[i].name, "done").Send()
 	}
 	u.o.Status = RolledBack
 	u.log.Warn().Str("reason", cause).Msg("rolled back")

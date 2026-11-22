@@ -1,4 +1,4 @@
-// Package log builds the zerolog logger from the log flags, and the audit logger.
+// Package log builds the zerolog logger from the log flags, and the audit logger and its records' shared fields.
 package log
 
 import (

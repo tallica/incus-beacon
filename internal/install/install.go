@@ -17,6 +17,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/semver"
@@ -61,13 +62,13 @@ const (
 )
 
 // ResolveName is name, else the default, else an instance from before 0.6 under the old name.
-func ResolveName(srv incusclient.InstanceServer, name string, log zerolog.Logger) string {
+func ResolveName(srv incusclient.InstanceServer, name string, logger zerolog.Logger) string {
 	if name != "" {
 		return name
 	}
-	if _, _, err := findInstance(srv, DefaultName, log); notFound(err) {
-		if _, _, err := findInstance(srv, legacyName, log); err == nil {
-			log.Info().Str("instance", legacyName).Msg("using the instance from before 0.6")
+	if _, _, err := findInstance(srv, DefaultName, logger); notFound(err) {
+		if _, _, err := findInstance(srv, legacyName, logger); err == nil {
+			logger.Info().Str("instance", legacyName).Msg("using the instance from before 0.6")
 			return legacyName
 		}
 	}
@@ -98,28 +99,6 @@ func trackFor(track, image string) string {
 		}
 	}
 	return policy.TrackDigest
-}
-
-// auditOf adds by, the instance and, where install found it, the instance's project.
-func auditOf(audit zerolog.Logger, project, name string) zerolog.Logger {
-	c := audit.With().Str("by", update.Process())
-	if project != "" {
-		c = c.Str("project", project)
-	}
-	return c.Str("instance", name).Logger()
-}
-
-func begin(audit zerolog.Logger, event string) *zerolog.Event {
-	return audit.Log().Str("event", event).Str("phase", "begin")
-}
-
-// end is event's done record, or failed with err.
-func end(audit zerolog.Logger, event string, err error) *zerolog.Event {
-	phase := "done"
-	if err != nil {
-		phase = "failed"
-	}
-	return audit.Log().Str("event", event).Str("phase", phase).Err(err)
 }
 
 // Install undoes what it created if a step before the start fails.
@@ -160,9 +139,9 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		return err
 	}
 
-	audit := auditOf(opts.Audit, "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Logger()
-	begin(audit, "install").Send()
-	defer func() { end(audit, "install", err).Send() }()
+	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Logger()
+	log.AuditBegin(audit, "install").Send()
+	defer func() { log.AuditEnd(audit, "install", err).Send() }()
 
 	var undo []func() error
 	rollback := func(err error) error {
@@ -280,17 +259,17 @@ type UninstallOptions struct {
 
 // Uninstall tolerates any of its parts being gone already.
 func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts UninstallOptions) (err error) {
-	name, log := opts.Name, opts.Log
-	srv, inst, ferr := findInstance(srv, name, log)
+	name, logger := opts.Name, opts.Log
+	srv, inst, ferr := findInstance(srv, name, logger)
 	project := ""
 	if ferr == nil {
 		project = inst.Project
 	}
-	audit := auditOf(opts.Audit, project, name)
-	begin(audit, "uninstall").Send()
+	audit := log.AuditFor(opts.Audit, log.Process(), project, name)
+	log.AuditBegin(audit, "uninstall").Send()
 	var removed []string
 	defer func() {
-		e := end(audit, "uninstall", err)
+		e := log.AuditEnd(audit, "uninstall", err)
 		if len(removed) > 0 {
 			e = e.Strs("removed", removed)
 		}
@@ -310,7 +289,7 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 			errs = append(errs, fmt.Errorf("delete %s: %w", name, err))
 		} else {
 			removed = append(removed, "instance "+name)
-			log.Info().Str("instance", name).Msg("instance deleted")
+			logger.Info().Str("instance", name).Msg("instance deleted")
 		}
 	case !notFound(ferr):
 		errs = append(errs, ferr)
@@ -324,12 +303,12 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 		switch {
 		case err == nil:
 			removed = append(removed, "volume "+vol)
-			log.Info().Str("volume", vol).Msg("volume deleted")
+			logger.Info().Str("volume", vol).Msg("volume deleted")
 		case !notFound(err):
 			errs = append(errs, fmt.Errorf("delete volume %s: %w", vol, err))
 		}
 	}
-	if err := revokeTokens(srv, name, log); err != nil {
+	if err := revokeTokens(srv, name, logger); err != nil {
 		errs = append(errs, err)
 	}
 	certs, err := srv.GetCertificates()
@@ -344,14 +323,14 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 			errs = append(errs, fmt.Errorf("remove certificate %s: %w", c.Fingerprint, err))
 		} else {
 			removed = append(removed, "certificate "+c.Fingerprint)
-			log.Info().Str("certificate", c.Name).Msg("certificate removed")
+			logger.Info().Str("certificate", c.Name).Msg("certificate removed")
 		}
 	}
 	return errors.Join(errs...)
 }
 
 // findInstance also searches other projects; the server it returns uses the instance's.
-func findInstance(srv incusclient.InstanceServer, name string, log zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+func findInstance(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
 	inst, _, err := srv.GetInstance(name)
 	if !notFound(err) {
 		return srv, inst, err
@@ -363,7 +342,7 @@ func findInstance(srv incusclient.InstanceServer, name string, log zerolog.Logge
 	if p == "" {
 		return srv, nil, err
 	}
-	log.Info().Str("instance", name).Str("project", p).Msg("found in another project")
+	logger.Info().Str("instance", name).Str("project", p).Msg("found in another project")
 	srv = srv.UseProject(p)
 	inst, _, err = srv.GetInstance(name)
 	return srv, inst, err
@@ -479,7 +458,7 @@ func tokens(srv incusclient.InstanceServer) incusclient.InstanceServer {
 }
 
 // revokeTokens removes tokens an install left unredeemed.
-func revokeTokens(srv incusclient.InstanceServer, name string, log zerolog.Logger) error {
+func revokeTokens(srv incusclient.InstanceServer, name string, logger zerolog.Logger) error {
 	ops, err := tokens(srv).GetOperations()
 	if err != nil {
 		return fmt.Errorf("list trust tokens: %w", err)
@@ -496,7 +475,7 @@ func revokeTokens(srv incusclient.InstanceServer, name string, log zerolog.Logge
 		if err := tokens(srv).DeleteOperation(op.ID); err != nil {
 			errs = append(errs, fmt.Errorf("revoke trust token: %w", err))
 		} else {
-			log.Info().Str("token", name).Msg("unused trust token revoked")
+			logger.Info().Str("token", name).Msg("unused trust token revoked")
 		}
 	}
 	return errors.Join(errs...)

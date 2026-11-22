@@ -11,6 +11,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/semver"
 	"github.com/tallica/incus-beacon/internal/update"
 )
@@ -53,9 +54,9 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if old == "" {
 		return fmt.Errorf("instance %s records no base image to roll back to", opts.Name)
 	}
-	audit := auditOf(opts.Audit, inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image).Logger()
-	begin(audit, "upgrade").Send()
-	defer func() { end(audit, "upgrade", err).Send() }()
+	audit := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image).Logger()
+	log.AuditBegin(audit, "upgrade").Send()
+	defer func() { log.AuditEnd(audit, "upgrade", err).Send() }()
 
 	if inst.StatusCode != api.Stopped {
 		if err := update.SetState(ctx, srv, opts.Name, "stop"); err != nil {
@@ -77,7 +78,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 
 	err = fmt.Errorf("upgrade %s to %s: %w", opts.Name, opts.Image, err)
 	opts.Log.Warn().Err(err).Str("image", from).Msg("rolling back")
-	begin(audit, "upgrade.rollback").Send()
+	log.AuditBegin(audit, "upgrade.rollback").Send()
 	rerr := stopIfRunning(ctx, srv, opts.Name)
 	if rerr == nil {
 		rerr = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old})
@@ -85,7 +86,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if rerr == nil {
 		rerr = update.SetState(ctx, srv, opts.Name, "start")
 	}
-	end(audit, "upgrade.rollback", rerr).Send()
+	log.AuditEnd(audit, "upgrade.rollback", rerr).Send()
 	if rerr != nil {
 		return errors.Join(err, fmt.Errorf("roll back to %s: %w", from, rerr))
 	}
@@ -93,8 +94,8 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 }
 
 // installed finds the instance for upgrade and configure, refusing one install didn't create; uninstall tolerates any.
-func installed(srv incusclient.InstanceServer, name string, log zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
-	srv, inst, err := findInstance(srv, name, log)
+func installed(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+	srv, inst, err := findInstance(srv, name, logger)
 	if notFound(err) {
 		return srv, nil, fmt.Errorf("instance %s not found; install it first", name)
 	}

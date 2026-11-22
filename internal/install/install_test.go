@@ -21,7 +21,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/tallica/incus-beacon/internal/config"
-	"github.com/tallica/incus-beacon/internal/update"
+	"github.com/tallica/incus-beacon/internal/log"
 )
 
 // fake implements the calls install makes; any other call panics on the nil
@@ -271,7 +271,7 @@ func checkAudit(t *testing.T, buf *bytes.Buffer, want ...string) []map[string]an
 		if err := json.Unmarshal([]byte(line), &r); err != nil {
 			t.Fatalf("record %q: %v", line, err)
 		}
-		if r["instance"] != "incus-beacon" || r["by"] != update.Process() {
+		if r["instance"] != "incus-beacon" || r["by"] != log.Process() {
 			t.Errorf("record %v: want instance and by", r)
 		}
 		records = append(records, r)
@@ -498,19 +498,19 @@ func TestInstallRefusesBesideABeaconFromBefore06(t *testing.T) {
 
 func TestResolveName(t *testing.T) {
 	t.Parallel()
-	log := zerolog.Nop()
-	if got := ResolveName(newFake(), "", log); got != DefaultName {
+	logger := zerolog.Nop()
+	if got := ResolveName(newFake(), "", logger); got != DefaultName {
 		t.Errorf("nothing installed: %q, want %q", got, DefaultName)
 	}
-	if got := ResolveName(installedFake(), "", log); got != "incus-beacon" {
+	if got := ResolveName(installedFake(), "", logger); got != "incus-beacon" {
 		t.Errorf("an instance from before 0.6: %q, want incus-beacon", got)
 	}
 	both := installedFake()
 	both.instances[DefaultName] = &api.Instance{Name: DefaultName}
-	if got := ResolveName(both, "", log); got != DefaultName {
+	if got := ResolveName(both, "", logger); got != DefaultName {
 		t.Errorf("both: %q, want %q", got, DefaultName)
 	}
-	if got := ResolveName(both, "mine", log); got != "mine" {
+	if got := ResolveName(both, "mine", logger); got != "mine" {
 		t.Errorf("--name mine: %q", got)
 	}
 }
