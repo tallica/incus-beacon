@@ -77,11 +77,11 @@ isn't given, and `install` refuses to add a second beacon beside it.
 
 `install` passes most of its settings to the instance's `serve` as
 `environment.BEACON_*` keys, which `upgrade` keeps. `incus-beacon configure`
-changes them later (to verify). It takes the same settings as `install` and
-changes only those given on the command line; `BEACON_*` variables don't count,
-so one exported for `check` can't change the instance. A setting given empty or
-zero, such as `--update-window=` or `--cooldown=0`, or `false`, gets what
-`install` does without that flag:
+changes them later. It takes the same settings as `install` and changes only
+those given on the command line; `BEACON_*` variables don't count, so one
+exported for `check` can't change the instance. A setting given empty or zero,
+such as `--update-window=` or `--cooldown=0`, or `false`, gets what `install`
+does without that flag:
 
 ```sh
 incus-beacon configure --remote <remote> --interval 1h --update

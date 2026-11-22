@@ -349,7 +349,7 @@ Refs are normalised with Docker conventions: `nginx` becomes
   instance's own policy keys alone, such as `track`, needs no restart. Readiness
   is `upgrade`'s `/ready` gate; the rollback puts the three back and passes the
   same gate. A stopped instance is changed and left stopped, checked only by
-  that parse. Not yet run against a real Incus (to verify).
+  that parse. Verified on Incus 7.6.
 - **From a host (CLI):** an `incus` CLI remote (`--remote`, or the CLI's
   default), which reuses that remote's certificates or local socket.
 
