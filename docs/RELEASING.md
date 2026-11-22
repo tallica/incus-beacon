@@ -38,10 +38,13 @@ so installing the beta needs
    ```
    For the first release, `[X.Y.Z]` points at
    `https://github.com/tallica/incus-beacon/releases/tag/vX.Y.Z`.
-5. Check the notes: `make release-notes TAG=vX.Y.Z`.
-6. Commit only CHANGELOG.md: `chore(release): vX.Y.Z`.
-7. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`.
-8. **Stop and ask** before pushing: `git push && git push origin vX.Y.Z`.
+5. For a new minor or major (not a patch or a beta), set the image in
+   README.md's incus-compose example to the new `X.Y` tag.
+6. Check the notes: `make release-notes TAG=vX.Y.Z`.
+7. Commit only CHANGELOG.md, and README.md if step 5 changed it:
+   `chore(release): vX.Y.Z`.
+8. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`.
+9. **Stop and ask** before pushing: `git push && git push origin vX.Y.Z`.
 
 Pushing the tag publishes the release: CI runs the checks on the tagged commit
 and, only if they all pass, GoReleaser creates the GitHub release with these

@@ -132,7 +132,7 @@ records the result in `user.healthcheck.status`:
 ```yaml
 services:
   beacon:
-    image: ghcr.io/tallica/incus-beacon:0.4
+    image: ghcr.io/tallica/incus-beacon:0.5
     environment:
       BEACON_INCUS: https://<incus-host>:8443
       BEACON_TOKEN: ${BEACON_TOKEN}
