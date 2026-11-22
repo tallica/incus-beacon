@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.6.0-beta.2] - 2026-11-22
+
 ### Added
 
 - `install --update`, `--update-window`, `--cooldown` and `--interval` set those
@@ -177,7 +179,9 @@ get an entry.
   of every module the binary links, not only direct dependencies.
 
 [Unreleased]:
-  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.1...master
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.2...master
+[0.6.0-beta.2]:
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.1...v0.6.0-beta.2
 [0.6.0-beta.1]:
   https://github.com/tallica/incus-beacon/compare/v0.5.1...v0.6.0-beta.1
 [0.5.1]: https://github.com/tallica/incus-beacon/compare/v0.5.0...v0.5.1
