@@ -41,6 +41,7 @@ type fake struct {
 	volumeFS     sftp.Handlers // every volume's files, in memory
 	snapshots    []string
 	rebuilds     []api.InstanceSource
+	failRebuild  error                   // the first rebuild's
 	ready        func(rebuilds int) bool // the /ready probe's answer after that many rebuilds
 }
 
@@ -220,6 +221,12 @@ func (f *fake) DeleteInstanceFile(_, path string) error {
 }
 
 func (f *fake) UpdateInstanceState(name string, st api.InstanceStatePut, _ string) (incusclient.Operation, error) {
+	if inst := f.instances[name]; inst != nil {
+		if st.Action == "stop" && inst.StatusCode == api.Stopped {
+			return nil, errors.New("The instance is already stopped") // as Incus answers
+		}
+		inst.StatusCode = map[string]api.StatusCode{"stop": api.Stopped, "start": api.Running}[st.Action]
+	}
 	f.states = append(f.states, st.Action)
 	if st.Action == "start" && f.joins {
 		for id, req := range f.tokenOps {

@@ -2,6 +2,7 @@ package install
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,6 +18,9 @@ func (f *fake) GetInstanceSnapshotNames(string) ([]string, error) { return f.sna
 
 func (f *fake) RebuildInstance(name string, req api.InstanceRebuildPost) (incusclient.Operation, error) {
 	f.rebuilds = append(f.rebuilds, req.Source)
+	if err := f.failRebuild; err != nil && len(f.rebuilds) == 1 {
+		return nil, err
+	}
 	return op{}, nil
 }
 
@@ -84,6 +88,30 @@ func TestUpgradeRollsBack(t *testing.T) {
 	}
 	if !slices.Equal(f.states, []string{"stop", "start", "stop", "start"}) {
 		t.Errorf("states %v", f.states)
+	}
+}
+
+func TestUpgradeRollsBackAFailedRebuild(t *testing.T) {
+	t.Parallel()
+	f := installedFake()
+	f.failRebuild = errors.New("Failed getting remote image info")
+	err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5"))
+	if err == nil || !strings.Contains(err.Error(), "rolled back to "+oldImage) {
+		t.Fatalf("err %v, want rolled back", err)
+	}
+	if !slices.Equal(f.states, []string{"stop", "start"}) || f.instances["incus-beacon"].StatusCode != api.Running {
+		t.Errorf("states %v, want the instance started again without a second stop", f.states)
+	}
+	if len(f.rebuilds) != 2 || !reflect.DeepEqual(f.rebuilds[1], api.InstanceSource{Type: "image", Fingerprint: "fp-old"}) {
+		t.Errorf("rebuilds %+v, want the failed one, then the old fingerprint", f.rebuilds)
+	}
+}
+
+func TestStopIfRunningStopsAnUnreadableInstance(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	if err := stopIfRunning(context.Background(), f, "unreadable"); err != nil || !slices.Equal(f.states, []string{"stop"}) {
+		t.Errorf("err %v, states %v, want the stop tried", err, f.states)
 	}
 }
 

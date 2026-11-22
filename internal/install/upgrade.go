@@ -73,7 +73,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 
 	err = fmt.Errorf("upgrade %s to %s: %w", opts.Name, opts.Image, err)
 	opts.Log.Warn().Err(err).Str("image", from).Msg("rolling back")
-	rerr := update.SetState(ctx, srv, opts.Name, "stop")
+	rerr := stopIfRunning(ctx, srv, opts.Name)
 	if rerr == nil {
 		rerr = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old})
 	}
@@ -99,6 +99,14 @@ func installed(srv incusclient.InstanceServer, name string, log zerolog.Logger) 
 		return srv, nil, fmt.Errorf("instance %s was not created by install", name)
 	}
 	return srv, inst, nil
+}
+
+// stopIfRunning lets a rollback follow a failed rebuild or start, where Incus refuses a second stop; an unreadable state still tries the stop.
+func stopIfRunning(ctx context.Context, srv incusclient.InstanceServer, name string) error {
+	if inst, _, err := srv.GetInstance(name); err == nil && inst.StatusCode == api.Stopped {
+		return nil
+	}
+	return update.SetState(ctx, srv, name, "stop")
 }
 
 // older is true only for two version tags of one shape, such as 0.4 and 0.5.

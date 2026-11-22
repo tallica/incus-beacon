@@ -20,6 +20,8 @@ get an entry.
 
 ### Fixed
 
+- `upgrade` and `configure` start the instance again when rolling back from a
+  failed rebuild or start, instead of leaving it stopped.
 - `install` and `upgrade` refuse a malformed `--image`, such as one with a stray
   `image=`, before stopping or creating anything.
 

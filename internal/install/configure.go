@@ -129,7 +129,8 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 	}
 	err = fmt.Errorf("configure %s: %w", name, err)
 	opts.Log.Warn().Err(err).Msg("rolling back")
-	rerr := update.SetState(ctx, srv, name, "stop")
+	// The old settings come back running, as the instance was before configure, whether the start or the probe failed.
+	rerr := stopIfRunning(ctx, srv, name)
 	if rerr == nil {
 		rerr = undo()
 	}
