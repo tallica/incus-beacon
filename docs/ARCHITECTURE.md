@@ -175,7 +175,10 @@ ref is the tracked ref at the `latest` tag.
    `volatile.base_image`, put the override keys and the dropped keys back as
    they were, and start and gate again. A volume another instance also uses is
    not restored, and the outcome says so; its snapshot is still taken, for a
-   restore by hand once the other instances are stopped.
+   restore by hand once the other instances are stopped. An undo rebuild that
+   fails on another write's lock has already replaced the rootfs, only not the
+   `oci.*` keys; it counts once the instance is on the old fingerprint, and the
+   claim's record of the `oci.*` keys goes back (to verify).
 5. **Release** the claim and record the outcome in one write, with `applied` and
    `applied-image` naming the ref and image the instance is left on:
    `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback

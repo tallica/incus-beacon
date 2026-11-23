@@ -31,6 +31,8 @@ get an entry.
   the same instance, instead of failing the update or the status write.
 - `serve` and `check` no longer write the status keys of an instance another
   process is updating, which could make its rebuild fail.
+- `update` finishes a rollback whose rebuild Incus held up for another write to
+  the instance, instead of leaving it stopped.
 
 ## [0.6.0-beta.2] - 2026-11-22
 
