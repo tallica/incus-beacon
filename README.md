@@ -393,19 +393,21 @@ update is recovered, is in [ARCHITECTURE.md](docs/ARCHITECTURE.md#updating).
 
 With `--audit-log <file>`, a command appends one JSON object per line for each
 change it makes, and `serve` and `update` also for every update outcome,
-refusals included, whatever `--log-level` and `--log-format` say. Once the file
-would grow past `--audit-log-max-size` (10MiB), it becomes `<file>.1`, older
-ones move up, and those past `--audit-log-keep` (5) are removed. A record that
-can't be written is warned about once on stderr; the command goes on.
+refusals included, whatever `--log-level` and `--log-format` say;
+`update --dry-run` changes nothing and writes nothing. Once the file would grow
+past `--audit-log-max-size` (10MiB), it becomes `<file>.1`, older ones move up,
+and those past `--audit-log-keep` (5) are removed. A record that can't be
+written is warned about once on stderr; the command goes on.
 
 ```sh
 incus-beacon serve --update --audit-log /var/log/incus-beacon/audit.log
 ```
 
 Every record has `time` (UTC), `event`, `version`, `by` (the process, as
-`host/pid`), `project` and `instance`. An update's records also have `from` and
-`to` (the refs); from the claim on, `op` is the claim's snapshot name, which
-links the records of one update.
+`host/pid`) and `instance`, and `project` except on `install`, which creates the
+instance in the remote's project, and on an `uninstall` that finds no instance.
+An update's records also have `from` and `to` (the refs); from the claim on,
+`op` is the claim's snapshot name, which links the records of one update.
 
 | `event`              | Written when                                   | Also has                                                      |
 | -------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
@@ -457,17 +459,16 @@ owner, so `serve` can go on writing.
 
 `install`, `configure`, `upgrade` and `uninstall` write only when given
 `--audit-log`, to a file on the host they run on, which their
-`--audit-log-max-size` and `--audit-log-keep` rotate. `install` has no
-`project`, since it creates the instance in the remote's. `log_volume` is the
-log volume the command sets out to attach, like `image` and `volume` on a
-`begin` record: always for `install`, and for `upgrade` only when the instance
-had none. A refusal, and a `configure` that finds the settings already as given,
-write nothing; `uninstall` always writes, even when it finds nothing to remove.
-A failed `install` without `install.rollback` records left its instance, which
-did not join Incus, in place. `settings` names the `configure` flags whose value
-it sets out to change, on its `failed` record too; `removed` lists what
-`uninstall` deleted, naming a trust token by its operation ID; `kept_volume`
-names the log volume it left.
+`--audit-log-max-size` and `--audit-log-keep` rotate. `log_volume` is the log
+volume the command sets out to attach, like `image` and `volume` on a `begin`
+record: always for `install`, and for `upgrade` only when the instance had none.
+A refusal, and a `configure` that finds the settings already as given, write
+nothing; `uninstall` always writes, even when it finds nothing to remove. A
+failed `install` without `install.rollback` records left its instance, which did
+not join Incus, in place. `settings` names the `configure` flags whose value it
+sets out to change, on its `failed` record too; `removed` lists what `uninstall`
+deleted, naming a trust token by its operation ID; `kept_volume` names the log
+volume it left.
 
 ### Endpoints
 
