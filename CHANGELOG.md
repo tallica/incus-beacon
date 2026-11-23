@@ -27,6 +27,8 @@ get an entry.
   failed rebuild or start, instead of leaving it stopped.
 - `install` and `upgrade` refuse a malformed `--image`, such as one with a stray
   `image=`, before stopping or creating anything.
+- `update` and `serve` retry a key write that Incus held up for another write to
+  the same instance, instead of failing the update or the status write.
 
 ## [0.6.0-beta.2] - 2026-11-22
 

@@ -96,6 +96,18 @@ func TestWriteWaitsOutABusyInstance(t *testing.T) {
 	}
 }
 
+func TestWriteRetriesOneHeldUpByAnotherUpdate(t *testing.T) {
+	t.Parallel()
+	f, tg := writeFixture()
+	f.locked = 1
+	if _, err := WriteStatus(t.Context(), f.connect(t), tg, Beacon{Status: "current"}); err != nil {
+		t.Fatalf("held up once by another write to the instance: %v", err)
+	}
+	if f.puts != 1 {
+		t.Errorf("%d accepted PUTs, want 1", f.puts)
+	}
+}
+
 func TestReadAndMigrateLegacyStatus(t *testing.T) {
 	t.Parallel()
 	old := map[string]string{

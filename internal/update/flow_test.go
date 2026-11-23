@@ -63,6 +63,7 @@ type fake struct {
 	claimAtRebuild int
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
 	stuck    bool
+	lockedAt int    // the write (from 1) refused once as held up by another update
 	snapFail string // pool/name whose snapshot fails
 	hang     bool   // the rebuild onto the new image never finishes
 	hangDel  bool   // snapshot deletes never finish
@@ -122,6 +123,9 @@ func (f *fake) GetInstance(string) (*api.Instance, string, error) {
 
 func (f *fake) UpdateInstance(_ string, put api.InstancePut, etag string) (incusclient.Operation, error) {
 	f.writes++
+	if f.writes == f.lockedAt {
+		return nil, errors.New("Failed to create instance update operation: A matching non-reusable operation has now succeeded")
+	}
 	if f.meddle != nil {
 		before := maps.Clone(f.inst.Config)
 		if f.meddle(f.writes, f.inst.Config); !maps.Equal(before, f.inst.Config) {
@@ -637,6 +641,17 @@ func TestApplyRollsBackAFailedSnapshot(t *testing.T) {
 	}
 	if !slices.Contains(f.volSnaps["default/web-data"], o.Snapshots[0][len("default/web-data/"):]) {
 		t.Errorf("the first volume's snapshot %v should stay", o.Snapshots)
+	}
+}
+
+func TestApplyRetriesAWriteHeldUpByAnotherUpdate(t *testing.T) {
+	t.Parallel()
+	for n := 1; n <= 4; n++ {
+		f := newFake()
+		f.lockedAt = n
+		if o := apply(t, f, target()); o.Status != Updated {
+			t.Errorf("write %d held up once: outcome %+v, want updated", n, o)
+		}
 	}
 }
 
