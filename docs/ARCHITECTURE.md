@@ -169,7 +169,8 @@ ref is the tracked ref at the `latest` tag.
    6. Start, then gate: the instance must keep running for `--update-settle`
       and, with a health check, report `healthy` within `--update-wait`.
       `unhealthy`, or a stop, fails at once.
-4. **On failure, undo every step begun, newest first:** stop and restore the
+4. **On failure, undo every step begun, newest first:** stop (an instance that
+   already exited on its own counts as stopped; to verify) and restore the
    snapshots (only once the new image has run), rebuild from the old
    `volatile.base_image`, put the override keys and the dropped keys back as
    they were, and start and gate again. A volume another instance also uses is

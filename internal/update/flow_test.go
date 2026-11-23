@@ -64,10 +64,16 @@ type fake struct {
 	// claimAtRebuild is the claim's step when the new image was rebuilt.
 	claimAtRebuild int
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
-	stuck    bool
-	snapFail string // pool/name whose snapshot fails
-	hang     bool   // the rebuild onto the new image never finishes
-	hangDel  bool   // snapshot deletes never finish
+	stuck bool
+	// stale makes reads after the first, following a crashing start, report Running until a stop
+	// request finds the instance stopped. Modelled, not observed: Incus was seen to report Running
+	// briefly after such a start, but not this interleaving (to verify).
+	stale           bool
+	crashed         bool
+	readsSinceCrash int
+	snapFail        string // pool/name whose snapshot fails
+	hang            bool   // the rebuild onto the new image never finishes
+	hangDel         bool   // snapshot deletes never finish
 }
 
 func newFake() *fake {
@@ -113,6 +119,12 @@ func (f *fake) GetServer() (*api.Server, string, error) {
 
 func (f *fake) GetInstance(string) (*api.Instance, string, error) {
 	inst := f.inst
+	if f.crashed {
+		f.readsSinceCrash++
+		if f.stale && f.readsSinceCrash > 1 {
+			inst.Status, inst.StatusCode = "Running", api.Running
+		}
+	}
 	inst.Config = maps.Clone(f.inst.Config)
 	inst.ExpandedConfig = maps.Clone(f.profile)
 	if inst.ExpandedConfig == nil {
@@ -144,6 +156,10 @@ func (f *fake) UpdateInstanceState(_ string, st api.InstanceStatePut, _ string) 
 	f.states = append(f.states, st.Action)
 	switch st.Action {
 	case "stop":
+		f.crashed = false
+		if f.inst.StatusCode == api.Stopped {
+			return nil, errors.New("The instance is already stopped") // as Incus 7.6 answers
+		}
 		if f.stuck && !st.Force {
 			return nil, errors.New(`Failed shutting down instance, status is "Running"`)
 		}
@@ -153,9 +169,11 @@ func (f *fake) UpdateInstanceState(_ string, st api.InstanceStatePut, _ string) 
 		}
 	case "start":
 		f.starts++
+		f.crashed, f.readsSinceCrash = false, 0
 		f.inst.Status, f.inst.StatusCode = "Running", api.Running
 		if f.crash(f.starts) {
 			f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped
+			f.crashed = true
 		}
 		if f.health != nil {
 			f.inst.Config[healthStatus] = f.health(f.starts)
@@ -639,6 +657,35 @@ func TestApplyRollsBackAFailedSnapshot(t *testing.T) {
 	}
 	if !slices.Contains(f.volSnaps["default/web-data"], o.Snapshots[0][len("default/web-data/"):]) {
 		t.Errorf("the first volume's snapshot %v should stay", o.Snapshots)
+	}
+}
+
+// Incus refuses to stop a stopped instance, so an image that exits at once must not fail the rollback.
+func TestApplyRollsBackWhenTheInstanceStopsOnItsOwn(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.crash = func(n int) bool { return n == 1 }
+	f.stale = true
+	o := apply(t, f, target())
+	if o.Status != RolledBack || !strings.Contains(o.Reason, "stopped after the start") {
+		t.Fatalf("outcome %+v, want a rollback", o)
+	}
+	if len(f.rebuilds) != 2 || len(f.restored) != 1 || f.inst.StatusCode != api.Running {
+		t.Errorf("rebuilds %+v, restored %v, status %s; want the old image back and running", f.rebuilds, f.restored, f.inst.Status)
+	}
+}
+
+func TestStopAcceptsAnInstanceThatAlreadyStopped(t *testing.T) {
+	t.Parallel()
+	for name, stop := range map[string]func(*fake) error{
+		"Stop":     func(f *fake) error { return Stop(context.Background(), f, "web", time.Second) },
+		"SetState": func(f *fake) error { return SetState(context.Background(), f, "web", "stop") },
+	} {
+		f := newFake()
+		f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped
+		if err := stop(f); err != nil {
+			t.Errorf("%s: err %v, want none for an instance that is already stopped", name, err)
+		}
 	}
 }
 

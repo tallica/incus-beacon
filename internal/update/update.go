@@ -27,13 +27,18 @@ func SplitImage(ref string) (server, alias string, err error) {
 	return "https://" + host, rest, nil
 }
 
-// SetState runs a start or stop and waits for it; a stop is forced.
+// SetState runs a start or stop and waits for it; a stop is forced and passes if Incus refuses it for a stopped instance.
 func SetState(ctx context.Context, srv incusclient.InstanceServer, name, action string) error {
 	op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"}, "")
-	if err != nil {
-		return err
+	if err == nil {
+		err = op.WaitContext(ctx)
 	}
-	return op.WaitContext(ctx)
+	if err != nil && action == "stop" {
+		if inst, _, gerr := srv.GetInstance(name); gerr == nil && inst.StatusCode == api.Stopped {
+			return nil
+		}
+	}
+	return err
 }
 
 // Stop asks the instance to stop within timeout, then forces it.

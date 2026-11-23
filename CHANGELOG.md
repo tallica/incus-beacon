@@ -31,6 +31,8 @@ get an entry.
   failed rebuild or start, instead of leaving it stopped.
 - `install` and `upgrade` refuse a malformed `--image`, such as one with a stray
   `image=`, before stopping or creating anything.
+- `update` rolls back an instance whose new image exits at once, instead of
+  failing with "already stopped" and leaving it stopped.
 
 ## [0.6.0-beta.2] - 2026-11-22
 
