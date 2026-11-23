@@ -58,12 +58,14 @@ func (r *Rotating) Close() error {
 }
 
 // follow reopens the path once another process has rotated the file away, and takes the
-// file's size, not this process's share of it.
+// file's size, not this process's share of it. A path it can't read stays on the open file.
 func (r *Rotating) follow() error {
 	if r.f != nil {
 		st, err := os.Stat(r.path)
-		own, ferr := r.f.Stat()
-		if err == nil && ferr == nil && os.SameFile(st, own) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if own, ferr := r.f.Stat(); err == nil && ferr == nil && os.SameFile(st, own) {
 			r.size = st.Size()
 			return nil
 		}

@@ -183,6 +183,29 @@ func TestRotatingCountsOtherWritersRecords(t *testing.T) {
 	}
 }
 
+func TestRotatingKeepsWritingWhenThePathCantBeRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads the path anyway")
+	}
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "logs")
+	path := filepath.Join(dir, "audit.log")
+	r := NewRotating(path, 1<<20, 1)
+	write(t, r, "one")
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o750) })
+	write(t, r, "two")
+	_ = r.Close()
+	if err := os.Chmod(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, path); got != "one\ntwo\n" {
+		t.Errorf("file %q, want both records in the open file", got)
+	}
+}
+
 func TestRotatingConcurrentWriters(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.log")
