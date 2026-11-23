@@ -29,6 +29,8 @@ get an entry.
   `image=`, before stopping or creating anything.
 - `update` and `serve` retry a key write that Incus held up for another write to
   the same instance, instead of failing the update or the status write.
+- `serve` and `check` no longer write the status keys of an instance another
+  process is updating, which could make its rebuild fail.
 
 ## [0.6.0-beta.2] - 2026-11-22
 

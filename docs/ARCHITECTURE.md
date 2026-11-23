@@ -136,7 +136,10 @@ ref is the tracked ref at the `latest` tag.
    - the server is older than Incus 7.6, whose rebuild keeps the old image's
      environment and entry point.
 2. **Claim** the instance in `update-claim`, written only if the instance's ETag
-   still matches what was read, so two processes can't both win.
+   still matches what was read, so two processes can't both win. Until the claim
+   is released or abandoned, other beacon processes leave the instance's status
+   keys alone: Incus runs one config update per instance at a time, and a second
+   one during the rebuild makes it skip refreshing the `oci.*` keys and fail.
 3. **Run the steps**, recording in the claim which step has begun:
    1. Stop gracefully, forcing it after `--update-stop-timeout`. With a health
       check, wait for ic-healthd to report `stopped`, so no later status is a
