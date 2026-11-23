@@ -621,7 +621,6 @@ func TestUninstallDeleteLog(t *testing.T) {
 	if len(f.volumes) != 0 {
 		t.Errorf("volumes left %v", slices.Collect(maps.Keys(f.volumes)))
 	}
-	// Run again with nothing left, it finds no log volume and is no error.
 	if err := Uninstall(context.Background(), f, o); err != nil {
 		t.Errorf("second uninstall: %v", err)
 	}

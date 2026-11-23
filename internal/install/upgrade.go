@@ -106,7 +106,6 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	return fmt.Errorf("%w; rolled back to %s", err, from)
 }
 
-// addLogVolume gives the instance the log volume, device and audit path, through the instance's current ETag.
 func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, pool string, logger zerolog.Logger) error {
 	if pool == "" {
 		return fmt.Errorf("instance %s records no pool on its %s device", name, stateDev)
@@ -138,7 +137,6 @@ func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, poo
 	return nil
 }
 
-// with is a copy of m, which may be nil, with k set to v; the copy leaves the instance just read untouched.
 func with[V any](m map[string]V, k string, v V) map[string]V {
 	c := make(map[string]V, len(m)+1)
 	maps.Copy(c, m)

@@ -372,7 +372,7 @@ func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
 	return nil
 }
 
-// ensureLogVolume reuses any log volume of that name, records and all; created says whether this call made it.
+// ensureLogVolume reuses a log volume already there, records and all.
 func ensureLogVolume(srv incusclient.InstanceServer, pool, vol string, logger zerolog.Logger) (created bool, err error) {
 	err = createVolume(srv, pool, vol)
 	switch {
@@ -390,7 +390,6 @@ func disk(pool, vol, path string) map[string]string {
 	return map[string]string{"type": "disk", "pool": pool, "source": vol, "path": path}
 }
 
-// deleteVolume treats a missing volume as deleted already.
 func deleteVolume(srv incusclient.InstanceServer, pool, vol string) (deleted bool, err error) {
 	err = srv.DeleteStoragePoolVolume(pool, "custom", vol)
 	switch {
@@ -402,7 +401,6 @@ func deleteVolume(srv incusclient.InstanceServer, pool, vol string) (deleted boo
 	return false, fmt.Errorf("delete volume %s: %w", vol, err)
 }
 
-// poolOf finds the pool holding the custom volume vol, once no instance device names it; "" when none does.
 func poolOf(srv incusclient.InstanceServer, vol string) (string, error) {
 	pools, err := srv.GetStoragePoolNames()
 	if err != nil {

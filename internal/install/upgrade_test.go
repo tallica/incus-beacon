@@ -106,7 +106,6 @@ func TestUpgradeRollsBack(t *testing.T) {
 	checkLogVolume(t, f)
 }
 
-// checkLogVolume wants the fake's instance to have the log volume, its device and the audit path.
 func checkLogVolume(t *testing.T, f *fake) {
 	t.Helper()
 	inst := f.instances["incus-beacon"]
@@ -121,7 +120,6 @@ func checkLogVolume(t *testing.T, f *fake) {
 	}
 }
 
-// An operator turns the log off by unsetting the key; the device staying must keep it off.
 func TestUpgradeLeavesTheKeyOfAnInstanceWithALogDevice(t *testing.T) {
 	t.Parallel()
 	f := installedFake()
