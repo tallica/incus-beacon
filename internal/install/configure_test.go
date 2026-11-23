@@ -204,17 +204,31 @@ func TestConfigureRollsBack(t *testing.T) {
 	}
 }
 
-func TestSettingKeysCoverEveryFlag(t *testing.T) {
+func TestChangedNamesEveryFlagByItsKey(t *testing.T) {
 	t.Parallel()
-	flags := make([]string, 0, len(settingKeys))
-	for _, s := range settingKeys {
-		flags = append(flags, s.flag)
+	f := configuredFake()
+	inst := f.instances["incus-beacon"]
+	o := configureOpts()
+	o.APIURL = new("https://incus.example.com:8443")
+	o.Projects = &[]string{"apps"}
+	o.Watch = new("opt-in")
+	o.Events = new(true)
+	o.Track = new("digest")
+	o.NotifyURLs = &[]string{"https://example.com/hook"}
+	o.NotifyErrs = new(true)
+	o.Interval = new(time.Hour)
+	o.Cooldown = new(48 * time.Hour)
+	o.Update = new(true)
+	o.UpdateWindow = new("02:00-05:00")
+	cfg, err := configured(f, inst, o)
+	if err != nil {
+		t.Fatal(err)
 	}
-	want := config.SettingFlags()
-	slices.Sort(flags)
+	got, want := changed(inst.Config, cfg, false, false), config.SettingFlags()
+	slices.Sort(got)
 	slices.Sort(want)
-	if !slices.Equal(flags, want) {
-		t.Errorf("settingKeys names %v, want configure's flags %v", flags, want)
+	if !slices.Equal(got, want) {
+		t.Errorf("changed names %v, want every configure flag %v", got, want)
 	}
 }
 
