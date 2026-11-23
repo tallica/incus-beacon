@@ -582,7 +582,7 @@ func TestUninstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := checkAudit(t, &buf, "uninstall begin", "uninstall done")
-	if got, want := fmt.Sprint(r[1]["removed"]), "[instance incus-beacon volume incus-beacon-state certificate mine]"; got != want {
+	if got, want := fmt.Sprint(r[1]["removed"]), "[instance incus-beacon volume incus-beacon-state trust token tok-incus-beacon certificate mine]"; got != want {
 		t.Errorf("removed %s, want %s", got, want)
 	}
 	want := []string{"delete instance incus-beacon", "delete volume incus-beacon-state", "delete token", "delete cert mine"}

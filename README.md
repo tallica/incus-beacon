@@ -464,8 +464,8 @@ log volume the command sets out to attach, like `image` and `volume` on a
 had none. A refusal, and a `configure` that finds the settings already as given,
 write nothing; `uninstall` always writes, even when it finds nothing to remove.
 `settings` names the `configure` flags whose value it sets out to change, on its
-`failed` record too; `removed` lists what `uninstall` deleted, and `kept_volume`
-names the log volume it left.
+`failed` record too; `removed` lists what `uninstall` deleted, naming a trust
+token by its operation ID; `kept_volume` names the log volume it left.
 
 ### Endpoints
 

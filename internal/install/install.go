@@ -336,7 +336,11 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 			}
 		}
 	}
-	if err := revokeTokens(srv, name, logger); err != nil {
+	revoked, err := revokeTokens(srv, name, logger)
+	for _, id := range revoked {
+		removed = append(removed, "trust token "+id)
+	}
+	if err != nil {
 		errs = append(errs, err)
 	}
 	certs, err := srv.GetCertificates()
@@ -553,12 +557,13 @@ func tokens(srv incusclient.InstanceServer) incusclient.InstanceServer {
 	return srv.UseProject(api.ProjectDefaultName)
 }
 
-// revokeTokens removes tokens an install left unredeemed.
-func revokeTokens(srv incusclient.InstanceServer, name string, logger zerolog.Logger) error {
+// revokeTokens removes tokens an install left unredeemed and gives their operation IDs.
+func revokeTokens(srv incusclient.InstanceServer, name string, logger zerolog.Logger) ([]string, error) {
 	ops, err := tokens(srv).GetOperations()
 	if err != nil {
-		return fmt.Errorf("list trust tokens: %w", err)
+		return nil, fmt.Errorf("list trust tokens: %w", err)
 	}
+	var revoked []string
 	var errs []error
 	for _, op := range ops {
 		if op.Class != api.OperationClassToken || op.StatusCode != api.Running {
@@ -571,10 +576,11 @@ func revokeTokens(srv incusclient.InstanceServer, name string, logger zerolog.Lo
 		if err := tokens(srv).DeleteOperation(op.ID); err != nil {
 			errs = append(errs, fmt.Errorf("revoke trust token: %w", err))
 		} else {
+			revoked = append(revoked, op.ID)
 			logger.Info().Str("token", name).Msg("unused trust token revoked")
 		}
 	}
-	return errors.Join(errs...)
+	return revoked, errors.Join(errs...)
 }
 
 func pushToken(srv incusclient.InstanceServer, name, token string) error {
