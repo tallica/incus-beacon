@@ -511,8 +511,6 @@ func (u *updater) release(ctx context.Context) error {
 func (u *updater) refusal() string {
 	cfg := u.inst.ExpandedConfig
 	switch {
-	case u.compose() && !hasFeature(u.inst.Config[incus.ComposeFeaturesKey], incus.ComposeFeatureOverride):
-		return "managed by an incus-compose without the image override, so its next up would undo the update"
 	case u.compose() && u.inst.Config["user.image_alias"] == "":
 		return "managed by incus-compose, but has no user.image_alias for the image override to name"
 	case isBeacon(cfg, u.o.To):
@@ -714,15 +712,6 @@ func (u *updater) startOld(ctx context.Context) error {
 
 func (u *updater) compose() bool {
 	return u.inst.Config["user.incus-compose.managed"] == "true"
-}
-
-func hasFeature(list, feature string) bool {
-	for f := range strings.SplitSeq(list, ",") {
-		if strings.TrimSpace(f) == feature {
-			return true
-		}
-	}
-	return false
 }
 
 // setOverride keeps incus-compose on the new image while its file names user.image_alias.

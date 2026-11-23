@@ -127,10 +127,8 @@ newer tag, or onto the same tag when it was rebuilt upstream. The new image's
 ref is the tracked ref at the `latest` tag.
 
 1. **Refuse** before anything changes, with the reason in `update-reason`, when:
-   - the instance is managed by incus-compose and its own config's
-     `user.incus-compose.features` doesn't list `image-override`, since an
-     incus-compose without the override recreates it from the compose file's ref
-     on its next `up`;
+   - the instance is managed by incus-compose and has no `user.image_alias` for
+     the image override to name;
    - it runs incus-beacon, which `upgrade` handles;
    - the same ref already failed (`update-failed`);
    - it isn't running, since a stopped instance can't be health-checked;

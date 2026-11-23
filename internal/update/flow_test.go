@@ -533,7 +533,7 @@ func TestApplyRefuses(t *testing.T) {
 		change func(*fake, *incus.Target)
 		reason string
 	}{
-		{"compose without the image override", func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" }, "would undo the update"},
+		{"compose without an image alias", func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" }, "no user.image_alias"},
 		{"beacon", func(f *fake, _ *incus.Target) { f.inst.Config["environment.BEACON_TOKEN_FILE"] = "/run/secrets/token" }, "incus-beacon upgrade"},
 		{"failed before", func(_ *fake, t *incus.Target) { t.Update.Failed = newRef }, "failed before"},
 		{"stopped", func(f *fake, _ *incus.Target) { f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped }, "is stopped"},
@@ -703,7 +703,6 @@ func TestApplyPrunesAfterTheRelease(t *testing.T) {
 func composeFake() *fake {
 	f := newFake()
 	f.inst.Config["user.incus-compose.managed"] = "true"
-	f.inst.Config[incus.ComposeFeaturesKey] = "dns," + incus.ComposeFeatureOverride
 	f.inst.Config["user.image_alias"] = oldRef
 	return f
 }
@@ -769,34 +768,6 @@ func TestApplyResetsRequestedOnceTheAskedRefMoved(t *testing.T) {
 	tgt.Update = incus.Update{Requested: "docker.io/library/nginx:1.25-alpine", Applied: "docker.io/library/nginx:1.26-alpine", Status: Updated}
 	if o := apply(t, f, tgt); o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef {
 		t.Errorf("outcome %+v, requested %q; want the ref asked for now", o, f.inst.Config["user.incus-beacon.requested"])
-	}
-}
-
-func TestApplyNeedsIncusComposesImageOverride(t *testing.T) {
-	t.Parallel()
-	for name, set := range map[string]func(*fake){
-		"no features": func(f *fake) { delete(f.inst.Config, incus.ComposeFeaturesKey) },
-		"from a profile": func(f *fake) {
-			f.profile = map[string]string{incus.ComposeFeaturesKey: incus.ComposeFeatureOverride}
-			delete(f.inst.Config, incus.ComposeFeaturesKey)
-		},
-		"another feature": func(f *fake) { f.inst.Config[incus.ComposeFeaturesKey] = "image-override-v2" },
-		"no image alias":  func(f *fake) { delete(f.inst.Config, "user.image_alias") },
-	} {
-		f := composeFake()
-		set(f)
-		if o := apply(t, f, composeTarget()); o.Status != Refused || !strings.Contains(o.Reason, "image") {
-			t.Errorf("%s: outcome %+v, want refused", name, o)
-		}
-	}
-}
-
-func TestApplyAcceptsAFeatureListWithSpaces(t *testing.T) {
-	t.Parallel()
-	f := composeFake()
-	f.inst.Config[incus.ComposeFeaturesKey] = "dns, image-override"
-	if o := apply(t, f, composeTarget()); o.Status != Updated {
-		t.Errorf("outcome %+v", o)
 	}
 }
 

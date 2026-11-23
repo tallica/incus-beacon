@@ -325,23 +325,24 @@ in `user.incus-beacon.update-reason`. What to do then is in
 
 It needs Incus 7.6 or later on the server, and refuses:
 
-- an incus-compose instance whose incus-compose has no image override (see
-  below);
+- an incus-compose instance with no `user.image_alias` for the image override to
+  name;
 - incus-beacon's own instance (use `upgrade`);
 - a stopped instance;
 - an instance with instance snapshots, which a rebuild can't keep;
 - an instance with no `volatile.base_image` to roll back to;
 - a ref that failed before.
 
-An incus-compose instance can be updated only when its incus-compose has an
-image override: it lists `image-override` in the instance's own
-`user.incus-compose.features`. Otherwise its next `up` would recreate the
-instance from the compose file's older tag. Beacon sets the override
+On an incus-compose instance, beacon sets the image override
 (`user.incus-compose.image-override` and `image-override-of`, described under
 "Image override" in incus-compose's `up` documentation once released), so `up`
 keeps the instance on the new image, even across a recreate for another change.
-No released incus-compose has the override yet, so this path is untested (to
-verify).
+This needs an incus-compose with the override (lxc/incus-compose#282). An older
+one ignores the two keys and can't be told apart on the instance, so beacon
+updates it anyway, and its next recreate, and likely `up --pull always` or
+`pull`, puts the instance back on the compose file's tag, on volumes the new
+image may already have migrated. No released incus-compose has the override yet,
+so this path is untested (to verify).
 
 Beacon records the compose file's ref in `user.incus-beacon.requested` and the
 one it moved to in `applied`, and keeps tracking `applied`, or incus-compose's

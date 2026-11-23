@@ -20,6 +20,9 @@ get an entry.
 
 ### Fixed
 
+- `update` no longer refuses incus-compose instances for lacking
+  `user.incus-compose.features`, which incus-compose doesn't write; an older
+  incus-compose may undo the update.
 - `upgrade` and `configure` start the instance again when rolling back from a
   failed rebuild or start, instead of leaving it stopped.
 - `install` and `upgrade` refuse a malformed `--image`, such as one with a stray
