@@ -27,6 +27,9 @@ get an entry.
   failed rebuild or start, instead of leaving it stopped.
 - `install` and `upgrade` refuse a malformed `--image`, such as one with a stray
   `image=`, before stopping or creating anything.
+- `serve` no longer fails every other cycle with "context canceled": its Incus
+  connection ended with the cycle that opened it, which could also fail checks
+  on events between cycles.
 
 ## [0.6.0-beta.2] - 2026-11-22
 
