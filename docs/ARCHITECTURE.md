@@ -334,9 +334,9 @@ Refs are normalised with Docker conventions: `nginx` becomes
   own at `/var/log/incus-beacon`, apart from the certificate, and `uninstall`
   keeps it unless told otherwise, so a failure can still be investigated once
   the instance is gone. Incus mounts a container's disk device with
-  `create=dir`, so no image, old or new, needs the mount point (read in Incus
-  7.6's source; to verify live). Once the instance is gone, `uninstall` finds
-  each volume by searching the pools, since nothing else records where it was.
+  `create=dir`, so no image, old or new, needs the mount point (seen on Incus
+  7.6). Once the instance is gone, `uninstall` finds each volume by searching
+  the pools, since nothing else records where it was.
 - **Upgrading the installed instance (`upgrade`):** a rebuild, not a delete and
   create, because it keeps the config `install` wrote, the state volume with the
   certificate and the notification URLs, and the trust entry, so no new token is
@@ -348,11 +348,11 @@ Refs are normalised with Docker conventions: `nginx` becomes
   image's `oci.*` keys through a rebuild, harmless while the image's entrypoint
   stays the same (to verify). An instance without a `log` device gets the log
   volume, the device and `BEACON_AUDIT_LOG` before the stop, attached while it
-  runs (to verify), and a volume created for an attach that fails is deleted.
-  The device decides, not the key, so a key unset to turn the log off stays
-  unset, while a key without the device is pointed at the volume. A rollback
-  leaves all three: `config` reads only the `BEACON_*` variables of flags it
-  knows, so the old binary ignores the key.
+  runs, and a volume created for an attach that fails is deleted. The device
+  decides, not the key, so a key unset to turn the log off stays unset, while a
+  key without the device is pointed at the volume. A rollback leaves all three:
+  `config` reads only the `BEACON_*` variables of flags it knows, so the old
+  binary ignores the key.
 - **Reconfiguring the installed instance (`configure`):** it builds the new
   config, then has `config` parse `serve` from the resulting `BEACON_*`
   variables, so a setting serve would refuse is refused before anything changes.

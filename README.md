@@ -439,10 +439,10 @@ The instance `install` creates writes to `/var/log/incus-beacon/audit.log` on
 its log volume, set by `environment.BEACON_AUDIT_LOG`. Read it with
 `incus file pull incus-beacond/var/log/incus-beacon/audit.log -` while the
 instance exists, or with
-`incus storage volume file pull <pool> custom/incus-beacond-log audit.log -`
-after an uninstall (to verify), where `<pool>` is the `install` record's `pool`.
-A reused volume holds an earlier install's records too; each install's lines
-start at its `install` record. To turn the log off, run
+`incus storage volume file pull <pool> incus-beacond-log/audit.log -` after an
+uninstall, where `<pool>` is the `install` record's `pool`. A reused volume
+holds an earlier install's records too; each install's lines start at its
+`install` record. To turn the log off, run
 `incus config unset incus-beacond environment.BEACON_AUDIT_LOG` and restart the
 instance. `configure` never touches the key, and `upgrade` sets it only on an
 instance without a `log` device, replacing any path set there by hand. A command
