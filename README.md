@@ -407,22 +407,22 @@ Every record has `time` (UTC), `event`, `version`, `by` (the process, as
 `to` (the refs); from the claim on, `op` is the claim's snapshot name, which
 links the records of one update.
 
-| `event`                                  | Written when                                 | Also has                                                      |
-| ---------------------------------------- | -------------------------------------------- | ------------------------------------------------------------- |
-| `update.claim`                           | the instance is claimed                      | `from_image`, `digest`, `dropped`, `kept`                     |
-| `update.takeover`                        | an abandoned claim is taken over             | `from_image`, `dropped`, `reason`                             |
-| `update.step`                            | a step begins, is done or failed             | `step`, `phase`, `error`                                      |
-| `update.undo`                            | an undo begins, is done or failed            | `step`, `phase`, `error`                                      |
-| `snapshot.create`                        | a volume is snapshotted                      | `snapshot` (`pool/volume/name`), `error`                      |
-| `snapshot.restore`                       | a volume is restored                         | `snapshot`, `error`                                           |
-| `snapshot.prune`                         | an old snapshot of beacon's is deleted       | `snapshot`, `error`                                           |
-| `update.release`                         | the claim is dropped and the outcome written | only on success; else the outcome has the `error`             |
-| `update.outcome`                         | the update ends, refusals included           | `status`, `reason`, `from_image`, `image`, `error`            |
-| `install`                                | `install` begins, is done or failed          | `phase`, `image`, `pool`, `volume`, `log_volume`, `error`     |
-| `configure`                              | `configure` begins, is done or failed        | `phase`, `settings`, `error`                                  |
-| `upgrade`                                | `upgrade` begins, is done or failed          | `phase`, `from`, `from_image`, `image`, `log_volume`, `error` |
-| `uninstall`                              | `uninstall` begins, is done or failed        | `phase`, `removed`, `kept_volume`, `error`                    |
-| `configure.rollback`, `upgrade.rollback` | the command rolls back                       | `phase`, `error`, and the command's own fields                |
+| `event`              | Written when                                   | Also has                                                      |
+| -------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| `update.claim`       | the instance is claimed                        | `from_image`, `digest`, `dropped`, `kept`                     |
+| `update.takeover`    | an abandoned claim is taken over               | `from_image`, `dropped`, `reason`                             |
+| `update.step`        | a step begins, is done or failed               | `step`, `phase`, `error`                                      |
+| `update.undo`        | an undo begins, is done or failed              | `step`, `phase`, `error`                                      |
+| `snapshot.create`    | a volume is snapshotted                        | `snapshot` (`pool/volume/name`), `error`                      |
+| `snapshot.restore`   | a volume is restored                           | `snapshot`, `error`                                           |
+| `snapshot.prune`     | an old snapshot of beacon's is deleted         | `snapshot`, `error`                                           |
+| `update.release`     | the claim is dropped and the outcome written   | only on success; else the outcome has the `error`             |
+| `update.outcome`     | the update ends, refusals included             | `status`, `reason`, `from_image`, `image`, `error`            |
+| `install`            | `install` begins, is done or failed            | `phase`, `image`, `pool`, `volume`, `log_volume`, `error`     |
+| `configure`          | `configure` begins, is done or failed          | `phase`, `settings`, `error`                                  |
+| `upgrade`            | `upgrade` begins, is done or failed            | `phase`, `from`, `from_image`, `image`, `log_volume`, `error` |
+| `uninstall`          | `uninstall` begins, is done or failed          | `phase`, `removed`, `kept_volume`, `error`                    |
+| `<command>.rollback` | `install`, `configure` or `upgrade` rolls back | `phase`, `error`, and the command's own fields                |
 
 A field is left out when it doesn't apply. `digest` is what the rebuild was
 pinned to. An update's `dropped` and `kept` name the environment keys it drops
@@ -463,9 +463,11 @@ log volume the command sets out to attach, like `image` and `volume` on a
 `begin` record: always for `install`, and for `upgrade` only when the instance
 had none. A refusal, and a `configure` that finds the settings already as given,
 write nothing; `uninstall` always writes, even when it finds nothing to remove.
-`settings` names the `configure` flags whose value it sets out to change, on its
-`failed` record too; `removed` lists what `uninstall` deleted, naming a trust
-token by its operation ID; `kept_volume` names the log volume it left.
+A failed `install` without `install.rollback` records left its instance, which
+did not join Incus, in place. `settings` names the `configure` flags whose value
+it sets out to change, on its `failed` record too; `removed` lists what
+`uninstall` deleted, naming a trust token by its operation ID; `kept_volume`
+names the log volume it left.
 
 ### Endpoints
 

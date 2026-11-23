@@ -151,15 +151,18 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 
 	var undo []func() error
 	rollback := func(err error) error {
+		log.AuditBegin(audit, "install.rollback").Send()
+		var rerr error
 		for _, f := range slices.Backward(undo) {
-			err = errors.Join(err, f())
+			rerr = errors.Join(rerr, f())
 		}
-		return err
+		log.AuditEnd(audit, "install.rollback", rerr).Send()
+		return errors.Join(err, rerr)
 	}
 
 	vol := VolumeName(opts.Name)
 	if err := createVolume(srv, pool, vol); err != nil {
-		return err
+		return rollback(err)
 	}
 	undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", vol) })
 	opts.Log.Info().Str("pool", pool).Str("volume", vol).Msg("volume created")

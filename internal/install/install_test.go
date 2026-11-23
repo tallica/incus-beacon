@@ -472,8 +472,8 @@ func TestInstallRollsBack(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "image not found") {
 		t.Fatalf("err %v", err)
 	}
-	if r := checkAudit(t, &buf, "install begin", "install failed"); !strings.Contains(fmt.Sprint(r[1]["error"]), "image not found") {
-		t.Errorf("failed record %v, want the error", r[1])
+	if r := checkAudit(t, &buf, "install begin", "install.rollback begin", "install.rollback done", "install failed"); !strings.Contains(fmt.Sprint(r[3]["error"]), "image not found") {
+		t.Errorf("failed record %v, want the error", r[3])
 	}
 	want := []string{"create volume incus-beacon-state", "create volume incus-beacon-log", "create token", "delete token", "delete volume incus-beacon-log", "delete volume incus-beacon-state"}
 	if !slices.Equal(f.calls, want) {
@@ -512,11 +512,30 @@ func TestInstallKeepsInstanceThatDidNotJoin(t *testing.T) {
 	f.joins = false
 	o := opts()
 	o.Wait = 10 * time.Millisecond
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
 	if err := Install(context.Background(), f, o); err == nil || !strings.Contains(err.Error(), "did not join") {
 		t.Fatalf("err %v", err)
 	}
 	if f.instances["incus-beacon"] == nil {
 		t.Error("instance removed; its log is what explains the failure")
+	}
+	checkAudit(t, &buf, "install begin", "install failed")
+}
+
+func TestInstallRecordsARollbackOfNothing(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.volumes["default/incus-beacon-state"] = api.StorageVolumesPost{Name: "incus-beacon-state"}
+	o := opts()
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
+	if err := Install(context.Background(), f, o); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("err %v, want the state volume's conflict", err)
+	}
+	checkAudit(t, &buf, "install begin", "install.rollback begin", "install.rollback done", "install failed")
+	if _, ok := f.volumes["default/incus-beacon-state"]; !ok {
+		t.Error("a volume install did not create was deleted")
 	}
 }
 
