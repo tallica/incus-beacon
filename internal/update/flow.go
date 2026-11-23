@@ -128,8 +128,6 @@ type claim struct {
 
 var errTaken = errors.New("the claim was taken over")
 
-const rebuildTries = 4
-
 // Abandoned reports a readable claim whose lease has run out.
 func Abandoned(raw string, now time.Time) bool {
 	var c claim
@@ -757,7 +755,15 @@ func (u *updater) rebuildOld(ctx context.Context) error {
 	if err := u.stop(ctx); err != nil {
 		return err
 	}
-	if err := u.rebuildOldImage(ctx); err != nil || u.c.OCI == nil {
+	err := Rebuild(ctx, u.srv, u.t.Instance, api.InstanceSource{Type: "image", Fingerprint: u.c.From})
+	if incus.IsBusy(err) {
+		// Incus replaces the rootfs before the oci.* refresh that another write's lock skips (7.6).
+		if inst, _, gerr := u.srv.GetInstance(u.t.Instance); gerr == nil && inst.Config["volatile.base_image"] == u.c.From {
+			u.log.Warn().Err(err).Msg("old image back, but its oci.* keys not refreshed; the claim's go back")
+			err = nil
+		}
+	}
+	if err != nil || u.c.OCI == nil {
 		return err
 	}
 	return u.write(ctx, func(cfg map[string]string) error {
@@ -769,37 +775,6 @@ func (u *updater) rebuildOld(ctx context.Context) error {
 		maps.Copy(cfg, u.c.OCI)
 		return nil
 	})
-}
-
-// rebuildOldImage rebuilds until the instance reads the old fingerprint: docs/ARCHITECTURE.md#updating says why.
-func (u *updater) rebuildOldImage(ctx context.Context) error {
-	var err error
-	for try := 1; try <= rebuildTries; try++ {
-		if try > 1 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(u.opts.Every):
-			}
-		}
-		err = Rebuild(ctx, u.srv, u.t.Instance, api.InstanceSource{Type: "image", Fingerprint: u.c.From})
-		if err != nil && !incus.IsBusy(err) {
-			return err
-		}
-		inst, _, gerr := u.srv.GetInstance(u.t.Instance)
-		if gerr != nil {
-			return gerr
-		}
-		if inst.Config["volatile.base_image"] == u.c.From {
-			if err != nil {
-				u.log.Warn().Err(err).Msg("old image back, but its oci.* keys not refreshed; the claim's go back")
-			}
-			return nil
-		}
-		err = cmp.Or(err, errors.New("another write put the new image's keys back"))
-		u.log.Warn().Err(err).Int("try", try).Msg("old image not recorded; rebuilding again")
-	}
-	return err
 }
 
 // ociKeys copies the instance's own oci.* keys, nil when it has none.

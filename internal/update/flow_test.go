@@ -71,13 +71,14 @@ type fake struct {
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
 	stuck    bool
 	lockedAt int // the write (from 1) refused once as held up by another update
-	// heldUp says what another write does to the n-th rebuild (from 1): "late" holds up its oci.*
-	// refresh, "early" fails it before the rootfs changes, "reverted" puts the old keys back after it.
-	heldUp   func(n int) string
-	ociNew   string // oci.entrypoint the new image's rebuild refreshes to
-	snapFail string // pool/name whose snapshot fails
-	hang     bool   // the rebuild onto the new image never finishes
-	hangDel  bool   // snapshot deletes never finish
+	// lockedRebuild is the rebuild (from 1) whose oci.* refresh another write's lock skips;
+	// lockedEarly fails it before the rootfs changes instead.
+	lockedRebuild int
+	lockedEarly   bool
+	ociNew        string // oci.entrypoint the new image's rebuild refreshes to
+	snapFail      string // pool/name whose snapshot fails
+	hang          bool   // the rebuild onto the new image never finishes
+	hangDel       bool   // snapshot deletes never finish
 }
 
 func newFake() *fake {
@@ -189,25 +190,17 @@ func (f *fake) RebuildInstance(_ string, req api.InstanceRebuildPost) (incusclie
 	if f.hang && req.Source.Fingerprint == "" {
 		return hungOp{}, nil
 	}
-	var how string
-	if f.heldUp != nil {
-		how = f.heldUp(len(f.rebuilds))
-	}
-	if how == "early" {
+	locked := len(f.rebuilds) == f.lockedRebuild
+	if locked && f.lockedEarly {
 		return lockedOp{}, nil
 	}
-	before := f.inst.Config["volatile.base_image"]
 	if req.Source.Fingerprint != "" {
 		f.inst.Config["volatile.base_image"] = req.Source.Fingerprint
 	} else {
 		f.inst.Config["volatile.base_image"] = "fp-new"
 	}
-	switch how {
-	case "late":
+	if locked {
 		return lockedOp{}, nil
-	case "reverted":
-		f.inst.Config["volatile.base_image"] = before
-		return fakeOp{}, nil
 	}
 	if f.ociNew != "" && req.Source.Fingerprint == "" {
 		f.inst.Config["oci.entrypoint"] = f.ociNew
@@ -438,31 +431,27 @@ func TestApplyRecoversAnAbandonedClaim(t *testing.T) {
 func TestApplyRollbackFinishesARebuildAnotherWriteHeldUp(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
-		crash  bool
-		heldUp func(n int) string
-		want   string
+		crash         bool
+		lockedRebuild int
+		early         bool
+		want          string
 	}{
-		"undo rebuild's oci.* refresh held up": {true, func(n int) string { return when(n == 2, "late") }, RolledBack},
-		"forward rebuild held up":              {false, func(n int) string { return when(n == 1, "late") }, RolledBack},
-		"undo rebuild held up before it ran":   {true, func(n int) string { return when(n == 2, "early") }, RolledBack},
-		"undo rebuild undone by a stale write": {true, func(n int) string { return when(n == 2, "reverted") }, RolledBack},
-		"every undo rebuild held up":           {true, func(n int) string { return when(n >= 2, "early") }, Failed},
+		"undo rebuild held up":              {crash: true, lockedRebuild: 2, want: RolledBack},
+		"forward rebuild held up":           {lockedRebuild: 1, want: RolledBack},
+		"undo rebuild held up, not rebuilt": {crash: true, lockedRebuild: 2, early: true, want: Failed},
 	} {
 		f := newFake()
 		f.inst.Config["oci.entrypoint"] = "nginx-old"
 		f.inst.Config["oci.cwd"] = "/srv"
 		f.ociNew = "nginx-new"
 		f.crash = func(n int) bool { return tc.crash && n == 1 }
-		f.heldUp = tc.heldUp
+		f.lockedRebuild, f.lockedEarly = tc.lockedRebuild, tc.early
 		o := apply(t, f, target())
 		if o.Status != tc.want {
 			t.Errorf("%s: outcome %+v, want %s", name, o, tc.want)
 			continue
 		}
 		if tc.want != RolledBack {
-			if n := len(f.rebuilds); n != 1+rebuildTries {
-				t.Errorf("%s: %d rebuilds, want the new image and %d tries of the old", name, n, rebuildTries)
-			}
 			continue
 		}
 		if cfg := f.inst.Config; cfg["oci.entrypoint"] != "nginx-old" || cfg["oci.cwd"] != "/srv" || cfg["volatile.base_image"] != "fp-old" {
@@ -472,13 +461,6 @@ func TestApplyRollbackFinishesARebuildAnotherWriteHeldUp(t *testing.T) {
 			t.Errorf("%s: instance %s, want running", name, f.inst.Status)
 		}
 	}
-}
-
-func when(cond bool, how string) string {
-	if cond {
-		return how
-	}
-	return ""
 }
 
 func TestApplyLosesARaceForTheClaim(t *testing.T) {
