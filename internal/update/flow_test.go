@@ -66,8 +66,8 @@ type fake struct {
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
 	stuck bool
 	// stale makes reads after the first, following a crashing start, report Running until a stop
-	// request finds the instance stopped. Modelled, not observed: Incus was seen to report Running
-	// briefly after such a start, but not this interleaving (to verify).
+	// request finds the instance stopped: the client's view of the one live "already stopped"
+	// failure, whose rollback read Running and then had its stop refused.
 	stale           bool
 	crashed         bool
 	readsSinceCrash int

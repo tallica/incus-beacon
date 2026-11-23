@@ -57,7 +57,7 @@ type Options struct {
 	Owner string        // names this process in a claim
 	Now   func() time.Time
 	Log   zerolog.Logger
-	// Audit gets one record per change made; the zero Logger writes none.
+	// Audit gets a record per step, undo and snapshot and one per outcome; the zero Logger writes none.
 	Audit zerolog.Logger
 	// pruneWait bounds the wait only: Incus finishes a delete it has accepted.
 	pruneWait time.Duration

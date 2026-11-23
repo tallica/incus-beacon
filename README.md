@@ -245,7 +245,7 @@ often needed:
 | `--update`, `--update-window`              | Apply updates to `update=auto` instances, at any time or in a window; `serve`, `install`, `configure` |
 | `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                                                   |
 | `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default                            |
-| `--audit-log`                              | File [audit records](#audit-log) go to, for all but `check` and `status`; none by default             |
+| `--audit-log`                              | File [audit records](#audit-log) go to, for all but `check`, `status` and `version`; none by default  |
 | `--audit-log-max-size`                     | Size past which the audit log is rotated, e.g. `4KiB`; `10MiB` by default                             |
 | `--audit-log-keep`                         | Rotated audit logs kept, `<file>.1` being the newest; 5 by default, and 0 keeps none                  |
 | `--log-level`, `--log-format`              | `debug` to `error`; `console` (default) or `json` (logs go to stderr)                                 |
@@ -427,9 +427,11 @@ links the records of one update.
 A field is left out when it doesn't apply. `digest` is what the rebuild was
 pinned to. An update's `dropped` and `kept` name the environment keys it drops
 and keeps, never their values. The outcome's `image` is the fingerprint the
-release found the instance on, beside the `from_image` it started from; a
-refusal, which never claimed the instance, has neither. Environment values,
-credentials and notification URLs are never written.
+release found the instance on, beside the `from_image` it started from; neither
+is there when no release was written: a refusal before the claim, an update
+abandoned to the process that took its claim over, or a release that failed,
+whose error the outcome carries. Environment values, credentials and
+notification URLs are never written.
 
 ```sh
 jq -c 'select(.op == "incus-beacon-20261122T100405") | {event, step, phase, status}' audit.log
@@ -444,22 +446,26 @@ uninstall, where `<pool>` is the `install` record's `pool`. A reused volume
 holds an earlier install's records too; each install's lines start at its
 `install` record. To turn the log off, run
 `incus config unset incus-beacond environment.BEACON_AUDIT_LOG` and restart the
-instance. `configure` never touches the key, and `upgrade` sets it only on an
-instance without a `log` device, replacing any path set there by hand. A command
-run in the instance with `incus exec` gets `BEACON_AUDIT_LOG` too, so it writes
-to the same log unless given its own `--audit-log`; give it
-`--user 65534 --group 65534` to run as beacon does. Run as root, it hands any
-file it creates to the log directory's owner, so `serve` can go on writing.
+instance; `environment.BEACON_AUDIT_LOG_MAX_SIZE` and
+`environment.BEACON_AUDIT_LOG_KEEP` set its rotation the same way. `configure`
+never touches the key, and `upgrade` sets it only on an instance without a `log`
+device, replacing any path set there by hand. A command run in the instance with
+`incus exec` gets `BEACON_AUDIT_LOG` too, so it writes to the same log unless
+given its own `--audit-log`; give it `--user 65534 --group 65534` to run as
+beacon does. Run as root, it hands any file it creates to the log directory's
+owner, so `serve` can go on writing.
 
 `install`, `configure`, `upgrade` and `uninstall` write only when given
-`--audit-log`, to a file on the host they run on. `install` has no `project`,
-since it creates the instance in the remote's. `log_volume` is the log volume
-the command sets out to attach, like `image` and `volume` on a `begin` record:
-always for `install`, and for `upgrade` only when the instance had none. A
-refusal, and a `configure` that finds the settings already as given, write
-nothing; `uninstall` always writes, even when it finds nothing to remove.
-`settings` names the `configure` flags whose value changed; `removed` lists what
-`uninstall` deleted, and `kept_volume` names the log volume it left.
+`--audit-log`, to a file on the host they run on, which their
+`--audit-log-max-size` and `--audit-log-keep` rotate. `install` has no
+`project`, since it creates the instance in the remote's. `log_volume` is the
+log volume the command sets out to attach, like `image` and `volume` on a
+`begin` record: always for `install`, and for `upgrade` only when the instance
+had none. A refusal, and a `configure` that finds the settings already as given,
+write nothing; `uninstall` always writes, even when it finds nothing to remove.
+`settings` names the `configure` flags whose value it sets out to change, on its
+`failed` record too; `removed` lists what `uninstall` deleted, and `kept_volume`
+names the log volume it left.
 
 ### Endpoints
 

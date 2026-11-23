@@ -32,7 +32,7 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
 | `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                              | everything below                              |
 | `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                                        |
-| `internal/log`      | zerolog setup: level, JSON or console format, stderr; the size-rotated audit file and the fields its records share                        | zerolog                                       |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr; the size-rotated audit file and the fields its records share                        | zerolog, config                               |
 | `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                                        |
 | `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust             |
 | `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                            |

@@ -27,7 +27,7 @@ func SplitImage(ref string) (server, alias string, err error) {
 	return "https://" + host, rest, nil
 }
 
-// SetState runs a start or stop and waits for it; a stop is forced and passes if Incus refuses it for a stopped instance.
+// SetState runs a start or stop and waits for it; a stop is forced, and any failure of it passes once the instance reads stopped.
 func SetState(ctx context.Context, srv incusclient.InstanceServer, name, action string) error {
 	op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"}, "")
 	if err == nil {
