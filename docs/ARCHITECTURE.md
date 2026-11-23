@@ -175,10 +175,14 @@ ref is the tracked ref at the `latest` tag.
    `volatile.base_image`, put the override keys and the dropped keys back as
    they were, and start and gate again. A volume another instance also uses is
    not restored, and the outcome says so; its snapshot is still taken, for a
-   restore by hand once the other instances are stopped. An undo rebuild that
-   fails on another write's lock has already replaced the rootfs, only not the
-   `oci.*` keys; it counts once the instance is on the old fingerprint, and the
-   claim's record of the `oci.*` keys goes back (to verify).
+   restore by hand once the other instances are stopped. Another write to the
+   instance can fail the undo rebuild on Incus's update lock, before or after
+   the rootfs is replaced, or land after it and put the new image's
+   `volatile.base_image` and `image.*` back (seen on Incus 7.6: a write that
+   passed its ETag check before the rebuild applies after it). So the undo
+   rebuilds up to four times until the instance reads the old fingerprint, then
+   puts the `oci.*` keys back as the claim recorded them, since a held-up
+   rebuild skips their refresh (to verify).
 5. **Release** the claim and record the outcome in one write, with `applied` and
    `applied-image` naming the ref and image the instance is left on:
    `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback
