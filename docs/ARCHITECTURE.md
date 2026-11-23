@@ -344,15 +344,17 @@ Refs are normalised with Docker conventions: `nginx` becomes
   `incus exec`: it fails only when a cycle can't list instances, so a registry
   outage doesn't roll back a good release. The rollback rebuilds from the old
   `volatile.base_image` fingerprint, which Incus still caches at that point, so
-  it needs no registry. Verified on Incus 7.6 only; older servers keep the old
-  image's `oci.*` keys through a rebuild, harmless while the image's entrypoint
-  stays the same (to verify). An instance without a `log` device gets the log
-  volume, the device and `BEACON_AUDIT_LOG` before the stop, attached while it
-  runs, and a volume created for an attach that fails is deleted. The device
-  decides, not the key, so a key unset to turn the log off stays unset, while a
-  key without the device is pointed at the volume. A rollback leaves all three:
-  `config` reads only the `BEACON_*` variables of flags it knows, so the old
-  binary ignores the key.
+  it needs no registry. Verified on Incus 7.6 only. Older servers keep the old
+  image's `oci.*` keys through a rebuild (seen on 7.4); every release runs as
+  65534 in `/`, and the image keeps the pre-0.6 entry point, so a kept
+  `/usr/local/bin/incus-beacon serve` still starts serve (seen on 7.6 with the
+  key set by hand). An instance without a `log` device gets the log volume, the
+  device and `BEACON_AUDIT_LOG` before the stop, attached while it runs, and a
+  volume created for an attach that fails is deleted. The device decides, not
+  the key, so a key unset to turn the log off stays unset, while a key without
+  the device is pointed at the volume. A rollback leaves all three: `config`
+  reads only the `BEACON_*` variables of flags it knows, so the old binary
+  ignores the key.
 - **Reconfiguring the installed instance (`configure`):** it builds the new
   config, then has `config` parse `serve` from the resulting `BEACON_*`
   variables, so a setting serve would refuse is refused before anything changes.
