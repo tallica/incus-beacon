@@ -30,10 +30,8 @@ func NewRotating(path string, maxSize int64, keep int) *Rotating {
 func (r *Rotating) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.f == nil {
-		if err := r.open(); err != nil {
-			return 0, err
-		}
+	if err := r.follow(); err != nil {
+		return 0, err
 	}
 	if r.maxSize > 0 && r.size > 0 && r.size+int64(len(p)) > r.maxSize {
 		if err := r.rotate(); err != nil {
@@ -57,6 +55,22 @@ func (r *Rotating) Close() error {
 	err := r.f.Close()
 	r.f = nil
 	return err
+}
+
+// follow reopens the path once another process has rotated the file away, and takes the
+// file's size, not this process's share of it.
+func (r *Rotating) follow() error {
+	if r.f != nil {
+		st, err := os.Stat(r.path)
+		own, ferr := r.f.Stat()
+		if err == nil && ferr == nil && os.SameFile(st, own) {
+			r.size = st.Size()
+			return nil
+		}
+		_ = r.f.Close() // every record in it is already synced
+		r.f = nil
+	}
+	return r.open()
 }
 
 func (r *Rotating) open() error {

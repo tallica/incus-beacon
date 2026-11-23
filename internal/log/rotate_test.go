@@ -153,6 +153,36 @@ func TestRotatingNoLimit(t *testing.T) {
 	}
 }
 
+func TestRotatingFollowsAnotherWritersRotation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, b := NewRotating(path, 8, 0), NewRotating(path, 1<<20, 0)
+	write(t, a, "a1")
+	write(t, b, "b1")
+	write(t, a, "a2") // rotates, and keep 0 removes the file b holds
+	write(t, b, "b2")
+	_, _ = a.Close(), b.Close()
+	if got := read(t, path); got != "a2\nb2\n" {
+		t.Errorf("file %q, want b's record after a's rotation in it", got)
+	}
+}
+
+func TestRotatingCountsOtherWritersRecords(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a, b := NewRotating(path, 11, 1), NewRotating(path, 1<<20, 1)
+	write(t, a, "a1")
+	write(t, b, "b1", "b2")
+	write(t, a, "a2") // 9 bytes in the file, of which a wrote 3
+	_, _ = a.Close(), b.Close()
+	if got := read(t, path); got != "a2\n" {
+		t.Errorf("file %q, want a's record past the cap in a new file", got)
+	}
+	if got := read(t, path+".1"); got != "a1\nb1\nb2\n" {
+		t.Errorf("rotated %q", got)
+	}
+}
+
 func TestRotatingConcurrentWriters(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "audit.log")
