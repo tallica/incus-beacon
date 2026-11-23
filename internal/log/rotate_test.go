@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -180,6 +181,31 @@ func TestRotatingCountsOtherWritersRecords(t *testing.T) {
 	}
 	if got := read(t, path+".1"); got != "a1\nb1\nb2\n" {
 		t.Errorf("rotated %q", got)
+	}
+}
+
+func TestRotatingDropsFilesPastALowerKeep(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+	for _, name := range []string{"audit.log.1", "audit.log.3", "audit.log.5", "audit.log.old", "other.log.4"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "audit.log.4"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRotating(path, 4, 2)
+	write(t, r, "one", "two")
+	_ = r.Close()
+	entries, _ := os.ReadDir(dir)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if want := []string{"audit.log", "audit.log.1", "audit.log.2", "audit.log.4", "audit.log.old", "other.log.4"}; !slices.Equal(names, want) {
+		t.Errorf("files %v, want %v", names, want)
 	}
 }
 

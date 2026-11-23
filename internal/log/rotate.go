@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -138,7 +140,24 @@ func (r *Rotating) rotate() error {
 	if err != nil {
 		return err
 	}
+	r.dropOver()
 	return r.open()
+}
+
+// dropOver removes rotated files numbered past keep, left by an earlier, larger keep. Best effort:
+// a file it can't remove must not cost the record.
+func (r *Rotating) dropOver() {
+	entries, err := os.ReadDir(filepath.Dir(r.path))
+	if err != nil {
+		return
+	}
+	prefix := filepath.Base(r.path) + "."
+	for _, e := range entries {
+		n, ok := strings.CutPrefix(e.Name(), prefix)
+		if i, err := strconv.Atoi(n); ok && err == nil && i > r.keep && strconv.Itoa(i) == n && !e.IsDir() {
+			_ = os.Remove(filepath.Join(filepath.Dir(r.path), e.Name()))
+		}
+	}
 }
 
 func (r *Rotating) rename(from, to string) error {
