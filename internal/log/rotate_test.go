@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -53,6 +54,46 @@ func TestRotatingAppendsAcrossReopen(t *testing.T) {
 	}
 	if st.Mode().Perm() != 0o640 {
 		t.Errorf("mode %v, want 0640", st.Mode().Perm())
+	}
+}
+
+func owner(t *testing.T, path string) (uint32, uint32) {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys := st.Sys().(*syscall.Stat_t)
+	return sys.Uid, sys.Gid
+}
+
+func TestRotatingRootGivesNewFilesTheDirOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.Chown(dir, 65534, 65534); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "audit.log")
+	r := NewRotating(path, 6, 2)
+	write(t, r, "one", "two")
+	_ = r.Close()
+	for _, p := range []string{path, path + ".1"} {
+		if uid, gid := owner(t, p); uid != 65534 || gid != 65534 {
+			t.Errorf("%s owned by %d:%d, want 65534:65534", p, uid, gid)
+		}
+	}
+
+	if err := os.Chown(path, 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	r = NewRotating(path, 1<<20, 2)
+	write(t, r, "three")
+	_ = r.Close()
+	if uid, gid := owner(t, path); uid != 1000 || gid != 1000 {
+		t.Errorf("existing file owned by %d:%d, want it left at 1000:1000", uid, gid)
 	}
 }
 

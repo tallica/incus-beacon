@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 )
 
 // Rotating appends to path, shifting it to path.1 … path.keep past maxSize (<= 0: never); keep 0 keeps none.
@@ -62,16 +63,44 @@ func (r *Rotating) open() error {
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o750); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
+	created := true
+	f, err := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
+	if errors.Is(err, fs.ErrExist) {
+		created = false
+		f, err = os.OpenFile(r.path, os.O_APPEND|os.O_WRONLY, 0)
+	}
 	if err != nil {
 		return err
 	}
-	st, err := f.Stat()
+	if created {
+		err = chownToDir(f, filepath.Dir(r.path))
+	}
+	var st fs.FileInfo
+	if err == nil {
+		st, err = f.Stat()
+	}
 	if err != nil {
 		return errors.Join(err, f.Close())
 	}
 	r.f, r.size = f, st.Size()
 	return nil
+}
+
+// chownToDir gives a file root created its directory's owner, so a root process
+// beside an unprivileged one (incus exec next to serve) can't lock it out.
+func chownToDir(f *os.File, dir string) error {
+	if os.Geteuid() != 0 {
+		return nil
+	}
+	st, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil
+	}
+	return f.Chown(int(sys.Uid), int(sys.Gid))
 }
 
 func (r *Rotating) rotate() error {

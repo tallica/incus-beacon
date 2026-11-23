@@ -445,7 +445,11 @@ A reused volume holds an earlier install's records too; each install's lines
 start at its `install` record. To turn the log off, run
 `incus config unset incus-beacond environment.BEACON_AUDIT_LOG` and restart the
 instance. `configure` never touches the key, and `upgrade` sets it only on an
-instance without a `log` device, replacing any path set there by hand.
+instance without a `log` device, replacing any path set there by hand. A command
+run in the instance with `incus exec` gets `BEACON_AUDIT_LOG` too, so it writes
+to the same log unless given its own `--audit-log`; give it
+`--user 65534 --group 65534` to run as beacon does. Run as root, it hands any
+file it creates to the log directory's owner, so `serve` can go on writing.
 
 `install`, `configure`, `upgrade` and `uninstall` write only when given
 `--audit-log`, to a file on the host they run on. `install` has no `project`,
