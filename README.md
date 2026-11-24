@@ -244,7 +244,7 @@ often needed:
 | `--interval`                               | Time between `serve` cycles; `serve`, `install` and `configure`                                       |
 | `--update`, `--update-window`              | Apply updates to `update=auto` instances, at any time or in a window; `serve`, `install`, `configure` |
 | `--notify-url`, `--notify-command`         | Where `serve` sends [notifications](#notifications)                                                   |
-| `--registry-auth-file`                     | A docker `config.json`, for `check` and `serve`; docker's usual by default                            |
+| `--registry-auth-file`                     | A docker `config.json`, for `check`, `serve` and `update`; docker's usual by default                  |
 | `--audit-log`                              | File [audit records](#audit-log) go to, for all but `check`, `status` and `version`; none by default  |
 | `--audit-log-max-size`                     | Size past which the audit log is rotated, e.g. `4KiB`; `10MiB` by default                             |
 | `--audit-log-keep`                         | Rotated audit logs kept, `<file>.1` being the newest; 5 by default, and 0 keeps none                  |
