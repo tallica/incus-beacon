@@ -34,6 +34,13 @@ type hungOp struct{ incusclient.Operation }
 
 func (hungOp) WaitContext(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 
+// lockedOp fails as Incus does when another write held the instance's update lock.
+type lockedOp struct{ incusclient.Operation }
+
+func (lockedOp) WaitContext(context.Context) error {
+	return errors.New("Failed to create instance update operation: A matching non-reusable operation has now succeeded")
+}
+
 func (fakeOp) Wait() error                       { return nil }
 func (fakeOp) WaitContext(context.Context) error { return nil }
 
@@ -62,10 +69,17 @@ type fake struct {
 	// claimAtRebuild is the claim's step when the new image was rebuilt.
 	claimAtRebuild int
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
-	stuck    bool
-	snapFail string // pool/name whose snapshot fails
-	hang     bool   // the rebuild onto the new image never finishes
-	hangDel  bool   // snapshot deletes never finish
+	stuck      bool
+	busyStates int // start and stop requests to refuse while another operation holds the instance
+	lockedAt   int // the write (from 1) refused once as held up by another update
+	// lockedRebuild is the rebuild (from 1) whose oci.* refresh another write's lock skips;
+	// lockedEarly fails it before the rootfs changes instead.
+	lockedRebuild int
+	lockedEarly   bool
+	ociNew        string // oci.entrypoint the new image's rebuild refreshes to
+	snapFail      string // pool/name whose snapshot fails
+	hang          bool   // the rebuild onto the new image never finishes
+	hangDel       bool   // snapshot deletes never finish
 }
 
 func newFake() *fake {
@@ -122,6 +136,9 @@ func (f *fake) GetInstance(string) (*api.Instance, string, error) {
 
 func (f *fake) UpdateInstance(_ string, put api.InstancePut, etag string) (incusclient.Operation, error) {
 	f.writes++
+	if f.writes == f.lockedAt {
+		return nil, errors.New("Failed to create instance update operation: A matching non-reusable operation has now succeeded")
+	}
 	if f.meddle != nil {
 		before := maps.Clone(f.inst.Config)
 		if f.meddle(f.writes, f.inst.Config); !maps.Equal(before, f.inst.Config) {
@@ -140,6 +157,10 @@ func (f *fake) GetInstanceSnapshotNames(string) ([]string, error) { return f.sna
 
 func (f *fake) UpdateInstanceState(_ string, st api.InstanceStatePut, _ string) (incusclient.Operation, error) {
 	f.states = append(f.states, st.Action)
+	if f.busyStates > 0 {
+		f.busyStates--
+		return nil, errors.New(`Failed to create instance ` + st.Action + ` operation: Instance is busy running a "update" operation`)
+	}
 	switch st.Action {
 	case "stop":
 		if f.stuck && !st.Force {
@@ -174,10 +195,20 @@ func (f *fake) RebuildInstance(_ string, req api.InstanceRebuildPost) (incusclie
 	if f.hang && req.Source.Fingerprint == "" {
 		return hungOp{}, nil
 	}
+	locked := len(f.rebuilds) == f.lockedRebuild
+	if locked && f.lockedEarly {
+		return lockedOp{}, nil
+	}
 	if req.Source.Fingerprint != "" {
 		f.inst.Config["volatile.base_image"] = req.Source.Fingerprint
 	} else {
 		f.inst.Config["volatile.base_image"] = "fp-new"
+	}
+	if locked {
+		return lockedOp{}, nil
+	}
+	if f.ociNew != "" && req.Source.Fingerprint == "" {
+		f.inst.Config["oci.entrypoint"] = f.ociNew
 	}
 	return fakeOp{}, nil
 }
@@ -373,6 +404,7 @@ func TestApplyRecoversAnAbandonedClaim(t *testing.T) {
 	cfg := f.inst.Config
 	cfg["volatile.base_image"] = "fp-new"
 	delete(cfg, "environment.NGINX_VERSION")
+	cfg["oci.entrypoint"] = "set by the new image"
 	cfg[incus.ClaimKey] = claimJSON(t, claim{
 		Owner: "other/7", Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Step: stepIndex(t, "start"), To: newRef,
 		FromRef: oldRef, From: "fp-old",
@@ -395,6 +427,44 @@ func TestApplyRecoversAnAbandonedClaim(t *testing.T) {
 	}
 	if f.inst.StatusCode != api.Running {
 		t.Errorf("instance %s after recovery", f.inst.Status)
+	}
+	if cfg["oci.entrypoint"] != "set by the new image" {
+		t.Errorf("oci.entrypoint %q: a claim from an older process records no oci.* keys to put back", cfg["oci.entrypoint"])
+	}
+}
+
+func TestApplyRollbackFinishesARebuildAnotherWriteHeldUp(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		crash         bool
+		lockedRebuild int
+		early         bool
+		want          string
+	}{
+		"undo rebuild held up":              {crash: true, lockedRebuild: 2, want: RolledBack},
+		"forward rebuild held up":           {lockedRebuild: 1, want: RolledBack},
+		"undo rebuild held up, not rebuilt": {crash: true, lockedRebuild: 2, early: true, want: Failed},
+	} {
+		f := newFake()
+		f.inst.Config["oci.entrypoint"] = "nginx-old"
+		f.inst.Config["oci.cwd"] = "/srv"
+		f.ociNew = "nginx-new"
+		f.crash = func(n int) bool { return tc.crash && n == 1 }
+		f.lockedRebuild, f.lockedEarly = tc.lockedRebuild, tc.early
+		o := apply(t, f, target())
+		if o.Status != tc.want {
+			t.Errorf("%s: outcome %+v, want %s", name, o, tc.want)
+			continue
+		}
+		if tc.want != RolledBack {
+			continue
+		}
+		if cfg := f.inst.Config; cfg["oci.entrypoint"] != "nginx-old" || cfg["oci.cwd"] != "/srv" || cfg["volatile.base_image"] != "fp-old" {
+			t.Errorf("%s: config %v, want the old image with its oci.* keys", name, cfg)
+		}
+		if f.inst.StatusCode != api.Running {
+			t.Errorf("%s: instance %s, want running", name, f.inst.Status)
+		}
 	}
 }
 
@@ -640,12 +710,49 @@ func TestApplyRollsBackAFailedSnapshot(t *testing.T) {
 	}
 }
 
+func TestApplyRetriesAWriteHeldUpByAnotherUpdate(t *testing.T) {
+	t.Parallel()
+	for n := 1; n <= 4; n++ {
+		f := newFake()
+		f.lockedAt = n
+		if o := apply(t, f, target()); o.Status != Updated {
+			t.Errorf("write %d held up once: outcome %+v, want updated", n, o)
+		}
+	}
+}
+
 func TestStopForcesAStuckInstance(t *testing.T) {
 	t.Parallel()
 	f := newFake()
 	f.stuck = true
 	if err := Stop(context.Background(), f, "web", time.Second); err != nil || f.inst.StatusCode != api.Stopped {
 		t.Errorf("err %v, status %s; want a forced stop", err, f.inst.Status)
+	}
+}
+
+func TestSetStateWaitsOutAnotherOperation(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped
+	f.busyStates = 1
+	if err := SetState(context.Background(), f, "web", "start"); err != nil || f.inst.StatusCode != api.Running {
+		t.Errorf("err %v, status %s; want started once the other operation ended", err, f.inst.Status)
+	}
+	f = newFake()
+	f.busyStates = 100
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := SetState(ctx, f, "web", "stop"); !errors.Is(err, context.DeadlineExceeded) || len(f.states) != 1 {
+		t.Errorf("err %v after %d tries; want the caller's deadline during the first wait", err, len(f.states))
+	}
+}
+
+func TestApplyWaitsOutAStopAnotherWriteHeldUp(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.busyStates = 2 // the graceful stop and the forced one
+	if o := apply(t, f, target()); o.Status != Updated {
+		t.Errorf("outcome %+v, want updated", o)
 	}
 }
 

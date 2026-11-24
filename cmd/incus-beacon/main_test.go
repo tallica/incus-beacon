@@ -3,8 +3,10 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tallica/incus-beacon/internal/config"
+	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/version"
 )
 
@@ -66,5 +68,23 @@ func TestLogsGoToStderr(t *testing.T) {
 	}
 	if !strings.Contains(errOut, `"command":"status"`) {
 		t.Errorf("stderr %q, want a JSON log line naming the command", errOut)
+	}
+}
+
+func TestClaimedElsewhere(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		claim string
+		want  bool
+	}{
+		"no claim":   {"", false},
+		"live":       {`{"owner":"other/7","expires":"2026-11-23T12:30:00Z"}`, true},
+		"abandoned":  {`{"owner":"other/7","expires":"2026-11-23T11:30:00Z"}`, false},
+		"unreadable": {"not json", true},
+	} {
+		if got := claimedElsewhere(incus.Target{Claim: tc.claim}, now); got != tc.want {
+			t.Errorf("%s: claimedElsewhere %v, want %v", name, got, tc.want)
+		}
 	}
 }

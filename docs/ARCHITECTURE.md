@@ -136,7 +136,10 @@ ref is the tracked ref at the `latest` tag.
    - the server is older than Incus 7.6, whose rebuild keeps the old image's
      environment and entry point.
 2. **Claim** the instance in `update-claim`, written only if the instance's ETag
-   still matches what was read, so two processes can't both win.
+   still matches what was read, so two processes can't both win. Until the claim
+   is released or abandoned, other beacon processes leave the instance's status
+   keys alone: Incus runs one config update per instance at a time, and a second
+   one during the rebuild makes it skip refreshing the `oci.*` keys and fail.
 3. **Run the steps**, recording in the claim which step has begun:
    1. Stop gracefully, forcing it after `--update-stop-timeout`. With a health
       check, wait for ic-healthd to report `stopped`, so no later status is a
@@ -172,7 +175,14 @@ ref is the tracked ref at the `latest` tag.
    `volatile.base_image`, put the override keys and the dropped keys back as
    they were, and start and gate again. A volume another instance also uses is
    not restored, and the outcome says so; its snapshot is still taken, for a
-   restore by hand once the other instances are stopped.
+   restore by hand once the other instances are stopped. An undo rebuild that
+   fails on another write's lock has already replaced the rootfs, only not the
+   `oci.*` keys; it counts once the instance is on the old fingerprint, and the
+   claim's record of the `oci.*` keys goes back. Incus 7.6 can also apply a
+   config write that passed its ETag check before the undo rebuild after it,
+   putting the new image's `volatile.base_image` and `image.*` back over the old
+   rootfs; the rollback then ends `failed`, with the instance stopped and its
+   storage intact.
 5. **Release** the claim and record the outcome in one write, with `applied` and
    `applied-image` naming the ref and image the instance is left on:
    `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback

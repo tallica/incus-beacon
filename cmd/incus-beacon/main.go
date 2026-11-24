@@ -261,6 +261,9 @@ func writeResults(ctx context.Context, srv incusclient.InstanceServer, results [
 	now := time.Now()
 	for i := range results {
 		r := &results[i]
+		if claimedElsewhere(r.Target, now) {
+			continue
+		}
 		next := check.Beacon(*r, now)
 		changed, err := incus.WriteStatus(ctx, srv, r.Target, next)
 		if err != nil {
@@ -276,6 +279,11 @@ func writeResults(ctx context.Context, srv incusclient.InstanceServer, results [
 		}
 	}
 	return written, failed
+}
+
+// claimedElsewhere leaves an instance's status to the process updating it: docs/ARCHITECTURE.md#updating says why.
+func claimedElsewhere(t incus.Target, now time.Time) bool {
+	return t.Claim != "" && !update.Abandoned(t.Claim, now)
 }
 
 func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error {
