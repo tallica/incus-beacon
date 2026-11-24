@@ -281,6 +281,21 @@ func TestDiscordAndSlack(t *testing.T) {
 	}
 }
 
+func TestServiceHostsPickTheirSender(t *testing.T) {
+	t.Parallel()
+	for raw, want := range map[string]string{
+		"https://discord.com/api/webhooks/1/x": "discord",
+		"https://hooks.slack.com/services/x":   "slack",
+		"http://hooks.slack.com/services/x":    "webhook",
+		"https://example.com/hook":             "webhook",
+	} {
+		got, err := parse(raw, nil)
+		if err != nil || got.kind != want {
+			t.Errorf("%s: kind %q, %v; want %q", raw, got.kind, err, want)
+		}
+	}
+}
+
 func TestDiscordTruncates(t *testing.T) {
 	t.Parallel()
 	var c capture

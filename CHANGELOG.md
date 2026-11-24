@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- Slack and Discord webhook URLs pasted as `https://` now send their messages,
+  instead of a payload the service rejects with 400.
+
 ## [0.6.0-beta.3] - 2026-11-24
 
 ### Added

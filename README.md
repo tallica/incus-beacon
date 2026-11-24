@@ -510,11 +510,11 @@ recovers, sends nothing.
 `--notify-url` can be repeated, or hold several URLs separated by spaces, as
 `BEACON_NOTIFY_URL` does:
 
-| URL                                      | Sends                                                     |
-| ---------------------------------------- | --------------------------------------------------------- |
-| `https://example.com/hook`, or `http://` | The JSON payload below, as a POST                         |
-| `discord://discord.com/api/webhooks/<…>` | A Discord message: the webhook URL with `discord://`      |
-| `slack://hooks.slack.com/services/<…>`   | A Slack message: the incoming webhook URL with `slack://` |
+| URL                                      | Sends                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------- |
+| `https://example.com/hook`, or `http://` | The JSON payload below, as a POST                                      |
+| `discord://discord.com/api/webhooks/<…>` | A Discord message: the webhook URL, as `https://` or `discord://`      |
+| `slack://hooks.slack.com/services/<…>`   | A Slack message: the incoming webhook URL, as `https://` or `slack://` |
 
 `--notify-command` runs a program for each message, with the payload below on
 stdin. It is split on spaces and run without a shell; a non-zero exit is logged.

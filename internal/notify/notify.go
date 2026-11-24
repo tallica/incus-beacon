@@ -239,6 +239,9 @@ var factories = map[string]Factory{
 	"slack":   newSlack,
 }
 
+// knownHosts sends an https URL copied as-is from a service to that service's sender.
+var knownHosts = map[string]string{"discord.com": "discord", "hooks.slack.com": "slack"}
+
 type Options struct {
 	URLs    []string
 	URLFile string // more URLs, one per line; # starts a comment
@@ -335,6 +338,10 @@ func parse(raw string, client *http.Client) (target, error) {
 	where := u.Scheme + "://" + u.Host
 	switch u.Scheme {
 	case "http", "https":
+		if scheme, ok := knownHosts[u.Host]; ok && u.Scheme == "https" {
+			n, err := factories[scheme](u, client)
+			return target{kind: scheme, where: where, n: n}, err
+		}
 		return target{kind: "webhook", where: where, n: &webhook{url: u, client: client}}, nil
 	}
 	f, ok := factories[u.Scheme]
