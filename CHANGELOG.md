@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- A notification for an update that kept its tag and took the tag's newer digest
+  now says so, instead of "updated to" the same tag.
+
 ## [0.6.0-beta.4] - 2026-11-24
 
 ### Fixed

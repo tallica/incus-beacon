@@ -140,13 +140,17 @@ func message(b Batch, st style) (title, body string) {
 	var w strings.Builder
 	for _, t := range b.Transitions {
 		fmt.Fprintf(&w, "• %s (%s): %s", st.bold(t.Instance), t.Project, st.code(shortRef(t.Image)))
+		to := st.code(shortRef(t.Latest))
+		if sameTag(t.Image, t.Latest) {
+			to = "a rebuild of the same tag"
+		}
 		switch {
 		case t.Status == statusUpdated:
-			fmt.Fprintf(&w, " updated to %s\n", st.code(shortRef(t.Latest)))
+			fmt.Fprintf(&w, " updated to %s\n", to)
 		case t.Status == statusRolledBack:
-			fmt.Fprintf(&w, " update to %s rolled back: %s\n", st.code(shortRef(t.Latest)), t.Reason)
+			fmt.Fprintf(&w, " update to %s rolled back: %s\n", to, t.Reason)
 		case t.Status == statusFailed:
-			fmt.Fprintf(&w, " update to %s failed, and so did the rollback: %s\n", st.code(shortRef(t.Latest)), t.Reason)
+			fmt.Fprintf(&w, " update to %s failed, and so did the rollback: %s\n", to, t.Reason)
 		case t.Status == statusRefused:
 			fmt.Fprintf(&w, " update refused: %s\n", t.Reason)
 		case t.Status != statusUpdate:
@@ -208,6 +212,13 @@ func shortRef(ref string) string {
 		return strings.TrimPrefix(rest, "library/")
 	}
 	return ref
+}
+
+// sameTag reports an update that kept the tag and moved to its newer digest.
+func sameTag(from, to string) bool {
+	from, _, _ = strings.Cut(from, "@")
+	to, _, _ = strings.Cut(to, "@")
+	return to != "" && from == to
 }
 
 // tagOf is the tag after the last colon, unless that colon is a registry port.

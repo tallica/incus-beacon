@@ -113,22 +113,25 @@ func TestMessageWithUpdates(t *testing.T) {
 	t.Parallel()
 	web := incus.Target{Project: "default", Instance: "web", Beacon: incus.Beacon{Status: "update-available"}}
 	api := incus.Target{Project: "apps", Instance: "api"}
+	cache := incus.Target{Project: "default", Instance: "cache"}
 	b := Batch{Transitions: sorted([]Transition{
 		sample[2],
 		NewApplied(api, "rolled-back", "ghcr.io/example/api:2", "ghcr.io/example/api:3", "the health check reports unhealthy"),
 		NewApplied(web, "updated", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", ""),
+		NewApplied(cache, "updated", "docker.io/library/redis:8", "docker.io/library/redis:8", ""),
 	})}
 	title, body := Message(b)
-	if title != "incus-beacon: 1 updated, 1 update rolled back, 1 check failing" {
+	if title != "incus-beacon: 2 updated, 1 update rolled back, 1 check failing" {
 		t.Errorf("title %q", title)
 	}
-	want := "• web (default): nginx:1.27 updated to nginx:1.31\n" +
+	want := "• cache (default): redis:8 updated to a rebuild of the same tag\n" +
+		"• web (default): nginx:1.27 updated to nginx:1.31\n" +
 		"• api (apps): ghcr.io/example/api:2 update to ghcr.io/example/api:3 rolled back: the health check reports unhealthy\n" +
 		"• db (apps): postgres:17 check failed: registry auth failed"
 	if body != want {
 		t.Errorf("body:\n%s\nwant:\n%s", body, want)
 	}
-	if got := b.Transitions[0]; got.Previous != "update-available" || got.Latest != "docker.io/library/nginx:1.31" {
+	if got := b.Transitions[1]; got.Previous != "update-available" || got.Latest != "docker.io/library/nginx:1.31" {
 		t.Errorf("applied transition %+v", got)
 	}
 }
