@@ -9,7 +9,7 @@ CONTAINER ?= docker
 LDFLAGS  := -X $(PKG)/internal/version.Version=$(VERSION) \
             -X $(PKG)/internal/version.Commit=$(COMMIT) \
             -X $(PKG)/internal/version.Date=$(DATE)
-PRETTIER := npx --yes prettier@3.9.10
+PRETTIER := npx --yes prettier@3.10.1
 
 # The gate before every commit; CI also runs race tests and audit.
 check: vet lint test build
@@ -48,7 +48,7 @@ fmt-check:
 
 # Vulnerabilities the code can reach, from the Go vulnerability database.
 audit:
-	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
 
 # THIRD_PARTY_NOTICES.md from the modules the release binaries link, after a
 # licence check; CI runs notices-check, which fails when the file is stale.
