@@ -97,8 +97,8 @@ Every agent checks this by hand, whatever its tooling enforces:
 Message format, types, scopes, branch flow and pull requests are in
 [CONTRIBUTING.md](CONTRIBUTING.md#commits).
 
-- End with a trailer naming the agent that did the work, e.g.
-  `Co-Authored-By: <agent/model> <noreply@example.com>`.
+- Only humans are credited in commit messages: no `Co-Authored-By` or other
+  trailer naming an agent.
 - A feature branch stays unmerged until the maintainer says to merge.
 - Worktrees live next to the repo: `../incus-beacon.<branch>`.
 - Before reporting ahead/behind or unpushed counts, `git fetch -q` first: the

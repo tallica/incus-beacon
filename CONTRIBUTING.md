@@ -19,8 +19,6 @@ commitlint ([commitlint.config.mjs](commitlint.config.mjs)).
 
 Why the change was needed and what it affects, in one or two short
 paragraphs.
-
-Co-Authored-By: ...
 ```
 
 - Subject: lowercase, imperative, plain English, no trailing period:
