@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.6.0-beta.5] - 2026-11-24
+
 ### Fixed
 
 - A notification for an update that kept its tag and took the tag's newer digest
@@ -230,7 +232,9 @@ get an entry.
   of every module the binary links, not only direct dependencies.
 
 [Unreleased]:
-  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.4...master
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.5...master
+[0.6.0-beta.5]:
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.4...v0.6.0-beta.5
 [0.6.0-beta.4]:
   https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.3...v0.6.0-beta.4
 [0.6.0-beta.3]:
