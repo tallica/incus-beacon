@@ -43,6 +43,6 @@ on that instance only.
 
 ## Verify
 
-The next cycle, retried about a minute after the first failure (or a restart,
-which runs one at once), logs `cycle done` without `error`, and `/ready`
-answers 200.
+The next cycle, [retried with a backoff](../ARCHITECTURE.md#serving) (or a
+restart, which runs one at once), logs `cycle done` without `error`, and
+`/ready` answers 200.

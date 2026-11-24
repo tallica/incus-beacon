@@ -88,8 +88,7 @@ network.
       its `created` time.
    2. Created times are cached by config digest for the life of the process,
       since a config never changes.
-   3. A held update leaves the status `current` and writes nothing extra; the
-      held tag shows only in `check` output.
+   3. A held update writes nothing extra.
 7. **Write results.** Write status keys only where a value changed.
 8. **Notify** about the changes that were written (see
    [Notifications](#notifications)).
