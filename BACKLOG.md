@@ -18,15 +18,6 @@ not work. An idea that needs more than a paragraph gets its own file in
       image override (lxc/incus-compose#282) reaching a release. Then run an
       update, `up`, `up --pull always` and a config-change recreate, and drop
       the README's "to verify".
-- [ ] **A rebuild racing a config write can lose the root volume** — seen once
-      on Incus 7.6 under back-to-back `incus config set` writes: the forward
-      rebuild failed with `Volume path ".../containers/<name>" already exists`
-      and the undo rebuild with `Instance storage pool not found`, leaving the
-      instance `failed` with an unusable root volume and an empty directory that
-      `incus delete --force` keeps. Find out whether Incus has a fix or an issue
-      for it, then say so in docs/ARCHITECTURE.md (Updating, item 4, whose
-      known-limit sentence says storage stays intact) and add a runbook for
-      recovering such an instance.
 
 ## Later
 

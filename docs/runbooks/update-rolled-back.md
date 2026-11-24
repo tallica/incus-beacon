@@ -52,9 +52,12 @@ incus config unset <instance> user.incus-beacon.update-failed
 incus-beacon update --instance <instance>
 ```
 
-For `failed`, finish the rollback by hand from the reason. The old image is the
-fingerprint Incus still caches; the snapshot is the newest `incus-beacon-*` one
-on each volume:
+For `failed`, finish the rollback by hand from the reason. If the reason or
+`incus start <instance>` names `Instance storage pool not found`, the root
+volume is lost and a rebuild can't work: follow
+[instance-storage-pool-not-found.md](instance-storage-pool-not-found.md)
+instead. Otherwise, the old image is the fingerprint Incus still caches; the
+snapshot is the newest `incus-beacon-*` one on each volume:
 
 ```sh
 incus stop <instance> --force

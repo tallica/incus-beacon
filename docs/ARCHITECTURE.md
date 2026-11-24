@@ -183,7 +183,17 @@ ref is the tracked ref at the `latest` tag.
    config write that passed its ETag check before the undo rebuild after it,
    putting the new image's `volatile.base_image` and `image.*` back over the old
    rootfs; the rollback then ends `failed`, with the instance stopped and its
-   storage intact.
+   storage intact. Not so when a config write lands inside a rebuild on a `dir`
+   pool (reproduced on Incus 7.6, once in 77 rebuilds under back-to-back
+   `incus config set`). In the 7.6 source, rebuild takes no lock against config
+   writes and deletes the root volume before creating it again, and a config
+   write mounts that volume to rewrite `backup.yaml`, which on `dir` recreates
+   its directory. The rebuild then fails with `Volume path ... already exists`,
+   the volume's database record is already gone, the undo rebuild fails with
+   `Instance storage pool not found`, and the rollback ends `failed` with no
+   root volume. As of 2026-11-24, lxc/incus has no issue for those errors and no
+   commit since 7.6 touches rebuild's locking or the `dir` mount; recovery is
+   [a runbook](runbooks/instance-storage-pool-not-found.md).
 5. **Release** the claim and record the outcome in one write, with `applied` and
    `applied-image` naming the ref and image the instance is left on:
    `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback
