@@ -69,8 +69,9 @@ type fake struct {
 	// claimAtRebuild is the claim's step when the new image was rebuilt.
 	claimAtRebuild int
 	// stuck makes a graceful stop fail, as Incus does when the timeout runs out.
-	stuck    bool
-	lockedAt int // the write (from 1) refused once as held up by another update
+	stuck      bool
+	busyStates int // start and stop requests to refuse while another operation holds the instance
+	lockedAt   int // the write (from 1) refused once as held up by another update
 	// lockedRebuild is the rebuild (from 1) whose oci.* refresh another write's lock skips;
 	// lockedEarly fails it before the rootfs changes instead.
 	lockedRebuild int
@@ -156,6 +157,10 @@ func (f *fake) GetInstanceSnapshotNames(string) ([]string, error) { return f.sna
 
 func (f *fake) UpdateInstanceState(_ string, st api.InstanceStatePut, _ string) (incusclient.Operation, error) {
 	f.states = append(f.states, st.Action)
+	if f.busyStates > 0 {
+		f.busyStates--
+		return nil, errors.New(`Failed to create instance ` + st.Action + ` operation: Instance is busy running a "update" operation`)
+	}
 	switch st.Action {
 	case "stop":
 		if f.stuck && !st.Force {
@@ -722,6 +727,32 @@ func TestStopForcesAStuckInstance(t *testing.T) {
 	f.stuck = true
 	if err := Stop(context.Background(), f, "web", time.Second); err != nil || f.inst.StatusCode != api.Stopped {
 		t.Errorf("err %v, status %s; want a forced stop", err, f.inst.Status)
+	}
+}
+
+func TestSetStateWaitsOutAnotherOperation(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped
+	f.busyStates = 1
+	if err := SetState(context.Background(), f, "web", "start"); err != nil || f.inst.StatusCode != api.Running {
+		t.Errorf("err %v, status %s; want started once the other operation ended", err, f.inst.Status)
+	}
+	f = newFake()
+	f.busyStates = 100
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := SetState(ctx, f, "web", "stop"); !errors.Is(err, context.DeadlineExceeded) || len(f.states) != 1 {
+		t.Errorf("err %v after %d tries; want the caller's deadline during the first wait", err, len(f.states))
+	}
+}
+
+func TestApplyWaitsOutAStopAnotherWriteHeldUp(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.busyStates = 2 // the graceful stop and the forced one
+	if o := apply(t, f, target()); o.Status != Updated {
+		t.Errorf("outcome %+v, want updated", o)
 	}
 }
 

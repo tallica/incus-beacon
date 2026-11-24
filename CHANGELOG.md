@@ -36,6 +36,8 @@ get an entry.
 - `serve` no longer fails every other cycle with "context canceled": its Incus
   connection ended with the cycle that opened it, which could also fail checks
   on events between cycles.
+- `update` waits out a start or stop that Incus refused while another write held
+  the instance, instead of rolling back and marking the new image failed.
 
 ## [0.6.0-beta.2] - 2026-11-22
 

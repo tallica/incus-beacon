@@ -178,7 +178,11 @@ ref is the tracked ref at the `latest` tag.
    restore by hand once the other instances are stopped. An undo rebuild that
    fails on another write's lock has already replaced the rootfs, only not the
    `oci.*` keys; it counts once the instance is on the old fingerprint, and the
-   claim's record of the `oci.*` keys goes back (to verify).
+   claim's record of the `oci.*` keys goes back (to verify). Incus 7.6 can also
+   apply a config write that passed its ETag check before the undo rebuild after
+   it, putting the new image's `volatile.base_image` and `image.*` back over the
+   old rootfs; the rollback then ends `failed`, with the instance stopped and
+   its storage intact.
 5. **Release** the claim and record the outcome in one write, with `applied` and
    `applied-image` naming the ref and image the instance is left on:
    `update-status` becomes `updated`, `rolled-back`, `failed` (the rollback
