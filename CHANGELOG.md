@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.6.0-beta.3] - 2026-11-24
+
 ### Added
 
 - `incus-beacon configure` changes the settings `install` gave beacon's
@@ -214,7 +216,9 @@ get an entry.
   of every module the binary links, not only direct dependencies.
 
 [Unreleased]:
-  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.2...master
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.3...master
+[0.6.0-beta.3]:
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.2...v0.6.0-beta.3
 [0.6.0-beta.2]:
   https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.1...v0.6.0-beta.2
 [0.6.0-beta.1]:
