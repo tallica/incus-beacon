@@ -7,21 +7,21 @@ This file is for any agent (or person) working in the tree; it is the one home
 for how work is done here. README.md is the front door for users. This table is
 the one map of where each kind of fact lives; everywhere else links to the home:
 
-| Fact                                        | Home                                                          | Never                                 |
-| ------------------------------------------- | ------------------------------------------------------------- | ------------------------------------- |
-| What it is, install, usage                  | [README.md](README.md)                                        |                                       |
-| How work is done                            | AGENTS.md (this file)                                         | in CLAUDE.md or skills                |
-| Commit format, types, scopes, branches, PRs | [CONTRIBUTING.md](CONTRIBUTING.md)                            |                                       |
-| What changed for users                      | [CHANGELOG.md](CHANGELOG.md)                                  | as a dump of the git log              |
-| Unscheduled and rejected ideas              | [BACKLOG.md](BACKLOG.md), [backlogs/](backlogs/)              | in code comments                      |
-| Why the code is shaped this way             | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), commit messages | beyond a one-line comment at the site |
-| Dev setup, make targets, testing            | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                    |                                       |
-| Release procedure                           | [docs/RELEASING.md](docs/RELEASING.md)                        |                                       |
-| Failure modes and fixes                     | [docs/runbooks/](docs/runbooks/)                              |                                       |
-| Reporting vulnerabilities, audit status     | [SECURITY.md](SECURITY.md)                                    |                                       |
-| How docs are written                        | [docs/README.md](docs/README.md#writing)                      |                                       |
-| Template version and how it was rendered    | [.template.json](.template.json)                              | edited by hand                        |
-| Current session state                       | `sessions/` (local only)                                      | committed                             |
+| Fact                                                       | Home                                                          | Never                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------- |
+| What it is, install, usage                                 | [README.md](README.md)                                        |                                       |
+| How work is done                                           | AGENTS.md (this file)                                         | in CLAUDE.md or skills                |
+| Commit format, types, scopes, branches, PRs                | [CONTRIBUTING.md](CONTRIBUTING.md)                            |                                       |
+| Security exposure, audit status, reporting a vulnerability | [SECURITY.md](SECURITY.md)                                    | in a public issue                     |
+| What changed for users                                     | [CHANGELOG.md](CHANGELOG.md)                                  | as a dump of the git log              |
+| Unscheduled and rejected ideas                             | [BACKLOG.md](BACKLOG.md), [backlogs/](backlogs/)              | in code comments                      |
+| Why the code is shaped this way                            | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), commit messages | beyond a one-line comment at the site |
+| Dev setup, make targets, testing                           | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                    |                                       |
+| Release procedure                                          | [docs/RELEASING.md](docs/RELEASING.md)                        |                                       |
+| Failure modes and fixes                                    | [docs/runbooks/](docs/runbooks/)                              |                                       |
+| How docs are written                                       | [docs/README.md](docs/README.md#writing)                      |                                       |
+| Template version and how it was rendered                   | [.template.json](.template.json)                              | edited by hand                        |
+| Current session state                                      | `sessions/` (local only)                                      | committed                             |
 
 ## Status
 
@@ -72,7 +72,8 @@ is pinned below its latest release.
   information.
 - **A refusal is final.** If a guard, hook or permission prompt refuses a
   command, don't rephrase it, split it or route it through another tool. Stop
-  and ask.
+  and ask. A deny that asks for the same command to be re-run unchanged is a
+  review, not a refusal: re-run it once every point it raises is settled.
 - **Write for a stranger.** No first person, no "on my machine", no private
   context in comments, docs or commit messages.
 
@@ -109,10 +110,11 @@ Message format, types, scopes, branch flow and pull requests are in
   anything not verified, and unpushed commits by short hash and subject.
 - If work stops midway, say exactly what ran, what didn't, and what state things
   are left in.
-- Handoffs for the next session go in `sessions/YYYY-MM-DD_NN_<topic>.md` (local
-  only, never committed). `NN` counts that day's files from `01`, so the highest
-  is the latest. Write a new file each time; link earlier ones rather than
-  repeating them.
+- Session files go in `sessions/YYYY-MM-DD_NN_<kind>_<topic>.md` (local only,
+  never committed), where `<kind>` is `handoff`, `plan`, `review` and so on.
+  `NN` counts that day's files from `01`, whatever their kind, so the highest is
+  the latest. Write a handoff for the next session as a new file each time; link
+  earlier ones rather than repeating them.
 
 Start a handoff from [docs/templates/handoff.md](docs/templates/handoff.md).
 
