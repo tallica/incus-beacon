@@ -87,7 +87,7 @@ func TestMessage(t *testing.T) {
 	if title != sampleTitle {
 		t.Errorf("title %q", title)
 	}
-	want := "• web (default): nginx:1.27 → 1.31\n" +
+	want := "• web (default): nginx:1.27 → nginx:1.31\n" +
 		"• api (apps): ghcr.io/example/api:2 rebuilt\n" +
 		"• db (apps): postgres:17 check failed: registry auth failed"
 	if body != want {
@@ -100,8 +100,8 @@ func TestMessage(t *testing.T) {
 		st   style
 		want string
 	}{
-		{slackStyle, "• *web* (default): `nginx:1.27` → `1.31`"},
-		{discordStyle, "• **web** (default): `nginx:1.27` → `1.31`"},
+		{slackStyle, "• *web* (default): `nginx:1.27` → `nginx:1.31`"},
+		{discordStyle, "• **web** (default): `nginx:1.27` → `nginx:1.31`"},
 	} {
 		if _, body := message(Batch{Transitions: sample[:1]}, tt.st); body != tt.want {
 			t.Errorf("chat body %q, want %q", body, tt.want)
@@ -443,5 +443,19 @@ func TestTruncate(t *testing.T) {
 	got := truncate(strings.Repeat("→", 10), 12)
 	if len(got) > 12 || !strings.HasSuffix(got, "\n…") || !strings.HasPrefix(got, "→") {
 		t.Errorf("multibyte cut: %q (%d bytes)", got, len(got))
+	}
+}
+
+func TestWithTag(t *testing.T) {
+	t.Parallel()
+	for ref, want := range map[string]string{
+		"docker.io/library/nginx:1.28-alpine":                     "docker.io/library/nginx:1.31",
+		"registry.example.com:5000/app:2":                         "registry.example.com:5000/app:1.31",
+		"registry.example.com:5000/app":                           "registry.example.com:5000/app:1.31",
+		"ghcr.io/example/api:2@sha256:" + strings.Repeat("a", 64): "ghcr.io/example/api:1.31",
+	} {
+		if got := withTag(ref, "1.31"); got != want {
+			t.Errorf("withTag(%q) = %q, want %q", ref, got, want)
+		}
 	}
 }

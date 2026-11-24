@@ -17,6 +17,8 @@ get an entry.
 
 - A notification for an update that kept its tag and took the tag's newer digest
   now says so, instead of "updated to" the same tag.
+- A notification's "update available" line names the full image, `nginx:1.31`,
+  as the "updated" line does, not the bare tag.
 
 ## [0.6.0-beta.4] - 2026-11-24
 

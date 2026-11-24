@@ -535,7 +535,7 @@ printf '%s' "$p" | jq -r .message |
   "time": "2026-11-07T12:00:00Z",
   "server": "node1",
   "title": "incus-beacon on node1: 1 update available",
-  "message": "• web (default): nginx:1.27 → 1.31",
+  "message": "• web (default): nginx:1.27 → nginx:1.31",
   "transitions": [
     {
       "project": "default",

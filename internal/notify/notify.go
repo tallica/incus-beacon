@@ -158,7 +158,7 @@ func message(b Batch, st style) (title, body string) {
 		case t.Kind == kindDigest:
 			w.WriteString(" rebuilt\n")
 		default:
-			fmt.Fprintf(&w, " → %s\n", st.code(t.Latest))
+			fmt.Fprintf(&w, " → %s\n", st.code(shortRef(withTag(t.Image, t.Latest))))
 		}
 		counts[t.Status]++
 	}
@@ -219,6 +219,15 @@ func sameTag(from, to string) bool {
 	from, _, _ = strings.Cut(from, "@")
 	to, _, _ = strings.Cut(to, "@")
 	return to != "" && from == to
+}
+
+// withTag is ref with its tag and digest replaced by tag.
+func withTag(ref, tag string) string {
+	ref, _, _ = strings.Cut(ref, "@")
+	if t := tagOf(ref); t != "" {
+		ref = strings.TrimSuffix(ref, ":"+t)
+	}
+	return ref + ":" + tag
 }
 
 // tagOf is the tag after the last colon, unless that colon is a registry port.
