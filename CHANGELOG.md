@@ -33,6 +33,9 @@ get an entry.
   process is updating, which could make its rebuild fail.
 - `update` finishes a rollback whose rebuild Incus held up for another write to
   the instance, instead of leaving it stopped.
+- `serve` no longer fails every other cycle with "context canceled": its Incus
+  connection ended with the cycle that opened it, which could also fail checks
+  on events between cycles.
 
 ## [0.6.0-beta.2] - 2026-11-22
 
