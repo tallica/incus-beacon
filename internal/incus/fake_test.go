@@ -25,6 +25,7 @@ type fakeIncus struct {
 	versions  map[string]int // project/name -> ETag counter
 	conflicts int            // PUTs to refuse with 412 before accepting
 	busy      int            // PUTs to refuse as busy before accepting
+	locked    int            // PUTs to refuse as held up by another update before accepting
 	puts      int
 	untrusted bool
 }
@@ -135,14 +136,17 @@ func (f *fakeIncus) serveInstance(w http.ResponseWriter, r *http.Request, name, 
 			_ = json.NewEncoder(w).Encode(map[string]any{"type": "error", "error": "ETag mismatch", "error_code": 412})
 			return
 		}
-		if f.busy > 0 {
-			f.busy--
+		if f.busy > 0 || f.locked > 0 {
+			msg := `Failed to create instance update operation: Instance is busy running a "start" operation`
+			if f.busy > 0 {
+				f.busy--
+			} else {
+				f.locked--
+				msg = "Failed to create instance update operation: A matching non-reusable operation has now succeeded"
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"type": "error", "error_code": 400,
-				"error": `Failed to create instance update operation: Instance is busy running a "start" operation`,
-			})
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": "error", "error_code": 400, "error": msg})
 			return
 		}
 		var put api.InstancePut

@@ -126,6 +126,24 @@ func TestEnrollWithToken(t *testing.T) {
 	}
 }
 
+func TestConnOutlivesTheCallThatMadeIt(t *testing.T) {
+	t.Parallel()
+	ts := newTrustServer(t)
+	conn := &Conn{Options: ConnectOptions{URL: ts.URL, Token: ts.token(), StateDir: t.TempDir()}}
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := conn.Get(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cancel() // as serve does when the cycle that connected ends
+	srv, err := conn.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := srv.GetServer(); err != nil {
+		t.Errorf("the shared connection failed once its first caller was done: %v", err)
+	}
+}
+
 func TestEnrollRefusedTokenSavesNothing(t *testing.T) {
 	t.Parallel()
 	ts := newTrustServer(t)

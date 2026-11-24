@@ -71,11 +71,17 @@ func legacyStatusKeys() []string {
 	return keys
 }
 
-// Incus sends this, with no status code, while a start or stop holds the instance.
-const busyText = "Instance is busy running"
+// Incus sends these, with no status code: a start or stop holds the instance, or another
+// config update did and this request was dropped once it ended (operationlock in Incus 7.6).
+const (
+	busyText   = "Instance is busy running"
+	lockedText = "A matching non-reusable operation has now succeeded"
+)
 
-// IsBusy reports an instance a start or stop holds; the write may be retried.
-func IsBusy(err error) bool { return err != nil && strings.Contains(err.Error(), busyText) }
+// IsBusy reports a request Incus refused for another operation on the instance; it may be retried.
+func IsBusy(err error) bool {
+	return err != nil && (strings.Contains(err.Error(), busyText) || strings.Contains(err.Error(), lockedText))
+}
 
 const (
 	busyRetry    = 500 * time.Millisecond

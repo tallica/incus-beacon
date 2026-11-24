@@ -25,12 +25,10 @@ const (
 	RefFromCurrent      = policy.Prefix + "current"
 )
 
-// incus-compose's image override, honoured where ComposeFeaturesKey lists ComposeFeatureOverride.
+// incus-compose's image override; an incus-compose without it ignores both keys.
 const (
-	ComposeOverrideKey     = "user.incus-compose.image-override"
-	ComposeOverrideOfKey   = "user.incus-compose.image-override-of"
-	ComposeFeaturesKey     = "user.incus-compose.features"
-	ComposeFeatureOverride = "image-override"
+	ComposeOverrideKey   = "user.incus-compose.image-override"
+	ComposeOverrideOfKey = "user.incus-compose.image-override-of"
 )
 
 type Beacon struct {

@@ -27,10 +27,24 @@ get an entry.
 
 ### Fixed
 
+- `update` no longer refuses incus-compose instances for lacking
+  `user.incus-compose.features`, which incus-compose doesn't write; an older
+  incus-compose may undo the update.
 - `upgrade` and `configure` start the instance again when rolling back from a
   failed rebuild or start, instead of leaving it stopped.
 - `install` and `upgrade` refuse a malformed `--image`, such as one with a stray
   `image=`, before stopping or creating anything.
+- `update` and `serve` retry a key write that Incus held up for another write to
+  the same instance, instead of failing the update or the status write.
+- `serve` and `check` no longer write the status keys of an instance another
+  process is updating, which could make its rebuild fail.
+- `update` finishes a rollback whose rebuild Incus held up for another write to
+  the instance, instead of leaving it stopped.
+- `serve` no longer fails every other cycle with "context canceled": its Incus
+  connection ended with the cycle that opened it, which could also fail checks
+  on events between cycles.
+- `update` waits out a start or stop that Incus refused while another write held
+  the instance, instead of rolling back and marking the new image failed.
 - `update` rolls back an instance whose new image exits at once, instead of
   failing with "already stopped" and leaving it stopped.
 

@@ -122,6 +122,7 @@ type claim struct {
 	Dropped  map[string]string `json:"dropped,omitempty"`
 	// Override holds an incus-compose instance's override keys as they were; "" was unset.
 	Override map[string]string `json:"override,omitempty"`
+	OCI      map[string]string `json:"oci,omitempty"` // the oci.* keys as they were, put back after the undo rebuild
 }
 
 var errTaken = errors.New("the claim was taken over")
@@ -257,7 +258,7 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 
 	u.c = claim{
 		Owner: u.opts.Owner, Step: -1, To: u.o.To, FromRef: registry.Normalize(u.t.Ref), From: u.inst.Config["volatile.base_image"], Dropped: dropped,
-		Snapshot: snapshotPrefix + u.opts.Now().UTC().Format("20060102T150405"),
+		Snapshot: snapshotPrefix + u.opts.Now().UTC().Format("20060102T150405"), OCI: ociKeys(u.inst.Config),
 	}
 	for _, v := range u.vols {
 		if !v.shared {
@@ -547,8 +548,6 @@ func (u *updater) release(ctx context.Context) error {
 func (u *updater) refusal() string {
 	cfg := u.inst.ExpandedConfig
 	switch {
-	case u.compose() && !hasFeature(u.inst.Config[incus.ComposeFeaturesKey], incus.ComposeFeatureOverride):
-		return "managed by an incus-compose without the image override, so its next up would undo the update"
 	case u.compose() && u.inst.Config["user.image_alias"] == "":
 		return "managed by incus-compose, but has no user.image_alias for the image override to name"
 	case isBeacon(cfg, u.o.To):
@@ -752,15 +751,6 @@ func (u *updater) compose() bool {
 	return u.inst.Config["user.incus-compose.managed"] == "true"
 }
 
-func hasFeature(list, feature string) bool {
-	for f := range strings.SplitSeq(list, ",") {
-		if strings.TrimSpace(f) == feature {
-			return true
-		}
-	}
-	return false
-}
-
 // setOverride keeps incus-compose on the new image while its file names user.image_alias.
 func (u *updater) setOverride(ctx context.Context) error {
 	if u.c.Override == nil {
@@ -801,7 +791,40 @@ func (u *updater) rebuildOld(ctx context.Context) error {
 	if err := u.stop(ctx); err != nil {
 		return err
 	}
-	return Rebuild(ctx, u.srv, u.t.Instance, api.InstanceSource{Type: "image", Fingerprint: u.c.From})
+	err := Rebuild(ctx, u.srv, u.t.Instance, api.InstanceSource{Type: "image", Fingerprint: u.c.From})
+	if incus.IsBusy(err) {
+		// Incus replaces the rootfs before the oci.* refresh that another write's lock skips (7.6).
+		if inst, _, gerr := u.srv.GetInstance(u.t.Instance); gerr == nil && inst.Config["volatile.base_image"] == u.c.From {
+			u.log.Warn().Err(err).Msg("old image back, but its oci.* keys not refreshed; the claim's go back")
+			err = nil
+		}
+	}
+	if err != nil || u.c.OCI == nil {
+		return err
+	}
+	return u.write(ctx, func(cfg map[string]string) error {
+		for k := range cfg {
+			if _, kept := u.c.OCI[k]; strings.HasPrefix(k, "oci.") && !kept {
+				delete(cfg, k)
+			}
+		}
+		maps.Copy(cfg, u.c.OCI)
+		return nil
+	})
+}
+
+// ociKeys copies the instance's own oci.* keys, nil when it has none.
+func ociKeys(cfg map[string]string) map[string]string {
+	var keys map[string]string
+	for k, v := range cfg {
+		if strings.HasPrefix(k, "oci.") {
+			if keys == nil {
+				keys = map[string]string{}
+			}
+			keys[k] = v
+		}
+	}
+	return keys
 }
 
 func (u *updater) snapshot(ctx context.Context) error {

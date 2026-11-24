@@ -10,6 +10,8 @@ import (
 
 	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
+
+	"github.com/tallica/incus-beacon/internal/incus"
 )
 
 // imageRef is the OCI reference grammar, digests sha256 only as in ParseRef; Incus rejects a bad ref only once the instance has stopped.
@@ -27,18 +29,34 @@ func SplitImage(ref string) (server, alias string, err error) {
 	return "https://" + host, rest, nil
 }
 
-// SetState runs a start or stop and waits for it; a stop is forced, and any failure of it passes once the instance reads stopped.
+const (
+	stateTries = 5
+	stateRetry = 500 * time.Millisecond
+)
+
+// SetState runs a start or stop and waits for it, retrying while another operation holds the instance; a stop is forced, and any failure of it passes once the instance reads stopped.
 func SetState(ctx context.Context, srv incusclient.InstanceServer, name, action string) error {
-	op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"}, "")
-	if err == nil {
-		err = op.WaitContext(ctx)
-	}
-	if err != nil && action == "stop" {
-		if inst, _, gerr := srv.GetInstance(name); gerr == nil && inst.StatusCode == api.Stopped {
-			return nil
+	wait := stateRetry
+	for try := 1; ; try++ {
+		op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"}, "")
+		if err == nil {
+			err = op.WaitContext(ctx)
 		}
+		if !incus.IsBusy(err) || try == stateTries {
+			if err != nil && action == "stop" {
+				if inst, _, gerr := srv.GetInstance(name); gerr == nil && inst.StatusCode == api.Stopped {
+					return nil
+				}
+			}
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+		wait *= 2
 	}
-	return err
 }
 
 // Stop asks the instance to stop within timeout, then forces it.

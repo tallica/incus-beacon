@@ -180,7 +180,8 @@ func (c *Conn) Get(ctx context.Context) (incusclient.InstanceServer, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.srv == nil {
-		srv, err := Connect(ctx, c.Options)
+		// The client keeps its context for every later request, so the caller's must not end it.
+		srv, err := Connect(context.WithoutCancel(ctx), c.Options)
 		if err != nil {
 			return nil, err
 		}
