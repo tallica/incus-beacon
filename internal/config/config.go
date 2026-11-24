@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,6 +113,13 @@ type Registry struct {
 	Cooldown         time.Duration
 }
 
+// Audit holds where audit records go; an empty AuditLog writes none.
+type Audit struct {
+	AuditLog        string
+	AuditLogMaxSize int64
+	AuditLogKeep    int
+}
+
 type Check struct {
 	Common
 	Registry
@@ -136,6 +145,7 @@ type Serve struct {
 	UpdateWindow string        // HH:MM-HH:MM, or empty for any time
 	Window       policy.Window // UpdateWindow parsed; the zero Window is any time
 	UpdateFlags
+	Audit
 }
 
 type Notify struct {
@@ -153,6 +163,7 @@ type Install struct {
 	Image       string
 	StoragePool string
 	Wait        time.Duration
+	Audit
 }
 
 // Settings are what install gives the instance and configure changes; README shows how to set the rest.
@@ -172,8 +183,9 @@ type Settings struct {
 type Configure struct {
 	Common
 	Settings
-	Name  string
-	Wait  time.Duration
+	Name string
+	Wait time.Duration
+	Audit
 	given map[string]bool
 }
 
@@ -191,6 +203,7 @@ type Update struct {
 	Instance string
 	DryRun   bool
 	UpdateFlags
+	Audit
 }
 
 type UpdateFlags struct {
@@ -206,11 +219,14 @@ type Upgrade struct {
 	Image string
 	Force bool
 	Wait  time.Duration
+	Audit
 }
 
 type Uninstall struct {
 	Common
-	Name string
+	Name      string
+	DeleteLog bool
+	Audit
 }
 
 // Config sets at most one command field; none for version.
@@ -224,6 +240,25 @@ type Config struct {
 	Configure *Configure
 	Upgrade   *Upgrade
 	Uninstall *Uninstall
+}
+
+// AuditOf is the command's Audit; the zero Audit, which writes nothing, for commands without the flags.
+func (c *Config) AuditOf() Audit {
+	switch {
+	case c.Update != nil:
+		return c.Update.Audit
+	case c.Serve != nil:
+		return c.Serve.Audit
+	case c.Install != nil:
+		return c.Install.Audit
+	case c.Configure != nil:
+		return c.Configure.Audit
+	case c.Upgrade != nil:
+		return c.Upgrade.Audit
+	case c.Uninstall != nil:
+		return c.Uninstall.Audit
+	}
+	return Audit{}
 }
 
 const (
@@ -306,6 +341,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.BoolVar(&c.Update, "update", false, "apply updates to instances that set user.incus-beacon.update=auto")
 		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in local time, when updates may run, unless an instance sets its own (default: any time)")
 		bindUpdate(fs, &c.UpdateFlags)
+		bindAudit(fs, &c.Audit)
 		cfg.Serve = c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
@@ -324,7 +360,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 					errs = append(errs, err)
 				}
 			}
-			errs = append(errs, c.UpdateFlags.validate())
+			errs = append(errs, c.UpdateFlags.validate(), c.Audit.validate())
 			return errors.Join(errs...)
 		}
 	case CmdUpdate:
@@ -334,9 +370,10 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.Instance, "instance", "", "the instance to update (required)")
 		fs.BoolVar(&c.DryRun, "dry-run", false, "print what would be updated, and change nothing")
 		bindUpdate(fs, &c.UpdateFlags)
+		bindAudit(fs, &c.Audit)
 		cfg.Update = c
 		validate = func() error {
-			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate()}
+			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate(), c.Audit.validate()}
 			if c.Instance == "" {
 				errs = append(errs, errors.New("instance: required"))
 			}
@@ -351,9 +388,10 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.StoragePool, "storage-pool", "", "pool for the state volume (default: the default profile's root pool)")
 		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
 		bindSettings(fs, &c.Common, &c.Settings)
+		bindAudit(fs, &c.Audit)
 		cfg.Install = c
 		validate = func() error {
-			errs := []error{c.Common.validate(), c.Settings.validate()}
+			errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
 			if c.Wait <= 0 {
 				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
 			}
@@ -369,9 +407,10 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
 		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
 		bindSettings(fs, &c.Common, &c.Settings)
+		bindAudit(fs, &c.Audit)
 		cfg.Configure = c
 		validate = func() error {
-			errs := []error{c.Common.validate(), c.Settings.validate()}
+			errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
 			if c.Wait <= 0 {
 				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
 			}
@@ -389,9 +428,10 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.Image, "image", "", "image to rebuild from (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
 		fs.BoolVar(&c.Force, "force", false, "allow an image older than the running one")
 		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
+		bindAudit(fs, &c.Audit)
 		cfg.Upgrade = c
 		validate = func() error {
-			errs := []error{c.validate()}
+			errs := []error{c.Common.validate(), c.Audit.validate()}
 			if c.Wait <= 0 {
 				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
 			}
@@ -402,8 +442,10 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
 		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
+		fs.BoolVar(&c.DeleteLog, "delete-log", false, "also delete the <name>-log volume holding the instance's audit log")
+		bindAudit(fs, &c.Audit)
 		cfg.Uninstall = c
-		validate = func() error { return c.validate() }
+		validate = func() error { return errors.Join(c.Common.validate(), c.Audit.validate()) }
 	case CmdVersion:
 		validate = func() error { return nil }
 	default:
@@ -513,6 +555,9 @@ func bindSettings(fs *flag.FlagSet, c *Common, s *Settings) {
 	fs.StringVar(&s.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in the instance's local time (UTC unless TZ is set), when its updates may run (default: any time)")
 }
 
+// SettingFlags names the flags configure changes settings with.
+func SettingFlags() []string { return slices.Clone(settingFlags) }
+
 // settingFlags names the flags bindSettings binds, for Configure.Given.
 var settingFlags = func() []string {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
@@ -566,6 +611,24 @@ func (c *UpdateFlags) validate() error {
 	}
 	if c.Keep < 0 {
 		errs = append(errs, fmt.Errorf("update-keep %d: must not be negative", c.Keep))
+	}
+	return errors.Join(errs...)
+}
+
+func bindAudit(fs *flag.FlagSet, c *Audit) {
+	c.AuditLogMaxSize = 10 << 20
+	fs.StringVar(&c.AuditLog, "audit-log", "", "file to append a JSON line to per change this command makes (default: none)")
+	fs.Var((*sizeValue)(&c.AuditLogMaxSize), "audit-log-max-size", "`size` past which the audit log is rotated: bytes, or a whole number of KiB or MiB")
+	fs.IntVar(&c.AuditLogKeep, "audit-log-keep", 5, "how many rotated audit logs to keep, <file>.1 being the newest; 0 keeps none")
+}
+
+func (c *Audit) validate() error {
+	var errs []error
+	if c.AuditLogMaxSize <= 0 {
+		errs = append(errs, fmt.Errorf("audit-log-max-size %d: must be positive", c.AuditLogMaxSize))
+	}
+	if c.AuditLogKeep < 0 {
+		errs = append(errs, fmt.Errorf("audit-log-keep %d: must not be negative", c.AuditLogKeep))
 	}
 	return errors.Join(errs...)
 }
@@ -662,6 +725,40 @@ func (c *csvValue) Set(v string) error {
 			*c = append(*c, p)
 		}
 	}
+	return nil
+}
+
+// sizeValue is a byte count, optionally with a KiB or MiB suffix.
+type sizeValue int64
+
+var sizeUnits = []struct {
+	suffix string
+	shift  uint
+}{{"MiB", 20}, {"KiB", 10}}
+
+func (v *sizeValue) String() string {
+	n := int64(*v)
+	for _, u := range sizeUnits {
+		if n != 0 && n%(1<<u.shift) == 0 {
+			return strconv.FormatInt(n>>u.shift, 10) + u.suffix
+		}
+	}
+	return strconv.FormatInt(n, 10)
+}
+
+func (v *sizeValue) Set(s string) error {
+	num, shift := s, uint(0)
+	for _, u := range sizeUnits {
+		if n, ok := strings.CutSuffix(s, u.suffix); ok {
+			num, shift = n, u.shift
+			break
+		}
+	}
+	n, err := strconv.ParseInt(num, 10, 64)
+	if err != nil || n > math.MaxInt64>>shift {
+		return fmt.Errorf("%q: want bytes, or a whole number of KiB or MiB", s)
+	}
+	*v = sizeValue(n << shift)
 	return nil
 }
 

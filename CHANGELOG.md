@@ -17,6 +17,13 @@ get an entry.
 
 - `incus-beacon configure` changes the settings `install` gave beacon's
   instance, then restarts it, rolling back if `/ready` never answers.
+- `--audit-log` makes `serve`, `update`, `install`, `configure`, `upgrade` and
+  `uninstall` append a JSON line per change and update outcome to a size-rotated
+  file; a file created by root goes to its directory's owner.
+- `install` gives beacon's instance a `<name>-log` volume at
+  `/var/log/incus-beacon` holding its audit log; `upgrade` adds it to older
+  installs.
+- `uninstall` keeps the log volume; `--delete-log` removes it too.
 
 ### Fixed
 
@@ -38,6 +45,8 @@ get an entry.
   on events between cycles.
 - `update` waits out a start or stop that Incus refused while another write held
   the instance, instead of rolling back and marking the new image failed.
+- `update` rolls back an instance whose new image exits at once, instead of
+  failing with "already stopped" and leaving it stopped.
 
 ## [0.6.0-beta.2] - 2026-11-22
 

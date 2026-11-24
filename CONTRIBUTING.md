@@ -54,6 +54,7 @@ and consistent:
 | `registry` | `internal/registry`: OCI registry access, auth, backoff       |
 | `check`    | `internal/check`, `internal/semver`: update detection         |
 | `notify`   | `internal/notify`                                             |
+| `log`      | `internal/log`: the stderr logger and the audit log           |
 | `serve`    | `internal/serve`: daemon loop and health endpoints            |
 | `update`   | `internal/update`: rebuild, health gate and rollback          |
 | `install`  | `internal/install`: install, configure, upgrade and uninstall |

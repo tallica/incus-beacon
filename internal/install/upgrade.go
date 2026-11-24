@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/semver"
 	"github.com/tallica/incus-beacon/internal/update"
 )
@@ -21,13 +23,14 @@ type UpgradeOptions struct {
 	Force bool // allow a downgrade
 	Wait  time.Duration
 	Log   zerolog.Logger
+	Audit zerolog.Logger // as for Options
 }
 
 // readyProbe is the image's own HEALTHCHECK.
 var readyProbe = []string{"wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9153/ready"}
 
 // Upgrade follows docs/ARCHITECTURE.md#connecting-to-incus.
-func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOptions) error {
+func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOptions) (err error) {
 	srv, inst, err := installed(srv, opts.Name, opts.Log)
 	if err != nil {
 		return err
@@ -52,6 +55,21 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if old == "" {
 		return fmt.Errorf("instance %s records no base image to roll back to", opts.Name)
 	}
+	fields := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image)
+	addLog := inst.Devices[logDev] == nil
+	if addLog {
+		fields = fields.Str("log_volume", LogVolumeName(opts.Name))
+	}
+	audit := fields.Logger()
+	log.AuditBegin(audit, "upgrade").Send()
+	defer func() { log.AuditEnd(audit, "upgrade", err).Send() }()
+
+	// The device decides, not the key: unsetting BEACON_AUDIT_LOG turns the log off, and must stay off.
+	if addLog {
+		if err := addLogVolume(ctx, srv, opts.Name, inst.Devices[stateDev]["pool"], opts.Log); err != nil {
+			return err
+		}
+	}
 
 	if inst.StatusCode != api.Stopped {
 		if err := update.SetState(ctx, srv, opts.Name, "stop"); err != nil {
@@ -73,6 +91,7 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 
 	err = fmt.Errorf("upgrade %s to %s: %w", opts.Name, opts.Image, err)
 	opts.Log.Warn().Err(err).Str("image", from).Msg("rolling back")
+	log.AuditBegin(audit, "upgrade.rollback").Send()
 	rerr := stopIfRunning(ctx, srv, opts.Name)
 	if rerr == nil {
 		rerr = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old})
@@ -80,15 +99,54 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if rerr == nil {
 		rerr = update.SetState(ctx, srv, opts.Name, "start")
 	}
+	log.AuditEnd(audit, "upgrade.rollback", rerr).Send()
 	if rerr != nil {
 		return errors.Join(err, fmt.Errorf("roll back to %s: %w", from, rerr))
 	}
 	return fmt.Errorf("%w; rolled back to %s", err, from)
 }
 
+func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, pool string, logger zerolog.Logger) error {
+	if pool == "" {
+		return fmt.Errorf("instance %s records no pool on its %s device", name, stateDev)
+	}
+	vol := LogVolumeName(name)
+	created, err := ensureLogVolume(srv, pool, vol, logger)
+	if err != nil {
+		return err
+	}
+	// findInstance drops the ETag, so the update reads its own.
+	inst, etag, err := srv.GetInstance(name)
+	if err == nil {
+		put := inst.Writable()
+		put.Config = with(put.Config, "environment.BEACON_AUDIT_LOG", auditFile)
+		put.Devices = with(put.Devices, logDev, disk(pool, vol, logDir))
+		var op incusclient.Operation
+		if op, err = srv.UpdateInstance(name, put, etag); err == nil {
+			err = op.WaitContext(ctx)
+		}
+	}
+	if err != nil {
+		err = fmt.Errorf("add the %s device to %s: %w", logDev, name, err)
+		if created {
+			err = errors.Join(err, srv.DeleteStoragePoolVolume(pool, "custom", vol))
+		}
+		return err
+	}
+	logger.Info().Str("instance", name).Str("volume", vol).Str("path", logDir).Msg("log volume attached")
+	return nil
+}
+
+func with[V any](m map[string]V, k string, v V) map[string]V {
+	c := make(map[string]V, len(m)+1)
+	maps.Copy(c, m)
+	c[k] = v
+	return c
+}
+
 // installed finds the instance for upgrade and configure, refusing one install didn't create; uninstall tolerates any.
-func installed(srv incusclient.InstanceServer, name string, log zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
-	srv, inst, err := findInstance(srv, name, log)
+func installed(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+	srv, inst, err := findInstance(srv, name, logger)
 	if notFound(err) {
 		return srv, nil, fmt.Errorf("instance %s not found; install it first", name)
 	}

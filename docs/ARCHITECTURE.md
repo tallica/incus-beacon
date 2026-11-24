@@ -28,23 +28,23 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Components
 
-| Package             | Job                                                                                                                                       | Depends on                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                              | everything below                         |
-| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                                   |
-| `internal/log`      | zerolog setup: level, JSON or console format, stderr only                                                                                 | zerolog                                  |
-| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                                   |
-| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust        |
-| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                       |
-| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                         |
-| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                       |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy                 |
-| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                                  |
-| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                             |
-| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares     | incus, registry, check, policy, metrics  |
-| `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                          | config, policy, registry, semver, update |
-| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics                    |
-| `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                       | stdlib                                   |
+| Package             | Job                                                                                                                                       | Depends on                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                              | everything below                              |
+| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                                        |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr; the size-rotated audit file and the fields its records share                        | zerolog, config                               |
+| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                                        |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust             |
+| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                            |
+| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                              |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                            |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy                      |
+| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | metrics                                       |
+| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, incus                                  |
+| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares     | incus, registry, check, policy, metrics, log  |
+| `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                          | config, log, policy, registry, semver, update |
+| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics                         |
+| `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                       | stdlib                                        |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
@@ -170,7 +170,8 @@ ref is the tracked ref at the `latest` tag.
    6. Start, then gate: the instance must keep running for `--update-settle`
       and, with a health check, report `healthy` within `--update-wait`.
       `unhealthy`, or a stop, fails at once.
-4. **On failure, undo every step begun, newest first:** stop and restore the
+4. **On failure, undo every step begun, newest first:** stop (an instance that
+   already exited on its own counts as stopped; to verify) and restore the
    snapshots (only once the new image has run), rebuild from the old
    `volatile.base_image`, put the override keys and the dropped keys back as
    they were, and start and gate again. A volume another instance also uses is
@@ -190,7 +191,9 @@ ref is the tracked ref at the `latest` tag.
    snapshots beyond `--update-keep` per volume are pruned, outside the claim, so
    a slow delete can't outlast its lease and get the update rolled back. Pruning
    after a rollback keeps updates that keep failing from piling up snapshots;
-   after `failed` every snapshot stays, for a recovery by hand.
+   after `failed` every snapshot stays, for a recovery by hand. With
+   `--audit-log`, the update also leaves a trail of JSON records there, linked
+   by the claim's snapshot name ([README](../README.md#audit-log)).
 
 A claim holds for 30 minutes plus `--update-wait` past its last step: no step or
 undo waits on the health gate more than once, and the 30 minutes leaves room for
@@ -335,7 +338,13 @@ Refs are normalised with Docker conventions: `nginx` becomes
   tracking would never move past. Incus accepts a token restricted to a project
   that doesn't exist, so the projects are checked first. The name is refused
   when a certificate already has it, since `uninstall` removes certificates by
-  that name, along with unredeemed tokens.
+  that name, along with unredeemed tokens. The audit log gets a volume of its
+  own at `/var/log/incus-beacon`, apart from the certificate, and `uninstall`
+  keeps it unless told otherwise, so a failure can still be investigated once
+  the instance is gone. Incus mounts a container's disk device with
+  `create=dir`, so no image, old or new, needs the mount point (seen on Incus
+  7.6). Once the instance is gone, `uninstall` finds each volume by searching
+  the pools, since nothing else records where it was.
 - **Upgrading the installed instance (`upgrade`):** a rebuild, not a delete and
   create, because it keeps the config `install` wrote, the state volume with the
   certificate and the notification URLs, and the trust entry, so no new token is
@@ -343,9 +352,17 @@ Refs are normalised with Docker conventions: `nginx` becomes
   `incus exec`: it fails only when a cycle can't list instances, so a registry
   outage doesn't roll back a good release. The rollback rebuilds from the old
   `volatile.base_image` fingerprint, which Incus still caches at that point, so
-  it needs no registry. Verified on Incus 7.6 only; older servers keep the old
-  image's `oci.*` keys through a rebuild, harmless while the image's entrypoint
-  stays the same (to verify).
+  it needs no registry. Verified on Incus 7.6 only. Older servers keep the old
+  image's `oci.*` keys through a rebuild (seen on 7.4); every release runs as
+  65534 in `/`, and the image keeps the pre-0.6 entry point, so a kept
+  `/usr/local/bin/incus-beacon serve` still starts serve (seen on 7.6 with the
+  key set by hand). An instance without a `log` device gets the log volume, the
+  device and `BEACON_AUDIT_LOG` before the stop, attached while it runs, and a
+  volume created for an attach that fails is deleted. The device decides, not
+  the key, so a key unset to turn the log off stays unset, while a key without
+  the device is pointed at the volume. A rollback leaves all three: `config`
+  reads only the `BEACON_*` variables of flags it knows, so the old binary
+  ignores the key.
 - **Reconfiguring the installed instance (`configure`):** it builds the new
   config, then has `config` parse `serve` from the resulting `BEACON_*`
   variables, so a setting serve would refuse is refused before anything changes.
@@ -386,7 +403,8 @@ Refs are normalised with Docker conventions: `nginx` becomes
   right after a launch. `update` retries up to ten times instead, re-reading its
   claim each time, since ic-healthd writes its status while an update runs.
 - **Logs go to stderr and reports to stdout,** so `check --format json` can be
-  piped. Credentials, trust tokens and private keys are never logged.
+  piped; audit records go to `--audit-log` as JSON lines, whatever the format.
+  Credentials, trust tokens and private keys are never logged.
 - **A failed check keeps the last known `user.incus-beacon.latest`.** It sets
   `status=error` and an error reason, so a flaky registry never hides an update
   that was already found.

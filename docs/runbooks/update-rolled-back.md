@@ -32,6 +32,18 @@ incus console <instance> --show-log
 incus info <instance> --show-log
 ```
 
+`incus console --show-log` prints only what the instance wrote since it was last
+read, so a second look comes back empty. The whole console log, kept across
+restarts and rebuilds, is `/var/log/incus/<instance>/console.log` on the Incus
+host, readable by root (seen on Incus 7.6, installed from a package).
+
+With an [audit log](../../README.md#audit-log), its records show the step that
+failed, with its error, and each undo after it:
+
+```sh
+jq -c 'select(.instance == "<instance>") | {time, op, event, step, phase, error}' <audit-log>
+```
+
 A newer image is tried on its own. To retry the same one, after fixing the
 cause, remove the failure record:
 

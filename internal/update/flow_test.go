@@ -1,9 +1,11 @@
 package update
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"reflect"
@@ -77,9 +79,15 @@ type fake struct {
 	lockedRebuild int
 	lockedEarly   bool
 	ociNew        string // oci.entrypoint the new image's rebuild refreshes to
-	snapFail      string // pool/name whose snapshot fails
-	hang          bool   // the rebuild onto the new image never finishes
-	hangDel       bool   // snapshot deletes never finish
+	// stale makes reads after the first, following a crashing start, report Running until a stop
+	// request finds the instance stopped: the client's view of the one live "already stopped"
+	// failure, whose rollback read Running and then had its stop refused.
+	stale           bool
+	crashed         bool
+	readsSinceCrash int
+	snapFail        string // pool/name whose snapshot fails
+	hang            bool   // the rebuild onto the new image never finishes
+	hangDel         bool   // snapshot deletes never finish
 }
 
 func newFake() *fake {
@@ -125,6 +133,12 @@ func (f *fake) GetServer() (*api.Server, string, error) {
 
 func (f *fake) GetInstance(string) (*api.Instance, string, error) {
 	inst := f.inst
+	if f.crashed {
+		f.readsSinceCrash++
+		if f.stale && f.readsSinceCrash > 1 {
+			inst.Status, inst.StatusCode = "Running", api.Running
+		}
+	}
 	inst.Config = maps.Clone(f.inst.Config)
 	inst.ExpandedConfig = maps.Clone(f.profile)
 	if inst.ExpandedConfig == nil {
@@ -163,6 +177,10 @@ func (f *fake) UpdateInstanceState(_ string, st api.InstanceStatePut, _ string) 
 	}
 	switch st.Action {
 	case "stop":
+		f.crashed = false
+		if f.inst.StatusCode == api.Stopped {
+			return nil, errors.New("The instance is already stopped") // as Incus 7.6 answers
+		}
 		if f.stuck && !st.Force {
 			return nil, errors.New(`Failed shutting down instance, status is "Running"`)
 		}
@@ -172,9 +190,11 @@ func (f *fake) UpdateInstanceState(_ string, st api.InstanceStatePut, _ string) 
 		}
 	case "start":
 		f.starts++
+		f.crashed, f.readsSinceCrash = false, 0
 		f.inst.Status, f.inst.StatusCode = "Running", api.Running
 		if f.crash(f.starts) {
 			f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped
+			f.crashed = true
 		}
 		if f.health != nil {
 			f.inst.Config[healthStatus] = f.health(f.starts)
@@ -710,6 +730,35 @@ func TestApplyRollsBackAFailedSnapshot(t *testing.T) {
 	}
 }
 
+// Incus refuses to stop a stopped instance, so an image that exits at once must not fail the rollback.
+func TestApplyRollsBackWhenTheInstanceStopsOnItsOwn(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.crash = func(n int) bool { return n == 1 }
+	f.stale = true
+	o := apply(t, f, target())
+	if o.Status != RolledBack || !strings.Contains(o.Reason, "stopped after the start") {
+		t.Fatalf("outcome %+v, want a rollback", o)
+	}
+	if len(f.rebuilds) != 2 || len(f.restored) != 1 || f.inst.StatusCode != api.Running {
+		t.Errorf("rebuilds %+v, restored %v, status %s; want the old image back and running", f.rebuilds, f.restored, f.inst.Status)
+	}
+}
+
+func TestStopAcceptsAnInstanceThatAlreadyStopped(t *testing.T) {
+	t.Parallel()
+	for name, stop := range map[string]func(*fake) error{
+		"Stop":     func(f *fake) error { return Stop(context.Background(), f, "web", time.Second) },
+		"SetState": func(f *fake) error { return SetState(context.Background(), f, "web", "stop") },
+	} {
+		f := newFake()
+		f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped
+		if err := stop(f); err != nil {
+			t.Errorf("%s: err %v, want none for an instance that is already stopped", name, err)
+		}
+	}
+}
+
 func TestApplyRetriesAWriteHeldUpByAnotherUpdate(t *testing.T) {
 	t.Parallel()
 	for n := 1; n <= 4; n++ {
@@ -891,5 +940,235 @@ func TestApplyRecoveryRestoresTheImageOverride(t *testing.T) {
 	o := apply(t, f, composeTarget())
 	if _, ok := f.inst.Config[incus.ComposeOverrideKey]; o.Status != RolledBack || ok {
 		t.Errorf("outcome %+v, config %v; want the override removed as it was before", o, f.inst.Config)
+	}
+}
+
+// audited applies with an audit logger and returns its records.
+func audited(t *testing.T, f *fake, tgt incus.Target, next Next) (Outcome, []map[string]any, string) {
+	t.Helper()
+	o, records, raw, err := auditedErr(t, f, tgt, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return o, records, raw
+}
+
+func auditedErr(t *testing.T, f *fake, tgt incus.Target, next Next) (Outcome, []map[string]any, string, error) {
+	t.Helper()
+	var buf bytes.Buffer
+	opts := options()
+	opts.Audit = zerolog.New(&buf)
+	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, next, opts)
+	var records []map[string]any
+	for line := range strings.Lines(buf.String()) {
+		var r map[string]any
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			t.Fatalf("record %q: %v", line, err)
+		}
+		records = append(records, r)
+	}
+	return o, records, buf.String(), err
+}
+
+// sequence spells each record as its event, step and phase.
+func sequence(records []map[string]any) []string {
+	seq := make([]string, 0, len(records))
+	for _, r := range records {
+		s := r["event"].(string)
+		if step, ok := r["step"].(string); ok {
+			s += " " + step + " " + r["phase"].(string)
+		}
+		if st, ok := r["status"].(string); ok {
+			s += " " + st
+		}
+		seq = append(seq, s)
+	}
+	return seq
+}
+
+func steps(event string, names ...string) []string {
+	seq := make([]string, 0, 2*len(names))
+	for _, n := range names {
+		seq = append(seq, event+" "+n+" begin", event+" "+n+" done")
+	}
+	return seq
+}
+
+const dropEnv = "drop environment keys"
+
+var (
+	snapshotted = []string{"update.claim", "update.step stop begin", "update.step stop done", "update.step snapshot begin", "snapshot.create", "update.step snapshot done"}
+	restored    = []string{"update.undo start begin", "snapshot.restore", "update.undo start done"}
+)
+
+func checkSequence(t *testing.T, records []map[string]any, want []string) {
+	t.Helper()
+	if got := sequence(records); !slices.Equal(got, want) {
+		t.Errorf("audit records:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+}
+
+// checkOp wants op, "" for none, and the instance on every record.
+func checkOp(t *testing.T, records []map[string]any, op string) {
+	t.Helper()
+	for _, r := range records {
+		if r["instance"] != "web" || r["project"] != "default" || r["to"] != newRef || r["by"] != "test/1" {
+			t.Errorf("record %v: want project, instance, to and by", r)
+		}
+		if got, _ := r["op"].(string); got != op {
+			t.Errorf("record %v: op %q, want %q", r, got, op)
+		}
+	}
+}
+
+func TestAuditAnUpdate(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	const pin = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	o, records, raw := audited(t, f, target(), Next{Ref: newRef, Digest: pin})
+	if o.Status != Updated {
+		t.Fatalf("outcome %+v", o)
+	}
+	want := slices.Concat(snapshotted, steps("update.step", dropEnv, "set the image override", "rebuild", "start"),
+		[]string{"update.release", "snapshot.prune", "update.outcome updated"})
+	checkSequence(t, records, want)
+	op, _ := records[0]["op"].(string)
+	if !strings.HasPrefix(op, snapshotPrefix) {
+		t.Fatalf("op %q, want the claim's snapshot name", op)
+	}
+	checkOp(t, records, op)
+	for _, r := range records {
+		switch r["event"] {
+		case "update.claim":
+			if r["from_image"] != "fp-old" || r["from"] != oldRef || r["digest"] != pin ||
+				!reflect.DeepEqual(r["dropped"], []any{"environment.NGINX_VERSION"}) || !reflect.DeepEqual(r["kept"], []any{"environment.FOO"}) {
+				t.Errorf("claim %v", r)
+			}
+		case "snapshot.create":
+			if r["snapshot"] != "default/web-data/"+op {
+				t.Errorf("snapshot %v", r)
+			}
+		case "snapshot.prune":
+			if r["snapshot"] != "default/web-data/incus-beacon-20260101T000000" {
+				t.Errorf("prune %v", r)
+			}
+		case "update.outcome":
+			if r["from_image"] != "fp-old" || r["image"] != "fp-new" {
+				t.Errorf("outcome %v", r)
+			}
+		}
+	}
+	if strings.Contains(raw, "1.27.5") || strings.Contains(raw, `"bar"`) {
+		t.Errorf("an environment value reached the audit log: %s", raw)
+	}
+}
+
+func TestAuditARollback(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.crash = func(n int) bool { return n == 1 }
+	o, records, _ := audited(t, f, target(), Next{Ref: newRef})
+	if o.Status != RolledBack {
+		t.Fatalf("outcome %+v", o)
+	}
+	want := slices.Concat(snapshotted, steps("update.step", dropEnv, "set the image override", "rebuild"),
+		[]string{"update.step start begin", "update.step start failed"}, restored,
+		steps("update.undo", "rebuild", "set the image override", dropEnv, "stop"),
+		[]string{"update.release", "snapshot.prune", "update.outcome rolled-back"})
+	checkSequence(t, records, want)
+	if r := records[len(records)-1]; !strings.Contains(r["reason"].(string), "stopped after the start") || r["image"] != "fp-old" {
+		t.Errorf("outcome %v", r)
+	}
+}
+
+func TestAuditAFailedUndo(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.crash = func(int) bool { return true }
+	o, records, _ := audited(t, f, target(), Next{Ref: newRef})
+	if o.Status != Failed {
+		t.Fatalf("outcome %+v", o)
+	}
+	seq := sequence(records)
+	want := []string{"update.undo stop begin", "update.undo stop failed", "update.release", "update.outcome failed"}
+	if len(seq) < len(want) || !slices.Equal(seq[len(seq)-len(want):], want) {
+		t.Errorf("audit records end %v, want %v", seq, want)
+	}
+	if r := records[len(records)-3]; r["error"] == nil {
+		t.Errorf("failed undo %v, want its error", r)
+	}
+}
+
+func TestAuditARecovery(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	cfg := f.inst.Config
+	cfg["volatile.base_image"] = "fp-new"
+	delete(cfg, "environment.NGINX_VERSION")
+	const op = "incus-beacon-20261120T000000"
+	cfg[incus.ClaimKey] = claimJSON(t, claim{
+		Owner: "other/7", Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Step: stepIndex(t, "start"), To: newRef,
+		FromRef: oldRef, From: "fp-old", Snapshot: op, Volumes: []string{"default/web-data"},
+		Dropped: map[string]string{"environment.NGINX_VERSION": "1.27.5"},
+	})
+	o, records, raw := audited(t, f, target(), Next{})
+	if o.Status != RolledBack {
+		t.Fatalf("outcome %+v", o)
+	}
+	want := slices.Concat([]string{"update.takeover"}, restored, steps("update.undo", "rebuild", "set the image override", dropEnv, "stop"),
+		[]string{"update.release", "update.outcome rolled-back"})
+	checkSequence(t, records, want)
+	checkOp(t, records, op)
+	if !strings.Contains(records[0]["reason"].(string), "by other/7 was interrupted at start") ||
+		!reflect.DeepEqual(records[0]["dropped"], []any{"environment.NGINX_VERSION"}) {
+		t.Errorf("takeover %v", records[0])
+	}
+	if strings.Contains(raw, "1.27.5") {
+		t.Errorf("an environment value reached the audit log: %s", raw)
+	}
+}
+
+func TestAuditARefusal(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.snapshots = []string{"snap0"}
+	_, records, _ := audited(t, f, target(), Next{Ref: newRef})
+	checkSequence(t, records, []string{"update.outcome refused"})
+	checkOp(t, records, "")
+	if !strings.Contains(records[0]["reason"].(string), "snap0") {
+		t.Errorf("refusal %v", records[0])
+	}
+}
+
+func TestPreviewAuditsNothing(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	opts := options()
+	opts.Audit = zerolog.New(&buf)
+	Preview(context.Background(), newFake(), fakeRegistry{}, target(), Next{Ref: newRef}, opts)
+	if buf.Len() != 0 {
+		t.Errorf("preview audited %s", buf.String())
+	}
+}
+
+func TestAuditAnOutcomeNotRecorded(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.meddle = func(_ int, cfg map[string]string) {
+		if f.starts == 1 && cfg[incus.ClaimKey] != "" {
+			cfg[incus.ClaimKey] = `{"owner":"other/7","expires":"2027-01-01T00:00:00Z"}`
+		}
+	}
+	o, records, _, err := auditedErr(t, f, target(), Next{Ref: newRef})
+	if o.Status != Updated || err == nil {
+		t.Fatalf("outcome %+v, %v; want updated, with the release failed", o, err)
+	}
+	seq := sequence(records)
+	want := []string{"update.step start begin", "update.step start done", "update.outcome updated"}
+	if !slices.Equal(seq[len(seq)-len(want):], want) {
+		t.Errorf("audit records end %v, want %v: no release, no prune", seq, want)
+	}
+	if r := records[len(records)-1]; !strings.Contains(fmt.Sprint(r["error"]), "taken over by other/7") {
+		t.Errorf("outcome %v, want the release's error", r)
 	}
 }

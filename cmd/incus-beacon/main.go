@@ -66,7 +66,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		fmt.Fprintln(stderr, "incus-beacon:", err)
 		return exitUsage
 	}
-	return dispatch(ctx, cfg, logger, stdout)
+	a := cfg.AuditOf()
+	audit, closer := log.NewAudit(a.AuditLog, a.AuditLogMaxSize, a.AuditLogKeep, logger)
+	defer closer.Close()
+	audit = audit.With().Str("version", version.Version).Logger()
+	return dispatch(ctx, cfg, logger, audit, stdout)
 }
 
 func commonOf(cfg *config.Config) config.Common {
@@ -90,26 +94,26 @@ func commonOf(cfg *config.Config) config.Common {
 	}
 }
 
-func dispatch(ctx context.Context, cfg *config.Config, logger zerolog.Logger, stdout io.Writer) int {
+func dispatch(ctx context.Context, cfg *config.Config, logger, audit zerolog.Logger, stdout io.Writer) int {
 	logger = logger.With().Str("command", cfg.Command).Logger()
 	var err error
 	switch cfg.Command {
 	case config.CmdCheck:
 		err = runCheck(ctx, cfg.Check, logger, stdout)
 	case config.CmdServe:
-		err = runServe(ctx, cfg.Serve, logger)
+		err = runServe(ctx, cfg.Serve, logger, audit)
 	case config.CmdStatus:
 		err = runStatus(ctx, cfg.Status, stdout)
 	case config.CmdUpdate:
-		err = runUpdate(ctx, cfg.Update, logger, stdout)
+		err = runUpdate(ctx, cfg.Update, logger, audit, stdout)
 	case config.CmdInstall:
-		err = runInstall(ctx, cfg.Install, logger)
+		err = runInstall(ctx, cfg.Install, logger, audit)
 	case config.CmdConfigure:
-		err = runConfigure(ctx, cfg.Configure, logger)
+		err = runConfigure(ctx, cfg.Configure, logger, audit)
 	case config.CmdUpgrade:
-		err = runUpgrade(ctx, cfg.Upgrade, logger)
+		err = runUpgrade(ctx, cfg.Upgrade, logger, audit)
 	case config.CmdUninstall:
-		err = runUninstall(ctx, cfg.Uninstall, logger)
+		err = runUninstall(ctx, cfg.Uninstall, logger, audit)
 	default:
 		logger.Error().Msg("unknown command")
 		return exitUsage
@@ -160,7 +164,7 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	return nil
 }
 
-func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, stdout io.Writer) error {
+func runUpdate(ctx context.Context, c *config.Update, logger, audit zerolog.Logger, stdout io.Writer) error {
 	srv, err := incus.Connect(ctx, connectOptions(c.Common))
 	if err != nil {
 		return err
@@ -180,7 +184,7 @@ func runUpdate(ctx context.Context, c *config.Update, logger zerolog.Logger, std
 	if err != nil {
 		return err
 	}
-	opts := update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger}
+	opts := update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger, Audit: audit}
 	// A claim first: an interrupted update can leave it current on an ungated image.
 	if t := targets[0]; t.Claim != "" {
 		if c.DryRun {
@@ -286,7 +290,7 @@ func claimedElsewhere(t incus.Target, now time.Time) bool {
 	return t.Claim != "" && !update.Abandoned(t.Claim, now)
 }
 
-func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error {
+func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger) error {
 	logger.Info().Str("version", version.String()).Msg("incus-beacon")
 	set := &metrics.Set{}
 	set.Gauge("incus_beacon_build_info", "Always 1; the version label is the running build.", "version").
@@ -316,7 +320,7 @@ func runServe(ctx context.Context, c *config.Serve, logger zerolog.Logger) error
 	seen := incus.Seen{}
 	runner := &update.Runner{
 		Enabled: c.Update, Window: c.Window, Registry: reg, Metrics: set, Log: logger,
-		Options: update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger},
+		Options: update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger, Audit: audit},
 	}
 	runner.Init()
 
@@ -462,7 +466,7 @@ func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
 	return report.WriteStatus(stdout, c.Format, report.StatusRows(targets, c.OnlyUpdates))
 }
 
-func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) error {
+func runInstall(ctx context.Context, c *config.Install, logger, audit zerolog.Logger) error {
 	if _, err := notify.New(notify.Options{URLs: c.NotifyURLs}); err != nil {
 		return err
 	}
@@ -488,6 +492,7 @@ func runInstall(ctx context.Context, c *config.Install, logger zerolog.Logger) e
 		UpdateWindow: c.UpdateWindow,
 		Wait:         c.Wait,
 		Log:          logger,
+		Audit:        audit,
 	})
 }
 
@@ -504,7 +509,7 @@ func imageFor(image string, logger zerolog.Logger) string {
 	return image
 }
 
-func runConfigure(ctx context.Context, c *config.Configure, logger zerolog.Logger) error {
+func runConfigure(ctx context.Context, c *config.Configure, logger, audit zerolog.Logger) error {
 	if _, err := notify.New(notify.Options{URLs: c.NotifyURLs}); err != nil {
 		return err
 	}
@@ -523,6 +528,7 @@ func runConfigure(ctx context.Context, c *config.Configure, logger zerolog.Logge
 		UpdateWindow: given(c, "update-window", &c.UpdateWindow),
 		Wait:         c.Wait,
 		Log:          logger,
+		Audit:        audit,
 	}
 	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
 	if err != nil {
@@ -539,7 +545,7 @@ func given[T any](c *config.Configure, flagName string, v *T) *T {
 	return nil
 }
 
-func runUpgrade(ctx context.Context, c *config.Upgrade, logger zerolog.Logger) error {
+func runUpgrade(ctx context.Context, c *config.Upgrade, logger, audit zerolog.Logger) error {
 	image := imageFor(c.Image, logger)
 	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
 	if err != nil {
@@ -551,15 +557,21 @@ func runUpgrade(ctx context.Context, c *config.Upgrade, logger zerolog.Logger) e
 		Force: c.Force,
 		Wait:  c.Wait,
 		Log:   logger,
+		Audit: audit,
 	})
 }
 
-func runUninstall(ctx context.Context, c *config.Uninstall, logger zerolog.Logger) error {
+func runUninstall(ctx context.Context, c *config.Uninstall, logger, audit zerolog.Logger) error {
 	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
 	if err != nil {
 		return err
 	}
-	return install.Uninstall(ctx, srv, install.ResolveName(srv, c.Name, logger), logger)
+	return install.Uninstall(ctx, srv, install.UninstallOptions{
+		Name:      install.ResolveName(srv, c.Name, logger),
+		DeleteLog: c.DeleteLog,
+		Log:       logger,
+		Audit:     audit,
+	})
 }
 
 func connectOptions(c config.Common) incus.ConnectOptions {

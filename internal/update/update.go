@@ -34,7 +34,7 @@ const (
 	stateRetry = 500 * time.Millisecond
 )
 
-// SetState runs a start or stop and waits for it, retrying while another operation holds the instance; a stop is forced.
+// SetState runs a start or stop and waits for it, retrying while another operation holds the instance; a stop is forced, and any failure of it passes once the instance reads stopped.
 func SetState(ctx context.Context, srv incusclient.InstanceServer, name, action string) error {
 	wait := stateRetry
 	for try := 1; ; try++ {
@@ -43,6 +43,11 @@ func SetState(ctx context.Context, srv incusclient.InstanceServer, name, action 
 			err = op.WaitContext(ctx)
 		}
 		if !incus.IsBusy(err) || try == stateTries {
+			if err != nil && action == "stop" {
+				if inst, _, gerr := srv.GetInstance(name); gerr == nil && inst.StatusCode == api.Stopped {
+					return nil
+				}
+			}
 			return err
 		}
 		select {

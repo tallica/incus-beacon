@@ -17,6 +17,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/semver"
@@ -28,6 +29,9 @@ const (
 	secretsDir = "/run/secrets"
 	tokenFile  = secretsDir + "/token"
 	stateDev   = "state"
+	logDir     = "/var/log/incus-beacon"
+	logDev     = "log"
+	auditFile  = logDir + "/audit.log"
 	notifyFile = "notify-urls"
 	imageUID   = 65534
 	imageRepo  = "ghcr.io/tallica/incus-beacon"
@@ -51,6 +55,7 @@ type Options struct {
 	UpdateWindow string
 	Wait         time.Duration
 	Log          zerolog.Logger
+	Audit        zerolog.Logger // gets begin and done or failed; the zero Logger writes none
 }
 
 // DefaultName is what install calls the instance; legacyName is what it did before 0.6.
@@ -60,13 +65,13 @@ const (
 )
 
 // ResolveName is name, else the default, else an instance from before 0.6 under the old name.
-func ResolveName(srv incusclient.InstanceServer, name string, log zerolog.Logger) string {
+func ResolveName(srv incusclient.InstanceServer, name string, logger zerolog.Logger) string {
 	if name != "" {
 		return name
 	}
-	if _, _, err := findInstance(srv, DefaultName, log); notFound(err) {
-		if _, _, err := findInstance(srv, legacyName, log); err == nil {
-			log.Info().Str("instance", legacyName).Msg("using the instance from before 0.6")
+	if _, _, err := findInstance(srv, DefaultName, logger); notFound(err) {
+		if _, _, err := findInstance(srv, legacyName, logger); err == nil {
+			logger.Info().Str("instance", legacyName).Msg("using the instance from before 0.6")
 			return legacyName
 		}
 	}
@@ -75,6 +80,9 @@ func ResolveName(srv incusclient.InstanceServer, name string, log zerolog.Logger
 
 // VolumeName is the state volume of the instance called name.
 func VolumeName(name string) string { return name + "-state" }
+
+// LogVolumeName is the volume holding the audit log of the instance called name.
+func LogVolumeName(name string) string { return name + "-log" }
 
 var release = regexp.MustCompile(`^v?(\d+)\.(\d+)\.\d+$`)
 
@@ -100,7 +108,7 @@ func trackFor(track, image string) string {
 }
 
 // Install undoes what it created if a step before the start fails.
-func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) error {
+func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) (err error) {
 	if opts.Name == "" {
 		if _, _, err := findInstance(srv, legacyName, opts.Log); err == nil {
 			return fmt.Errorf("an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another", legacyName)
@@ -137,28 +145,36 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		return err
 	}
 
+	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Str("log_volume", LogVolumeName(opts.Name)).Logger()
+	log.AuditBegin(audit, "install").Send()
+	defer func() { log.AuditEnd(audit, "install", err).Send() }()
+
 	var undo []func() error
 	rollback := func(err error) error {
+		log.AuditBegin(audit, "install.rollback").Send()
+		var rerr error
 		for _, f := range slices.Backward(undo) {
-			err = errors.Join(err, f())
+			rerr = errors.Join(rerr, f())
 		}
-		return err
+		log.AuditEnd(audit, "install.rollback", rerr).Send()
+		return errors.Join(err, rerr)
 	}
 
 	vol := VolumeName(opts.Name)
-	err = srv.CreateStoragePoolVolume(pool, api.StorageVolumesPost{
-		Name: vol,
-		Type: "custom",
-		StorageVolumePut: api.StorageVolumePut{Config: map[string]string{
-			"initial.uid": fmt.Sprint(imageUID),
-			"initial.gid": fmt.Sprint(imageUID),
-		}},
-	})
-	if err != nil {
-		return fmt.Errorf("create volume %s: %w", vol, err)
+	if err := createVolume(srv, pool, vol); err != nil {
+		return rollback(err)
 	}
 	undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", vol) })
 	opts.Log.Info().Str("pool", pool).Str("volume", vol).Msg("volume created")
+
+	logVol := LogVolumeName(opts.Name)
+	created, err := ensureLogVolume(srv, pool, logVol, opts.Log)
+	if err != nil {
+		return rollback(err)
+	}
+	if created {
+		undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", logVol) })
+	}
 
 	if len(opts.NotifyURLs) > 0 {
 		if err := writeNotifyURLs(srv, pool, vol, opts.NotifyURLs); err != nil {
@@ -176,6 +192,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	env := map[string]string{
 		"environment.BEACON_INCUS":      apiURL,
 		"environment.BEACON_TOKEN_FILE": tokenFile,
+		"environment.BEACON_AUDIT_LOG":  auditFile,
 	}
 	if len(opts.Projects) > 0 {
 		env["environment.BEACON_PROJECT"] = strings.Join(opts.Projects, ",")
@@ -213,9 +230,10 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		},
 		InstancePut: api.InstancePut{
 			Config: env,
-			Devices: map[string]map[string]string{stateDev: {
-				"type": "disk", "pool": pool, "source": vol, "path": stateDir,
-			}},
+			Devices: map[string]map[string]string{
+				stateDev: disk(pool, vol, stateDir),
+				logDev:   disk(pool, logVol, logDir),
+			},
 		},
 	})
 	if err == nil {
@@ -245,13 +263,39 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	return nil
 }
 
+type UninstallOptions struct {
+	Name      string
+	DeleteLog bool // also the log volume, which is otherwise kept for reading after the uninstall
+	Log       zerolog.Logger
+	Audit     zerolog.Logger // as for Options
+}
+
 // Uninstall tolerates any of its parts being gone already.
-func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string, log zerolog.Logger) error {
+func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts UninstallOptions) (err error) {
+	name, logger := opts.Name, opts.Log
+	srv, inst, ferr := findInstance(srv, name, logger)
+	project := ""
+	if ferr == nil {
+		project = inst.Project
+	}
+	audit := log.AuditFor(opts.Audit, log.Process(), project, name)
+	log.AuditBegin(audit, "uninstall").Send()
+	var removed []string
+	kept := ""
+	defer func() {
+		e := log.AuditEnd(audit, "uninstall", err)
+		if len(removed) > 0 {
+			e = e.Strs("removed", removed)
+		}
+		if kept != "" {
+			e = e.Str("kept_volume", kept)
+		}
+		e.Send()
+	}()
 	var errs []error
 	pool := ""
-	srv, inst, err := findInstance(srv, name, log)
 	switch {
-	case err == nil:
+	case ferr == nil:
 		pool = inst.Devices[stateDev]["pool"]
 		if inst.StatusCode != api.Stopped {
 			if err := update.SetState(ctx, srv, name, "stop"); err != nil {
@@ -261,25 +305,45 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 		if err := deleteInstance(srv, name); err != nil {
 			errs = append(errs, fmt.Errorf("delete %s: %w", name, err))
 		} else {
-			log.Info().Str("instance", name).Msg("instance deleted")
+			removed = append(removed, "instance "+name)
+			logger.Info().Str("instance", name).Msg("instance deleted")
 		}
-	case !notFound(err):
-		errs = append(errs, err)
+	case !notFound(ferr):
+		errs = append(errs, ferr)
 	}
-	if pool == "" {
-		pool, _, _ = profileDefaults(srv)
-	}
-	if pool != "" {
-		vol := VolumeName(name)
-		err := srv.DeleteStoragePoolVolume(pool, "custom", vol)
+	for _, vol := range []string{VolumeName(name), LogVolumeName(name)} {
+		p := pool
+		if p == "" {
+			found, err := poolOf(srv, vol)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			p = found
+		}
 		switch {
-		case err == nil:
-			log.Info().Str("volume", vol).Msg("volume deleted")
-		case !notFound(err):
-			errs = append(errs, fmt.Errorf("delete volume %s: %w", vol, err))
+		case p == "": // in no pool: gone already
+		case vol == LogVolumeName(name) && !opts.DeleteLog:
+			if ok, err := volumeExists(srv, p, vol); err != nil {
+				errs = append(errs, err)
+			} else if ok {
+				kept = vol
+				logger.Info().Str("pool", p).Str("volume", vol).Msg("log volume kept; uninstall --delete-log removes it")
+			}
+		default:
+			if deleted, err := deleteVolume(srv, p, vol); err != nil {
+				errs = append(errs, err)
+			} else if deleted {
+				removed = append(removed, "volume "+vol)
+				logger.Info().Str("pool", p).Str("volume", vol).Msg("volume deleted")
+			}
 		}
 	}
-	if err := revokeTokens(srv, name, log); err != nil {
+	revoked, err := revokeTokens(srv, name, logger)
+	for _, id := range revoked {
+		removed = append(removed, "trust token "+id)
+	}
+	if err != nil {
 		errs = append(errs, err)
 	}
 	certs, err := srv.GetCertificates()
@@ -293,14 +357,83 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, name string,
 		if err := srv.DeleteCertificate(c.Fingerprint); err != nil {
 			errs = append(errs, fmt.Errorf("remove certificate %s: %w", c.Fingerprint, err))
 		} else {
-			log.Info().Str("certificate", c.Name).Msg("certificate removed")
+			removed = append(removed, "certificate "+c.Fingerprint)
+			logger.Info().Str("certificate", c.Name).Msg("certificate removed")
 		}
 	}
 	return errors.Join(errs...)
 }
 
+func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
+	err := srv.CreateStoragePoolVolume(pool, api.StorageVolumesPost{
+		Name: vol,
+		Type: "custom",
+		StorageVolumePut: api.StorageVolumePut{Config: map[string]string{
+			"initial.uid": fmt.Sprint(imageUID),
+			"initial.gid": fmt.Sprint(imageUID),
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("create volume %s: %w", vol, err)
+	}
+	return nil
+}
+
+// ensureLogVolume reuses a log volume already there, records and all.
+func ensureLogVolume(srv incusclient.InstanceServer, pool, vol string, logger zerolog.Logger) (created bool, err error) {
+	err = createVolume(srv, pool, vol)
+	switch {
+	case err == nil:
+		logger.Info().Str("pool", pool).Str("volume", vol).Msg("log volume created")
+		return true, nil
+	case api.StatusErrorCheck(err, http.StatusConflict): // Incus's only conflict here is the name being taken
+		logger.Info().Str("pool", pool).Str("volume", vol).Msg("reusing the log volume")
+		return false, nil
+	}
+	return false, err
+}
+
+func disk(pool, vol, path string) map[string]string {
+	return map[string]string{"type": "disk", "pool": pool, "source": vol, "path": path}
+}
+
+func deleteVolume(srv incusclient.InstanceServer, pool, vol string) (deleted bool, err error) {
+	err = srv.DeleteStoragePoolVolume(pool, "custom", vol)
+	switch {
+	case err == nil:
+		return true, nil
+	case notFound(err):
+		return false, nil
+	}
+	return false, fmt.Errorf("delete volume %s: %w", vol, err)
+}
+
+func poolOf(srv incusclient.InstanceServer, vol string) (string, error) {
+	pools, err := srv.GetStoragePoolNames()
+	if err != nil {
+		return "", fmt.Errorf("list storage pools: %w", err)
+	}
+	for _, p := range pools {
+		if ok, err := volumeExists(srv, p, vol); err != nil || ok {
+			return p, err
+		}
+	}
+	return "", nil
+}
+
+func volumeExists(srv incusclient.InstanceServer, pool, vol string) (bool, error) {
+	_, _, err := srv.GetStoragePoolVolume(pool, "custom", vol)
+	switch {
+	case err == nil:
+		return true, nil
+	case notFound(err):
+		return false, nil
+	}
+	return false, fmt.Errorf("read volume %s: %w", vol, err)
+}
+
 // findInstance also searches other projects; the server it returns uses the instance's.
-func findInstance(srv incusclient.InstanceServer, name string, log zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+func findInstance(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
 	inst, _, err := srv.GetInstance(name)
 	if !notFound(err) {
 		return srv, inst, err
@@ -312,7 +445,7 @@ func findInstance(srv incusclient.InstanceServer, name string, log zerolog.Logge
 	if p == "" {
 		return srv, nil, err
 	}
-	log.Info().Str("instance", name).Str("project", p).Msg("found in another project")
+	logger.Info().Str("instance", name).Str("project", p).Msg("found in another project")
 	srv = srv.UseProject(p)
 	inst, _, err = srv.GetInstance(name)
 	return srv, inst, err
@@ -427,12 +560,13 @@ func tokens(srv incusclient.InstanceServer) incusclient.InstanceServer {
 	return srv.UseProject(api.ProjectDefaultName)
 }
 
-// revokeTokens removes tokens an install left unredeemed.
-func revokeTokens(srv incusclient.InstanceServer, name string, log zerolog.Logger) error {
+// revokeTokens removes tokens an install left unredeemed and gives their operation IDs.
+func revokeTokens(srv incusclient.InstanceServer, name string, logger zerolog.Logger) ([]string, error) {
 	ops, err := tokens(srv).GetOperations()
 	if err != nil {
-		return fmt.Errorf("list trust tokens: %w", err)
+		return nil, fmt.Errorf("list trust tokens: %w", err)
 	}
+	var revoked []string
 	var errs []error
 	for _, op := range ops {
 		if op.Class != api.OperationClassToken || op.StatusCode != api.Running {
@@ -445,10 +579,11 @@ func revokeTokens(srv incusclient.InstanceServer, name string, log zerolog.Logge
 		if err := tokens(srv).DeleteOperation(op.ID); err != nil {
 			errs = append(errs, fmt.Errorf("revoke trust token: %w", err))
 		} else {
-			log.Info().Str("token", name).Msg("unused trust token revoked")
+			revoked = append(revoked, op.ID)
+			logger.Info().Str("token", name).Msg("unused trust token revoked")
 		}
 	}
-	return errors.Join(errs...)
+	return revoked, errors.Join(errs...)
 }
 
 func pushToken(srv incusclient.InstanceServer, name, token string) error {

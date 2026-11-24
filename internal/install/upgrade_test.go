@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
@@ -39,6 +40,7 @@ func installedFake() *fake {
 	f := newFake()
 	f.instances["incus-beacon"] = &api.Instance{
 		Name:       "incus-beacon",
+		Project:    "default",
 		StatusCode: api.Running,
 		InstancePut: api.InstancePut{
 			Config: map[string]string{
@@ -46,7 +48,7 @@ func installedFake() *fake {
 				"image.id":                      oldImage,
 				"volatile.base_image":           "fp-old",
 			},
-			Devices: map[string]map[string]string{stateDev: {"type": "disk", "source": "incus-beacon-state", "path": stateDir}},
+			Devices: map[string]map[string]string{stateDev: {"type": "disk", "pool": "default", "source": "incus-beacon-state", "path": stateDir}},
 		},
 	}
 	f.ready = func(int) bool { return true }
@@ -60,8 +62,20 @@ func upgradeOpts(image string) UpgradeOptions {
 func TestUpgrade(t *testing.T) {
 	t.Parallel()
 	f := installedFake()
-	if err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")); err != nil {
+	o := upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
+	if err := Upgrade(context.Background(), f, o); err != nil {
 		t.Fatal(err)
+	}
+	for _, r := range checkAudit(t, &buf, "upgrade begin", "upgrade done") {
+		if r["project"] != "default" || r["from"] != oldImage || r["from_image"] != "fp-old" || r["image"] != o.Image || r["log_volume"] != "incus-beacon-log" {
+			t.Errorf("record %v: want project, from, from_image, image and log_volume", r)
+		}
+	}
+	checkLogVolume(t, f)
+	if i, j := slices.Index(f.calls, "update instance incus-beacon"), slices.Index(f.calls, "create volume incus-beacon-log"); j < 0 || i < j {
+		t.Errorf("calls %v, want the volume created, then the instance updated", f.calls)
 	}
 	want := []api.InstanceSource{{Type: "image", Protocol: "oci", Server: "https://ghcr.io", Alias: "tallica/incus-beacon:0.5"}}
 	if !reflect.DeepEqual(f.rebuilds, want) {
@@ -89,16 +103,93 @@ func TestUpgradeRollsBack(t *testing.T) {
 	if !slices.Equal(f.states, []string{"stop", "start", "stop", "start"}) {
 		t.Errorf("states %v", f.states)
 	}
+	checkLogVolume(t, f)
+}
+
+func checkLogVolume(t *testing.T, f *fake) {
+	t.Helper()
+	inst := f.instances["incus-beacon"]
+	if _, ok := f.volumes["default/incus-beacon-log"]; !ok {
+		t.Error("no log volume")
+	}
+	if d := inst.Devices[logDev]; d["pool"] != "default" || d["source"] != "incus-beacon-log" || d["path"] != logDir {
+		t.Errorf("log device %v", d)
+	}
+	if inst.Devices[stateDev]["source"] != "incus-beacon-state" || inst.Config["environment.BEACON_AUDIT_LOG"] != auditFile || inst.Config["volatile.base_image"] != "fp-old" {
+		t.Errorf("instance %+v, want the state device and config kept and the audit path added", inst.InstancePut)
+	}
+}
+
+func TestUpgradeLeavesTheKeyOfAnInstanceWithALogDevice(t *testing.T) {
+	t.Parallel()
+	f := installedFake()
+	inst := f.instances["incus-beacon"]
+	inst.Devices[logDev] = disk("default", "incus-beacon-log", logDir)
+	var buf bytes.Buffer
+	o := upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")
+	o.Audit = zerolog.New(&buf)
+	if err := Upgrade(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(f.calls, func(c string) bool {
+		return strings.HasPrefix(c, "create volume") || strings.HasPrefix(c, "update instance")
+	}) {
+		t.Errorf("calls %v, want the log volume added only once", f.calls)
+	}
+	if strings.Contains(buf.String(), "log_volume") {
+		t.Errorf("audited %s, want no log_volume when nothing was added", buf.String())
+	}
+	if v, ok := inst.Config["environment.BEACON_AUDIT_LOG"]; ok {
+		t.Errorf("BEACON_AUDIT_LOG = %q, want an unset key left unset", v)
+	}
+}
+
+func TestUpgradeMovesAHandSetAuditLogOntoTheVolume(t *testing.T) {
+	t.Parallel()
+	f := installedFake()
+	f.instances["incus-beacon"].Config["environment.BEACON_AUDIT_LOG"] = "/tmp/audit.log"
+	if err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")); err != nil {
+		t.Fatal(err)
+	}
+	checkLogVolume(t, f)
+}
+
+func TestUpgradeRemovesALogVolumeItCouldNotAttach(t *testing.T) {
+	t.Parallel()
+	f := installedFake()
+	f.failUpdate = errors.New("etag mismatch")
+	err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5"))
+	if err == nil || !strings.Contains(err.Error(), "add the log device") {
+		t.Fatalf("err %v, want the failed attach", err)
+	}
+	if _, ok := f.volumes["default/incus-beacon-log"]; ok {
+		t.Error("log volume left behind with nothing attached to it")
+	}
+	if len(f.states) != 0 || len(f.rebuilds) != 0 {
+		t.Errorf("states %v, rebuilds %v, want the instance untouched", f.states, f.rebuilds)
+	}
+
+	f = installedFake()
+	f.volumes["default/incus-beacon-log"] = api.StorageVolumesPost{Name: "incus-beacon-log"}
+	f.failUpdate = errors.New("etag mismatch")
+	_ = Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5"))
+	if _, ok := f.volumes["default/incus-beacon-log"]; !ok {
+		t.Error("a log volume the upgrade didn't create was deleted")
+	}
 }
 
 func TestUpgradeRollsBackAFailedRebuild(t *testing.T) {
 	t.Parallel()
 	f := installedFake()
 	f.failRebuild = errors.New("Failed getting remote image info")
-	err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5"))
+	o := upgradeOpts("ghcr.io/tallica/incus-beacon:0.5")
+	var buf bytes.Buffer
+	o.Audit = zerolog.New(&buf)
+	err := Upgrade(context.Background(), f, o)
 	if err == nil || !strings.Contains(err.Error(), "rolled back to "+oldImage) {
 		t.Fatalf("err %v, want rolled back", err)
 	}
+	checkAudit(t, &buf, "upgrade begin", "upgrade.rollback begin", "upgrade.rollback done", "upgrade failed")
 	if !slices.Equal(f.states, []string{"stop", "start"}) || f.instances["incus-beacon"].StatusCode != api.Running {
 		t.Errorf("states %v, want the instance started again without a second stop", f.states)
 	}
@@ -134,12 +225,18 @@ func TestUpgradeRefuses(t *testing.T) {
 	for _, tt := range tests {
 		f := installedFake()
 		tt.setup(f)
-		err := Upgrade(context.Background(), f, upgradeOpts(tt.image))
+		o := upgradeOpts(tt.image)
+		var buf bytes.Buffer
+		o.Audit = zerolog.New(&buf)
+		err := Upgrade(context.Background(), f, o)
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: err %v, want %q", tt.name, err, tt.want)
 		}
 		if len(f.states) != 0 || len(f.rebuilds) != 0 {
 			t.Errorf("%s: states %v, rebuilds %v, want the instance untouched", tt.name, f.states, f.rebuilds)
+		}
+		if buf.Len() > 0 {
+			t.Errorf("%s: audited %s, want a refusal unrecorded", tt.name, buf.String())
 		}
 	}
 }
