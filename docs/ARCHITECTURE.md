@@ -28,23 +28,23 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Components
 
-| Package             | Job                                                                                                                                       | Depends on                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                              | everything below                                     |
-| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                              | stdlib                                               |
-| `internal/log`      | zerolog setup: level, JSON or console format, stderr; the size-rotated audit file and the fields its records share                        | zerolog, config                                      |
-| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                             | stdlib                                               |
-| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream | Incus client, incus-compose trust                    |
-| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                              | Masterminds/semver                                   |
-| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics               | oras-go, metrics                                     |
-| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                              | Masterminds/semver                                   |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                               | registry, semver, policy                             |
-| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | check, incus, registry, update, metrics              |
-| `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, config, incus                                 |
-| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares     | incus, registry, check, policy, semver, metrics, log |
-| `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                          | config, incus, log, policy, registry, semver, update |
-| `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics                                |
-| `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                       | stdlib                                               |
+| Package             | Job                                                                                                                                                              | Depends on                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `cmd/incus-beacon`  | Subcommand dispatch (every command in [Usage](../README.md#usage)); builds the logger and wires the packages                                                     | everything below                                     |
+| `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                                                     | stdlib                                               |
+| `internal/log`      | zerolog setup: level, JSON or console format, stderr; the size-rotated audit file and the fields its records share                                               | zerolog, config                                      |
+| `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                                                    | stdlib                                               |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream                        | Incus client, incus-compose trust                    |
+| `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                                                     | Masterminds/semver                                   |
+| `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics                                      | oras-go, metrics                                     |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                                                     | Masterminds/semver                                   |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                                                      | registry, semver, policy                             |
+| `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                                                      | check, incus, registry, update, metrics              |
+| `internal/report`   | Table and JSON rendering of results and status rows                                                                                                              | check, config, incus                                 |
+| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares                            | incus, registry, check, policy, semver, metrics, log |
+| `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                                                 | config, incus, log, policy, registry, semver, update |
+| `internal/serve`    | The interval loop with jitter, targeted checks on events, the check, update and notify pass each one runs, `/health`, `/ready` and `/metrics`, graceful shutdown | check, incus, metrics, notify, update                |
+| `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                                              | stdlib                                               |
 
 `internal/incus` and `internal/registry` sit behind interfaces, so the
 `internal/check` engine is tested against fakes and never needs a daemon or the
