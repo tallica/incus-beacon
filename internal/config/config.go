@@ -240,23 +240,26 @@ type Config struct {
 	Configure *Configure
 	Upgrade   *Upgrade
 	Uninstall *Uninstall
+
+	cmd any // the field that is set, whose Common and Audit promote common and audit
+}
+
+func (c *Common) common() Common { return *c }
+
+func (c *Audit) audit() Audit { return *c }
+
+// CommonOf is the command's Common; the zero Common for version.
+func (c *Config) CommonOf() Common {
+	if v, ok := c.cmd.(interface{ common() Common }); ok {
+		return v.common()
+	}
+	return Common{}
 }
 
 // AuditOf is the command's Audit; the zero Audit, which writes nothing, for commands without the flags.
 func (c *Config) AuditOf() Audit {
-	switch {
-	case c.Update != nil:
-		return c.Update.Audit
-	case c.Serve != nil:
-		return c.Serve.Audit
-	case c.Install != nil:
-		return c.Install.Audit
-	case c.Configure != nil:
-		return c.Configure.Audit
-	case c.Upgrade != nil:
-		return c.Upgrade.Audit
-	case c.Uninstall != nil:
-		return c.Uninstall.Audit
+	if v, ok := c.cmd.(interface{ audit() Audit }); ok {
+		return v.audit()
 	}
 	return Audit{}
 }
@@ -313,7 +316,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
 		fs.BoolVar(&c.Write, "write", false, "also record results in user.incus-beacon.* keys")
-		cfg.Check = c
+		cfg.Check, cfg.cmd = c, c
 		validate = func() error {
 			return errors.Join(c.Common.validate(), c.Registry.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))
 		}
@@ -322,7 +325,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindCommon(fs, &c.Common)
 		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
 		fs.BoolVar(&c.OnlyUpdates, "only-updates", false, "list only instances with an update available")
-		cfg.Status = c
+		cfg.Status, cfg.cmd = c, c
 		validate = func() error {
 			return errors.Join(c.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))
 		}
@@ -342,7 +345,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in local time, when updates may run, unless an instance sets its own (default: any time)")
 		bindUpdate(fs, &c.UpdateFlags)
 		bindAudit(fs, &c.Audit)
-		cfg.Serve = c
+		cfg.Serve, cfg.cmd = c, c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate()}
 			if c.Interval < time.Minute {
@@ -371,7 +374,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.BoolVar(&c.DryRun, "dry-run", false, "print what would be updated, and change nothing")
 		bindUpdate(fs, &c.UpdateFlags)
 		bindAudit(fs, &c.Audit)
-		cfg.Update = c
+		cfg.Update, cfg.cmd = c, c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate(), c.Audit.validate()}
 			if c.Instance == "" {
@@ -389,7 +392,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
 		bindSettings(fs, &c.Common, &c.Settings)
 		bindAudit(fs, &c.Audit)
-		cfg.Install = c
+		cfg.Install, cfg.cmd = c, c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
 			if c.Wait <= 0 {
@@ -408,7 +411,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
 		bindSettings(fs, &c.Common, &c.Settings)
 		bindAudit(fs, &c.Audit)
-		cfg.Configure = c
+		cfg.Configure, cfg.cmd = c, c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
 			if c.Wait <= 0 {
@@ -429,7 +432,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		fs.BoolVar(&c.Force, "force", false, "allow an image older than the running one")
 		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
 		bindAudit(fs, &c.Audit)
-		cfg.Upgrade = c
+		cfg.Upgrade, cfg.cmd = c, c
 		validate = func() error {
 			errs := []error{c.Common.validate(), c.Audit.validate()}
 			if c.Wait <= 0 {
@@ -444,7 +447,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
 		fs.BoolVar(&c.DeleteLog, "delete-log", false, "also delete the <name>-log volume holding the instance's audit log")
 		bindAudit(fs, &c.Audit)
-		cfg.Uninstall = c
+		cfg.Uninstall, cfg.cmd = c, c
 		validate = func() error { return errors.Join(c.Common.validate(), c.Audit.validate()) }
 	case CmdVersion:
 		validate = func() error { return nil }

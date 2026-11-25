@@ -60,7 +60,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return exitOK
 	}
 
-	common := commonOf(cfg)
+	common := cfg.CommonOf()
 	logger, err := log.New(stderr, common.LogLevel, common.LogFormat, common.LogColor)
 	if err != nil {
 		fmt.Fprintln(stderr, "incus-beacon:", err)
@@ -71,27 +71,6 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	defer closer.Close()
 	audit = audit.With().Str("version", version.Version).Logger()
 	return dispatch(ctx, cfg, logger, audit, stdout)
-}
-
-func commonOf(cfg *config.Config) config.Common {
-	switch {
-	case cfg.Check != nil:
-		return cfg.Check.Common
-	case cfg.Status != nil:
-		return cfg.Status.Common
-	case cfg.Install != nil:
-		return cfg.Install.Common
-	case cfg.Configure != nil:
-		return cfg.Configure.Common
-	case cfg.Upgrade != nil:
-		return cfg.Upgrade.Common
-	case cfg.Uninstall != nil:
-		return cfg.Uninstall.Common
-	case cfg.Update != nil:
-		return cfg.Update.Common
-	default:
-		return cfg.Serve.Common
-	}
 }
 
 func dispatch(ctx context.Context, cfg *config.Config, logger, audit zerolog.Logger, stdout io.Writer) int {
