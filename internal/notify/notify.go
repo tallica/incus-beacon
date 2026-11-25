@@ -15,19 +15,22 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/check"
 	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/metrics"
+	"github.com/tallica/incus-beacon/internal/registry"
+	"github.com/tallica/incus-beacon/internal/update"
 )
 
 const (
-	statusUpdate = "update-available"
-	statusError  = "error"
+	statusUpdate = string(check.UpdateAvailable)
+	statusError  = string(check.Error)
 
 	// What an update by serve came to, as in user.incus-beacon.update-status.
-	statusUpdated    = "updated"
-	statusRolledBack = "rolled-back"
-	statusFailed     = "failed"
-	statusRefused    = "refused"
+	statusUpdated    = update.Updated
+	statusRolledBack = update.RolledBack
+	statusFailed     = update.Failed
+	statusRefused    = update.Refused
 
 	kindDigest = "digest" // the same tag on new layers
 	kindTag    = "tag"    // a newer tag
@@ -103,10 +106,10 @@ func WithApplied(changes []Transition, applied Transition) []Transition {
 }
 
 func kindOf(b incus.Beacon) string {
-	switch {
-	case b.Status != statusUpdate:
+	if b.Status != statusUpdate {
 		return ""
-	case strings.HasPrefix(b.Latest, tagOf(b.Current)+"@"):
+	}
+	if r, err := registry.ParseRef(b.Current); err == nil && strings.HasPrefix(b.Latest, r.Tag+"@") {
 		return kindDigest
 	}
 	return kindTag
@@ -223,20 +226,12 @@ func sameTag(from, to string) bool {
 
 // withTag is ref with its tag and digest replaced by tag.
 func withTag(ref, tag string) string {
-	ref, _, _ = strings.Cut(ref, "@")
-	if t := tagOf(ref); t != "" {
-		ref = strings.TrimSuffix(ref, ":"+t)
+	r, err := registry.ParseRef(ref)
+	if err != nil {
+		return ref + ":" + tag
 	}
-	return ref + ":" + tag
-}
-
-// tagOf is the tag after the last colon, unless that colon is a registry port.
-func tagOf(ref string) string {
-	i := strings.LastIndexByte(ref, ':')
-	if i < 0 || strings.Contains(ref[i:], "/") {
-		return ""
-	}
-	return ref[i+1:]
+	r.Tag, r.Digest = tag, ""
+	return r.String()
 }
 
 func plural(n int, one, many string) string {
