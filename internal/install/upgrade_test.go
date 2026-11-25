@@ -215,6 +215,7 @@ func TestUpgradeRefuses(t *testing.T) {
 		want  string
 	}{
 		{"downgrade", func(*fake) {}, "ghcr.io/tallica/incus-beacon:0.3", "give --force to downgrade"},
+		{"downgrade by digest", func(*fake) {}, "ghcr.io/tallica/incus-beacon:0.3@sha256:" + strings.Repeat("a", 64), "give --force to downgrade"},
 		{"snapshots", func(f *fake) { f.snapshots = []string{"snap0"} }, "ghcr.io/tallica/incus-beacon:0.5", "has snapshots (snap0)"},
 		{"not installed", func(f *fake) { delete(f.instances["incus-beacon"].Devices, stateDev) }, "ghcr.io/tallica/incus-beacon:0.5", "not created by install"},
 		{"missing", func(f *fake) { delete(f.instances, "incus-beacon") }, "ghcr.io/tallica/incus-beacon:0.5", "install it first"},

@@ -14,6 +14,7 @@ import (
 
 	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
+	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/semver"
 	"github.com/tallica/incus-beacon/internal/update"
 )
@@ -169,13 +170,13 @@ func older(tag, than string) bool {
 	return ok && ok2 && v.SameShape(w) && v.Less(w)
 }
 
-// tagOf is the tag after the last colon, unless that colon is a registry port.
+// tagOf is ref's tag, "" when ref doesn't parse.
 func tagOf(ref string) string {
-	i := strings.LastIndexByte(ref, ':')
-	if i < 0 || strings.Contains(ref[i:], "/") {
+	r, err := registry.ParseRef(ref)
+	if err != nil {
 		return ""
 	}
-	return ref[i+1:]
+	return r.Tag
 }
 
 func waitReady(ctx context.Context, srv incusclient.InstanceServer, name string, wait time.Duration) error {
