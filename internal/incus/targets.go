@@ -27,9 +27,16 @@ const (
 
 // incus-compose's image override; an incus-compose without it ignores both keys.
 const (
+	ComposeManagedKey    = "user.incus-compose.managed"
 	ComposeOverrideKey   = "user.incus-compose.image-override"
 	ComposeOverrideOfKey = "user.incus-compose.image-override-of"
 )
+
+// ComposeManaged reports an instance incus-compose created.
+func ComposeManaged(config map[string]string) bool { return config[ComposeManagedKey] == "true" }
+
+// ociSuffix ends the description Incus gives every image it pulls from a registry.
+const ociSuffix = " (OCI)"
 
 type Beacon struct {
 	Status  string
@@ -154,7 +161,7 @@ func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, s
 		t.Ref, t.Applied = applied(t, t.Ref)
 	}
 	// Kept by incus-compose across a recreate that drops beacon's keys; its own terms apply.
-	if c := inst.Config; c["user.incus-compose.managed"] == "true" && c[ComposeOverrideKey] != "" &&
+	if c := inst.Config; ComposeManaged(c) && c[ComposeOverrideKey] != "" &&
 		c[ComposeOverrideOfKey] == c[RefFromCompose] {
 		t.Ref, t.Applied = c[ComposeOverrideKey], true
 	}
@@ -217,9 +224,8 @@ func listInstances(ctx context.Context, srv incusclient.InstanceServer, projects
 	return all, nil
 }
 
-// pulled matches the description Incus gives every image it pulls from a registry.
 func pulled(config map[string]string) bool {
-	return strings.HasSuffix(config["image.description"], " (OCI)")
+	return strings.HasSuffix(config["image.description"], ociSuffix)
 }
 
 func isOCI(config map[string]string) bool {
@@ -268,7 +274,7 @@ func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]stri
 	if t.Policy.Image != "" {
 		return t.Policy.Image, RefFromBeacon
 	}
-	if v := config["user.image_alias"]; v != "" {
+	if v := config[RefFromCompose]; v != "" {
 		return v, RefFromCompose
 	}
 	// Beacon's record for this exact image beats Incus's: docs/ARCHITECTURE.md#image-ref-resolution.
@@ -296,7 +302,7 @@ func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]stri
 }
 
 func imageKeysRef(config map[string]string) string {
-	name, ok := strings.CutSuffix(config["image.description"], " (OCI)")
+	name, ok := strings.CutSuffix(config["image.description"], ociSuffix)
 	if !ok || !strings.Contains(name, "/") {
 		return ""
 	}
