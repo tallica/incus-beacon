@@ -44,7 +44,7 @@ var tags = []string{
 	"1.29.0-rc1", "v1.27.9", "latest", "mainline",
 }
 
-func TestNewest(t *testing.T) {
+func TestCandidatesNewest(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name, current string
@@ -64,16 +64,20 @@ func TestNewest(t *testing.T) {
 		{"already newest", "2.0.0", Filter{}, ""},
 	}
 	for _, tt := range tests {
-		got, ok := Newest(tt.current, tags, tt.filter)
+		newer, ok := Candidates(tt.current, tags, tt.filter)
+		got := ""
+		if len(newer) > 0 {
+			got = newer[0]
+		}
 		if !ok || got != tt.want {
-			t.Errorf("%s: Newest(%q) = %q, %v; want %q", tt.name, tt.current, got, ok, tt.want)
+			t.Errorf("%s: newest of Candidates(%q) = %q, %v; want %q", tt.name, tt.current, got, ok, tt.want)
 		}
 	}
 }
 
-func TestNewestNotAVersion(t *testing.T) {
+func TestCandidatesNotAVersion(t *testing.T) {
 	t.Parallel()
-	if _, ok := Newest("latest", tags, Filter{}); ok {
+	if _, ok := Candidates("latest", tags, Filter{}); ok {
 		t.Error("latest accepted as a version")
 	}
 }
