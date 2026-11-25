@@ -41,6 +41,7 @@ type fake struct {
 	states       []string
 	failCreate   error
 	failUpdate   error // every instance update's
+	conflicts    int   // instance updates refused with 412, as when serve writes its status keys meanwhile
 	failCert     error // every certificate update's
 	joins        bool  // the instance redeems its token when started
 	calls        []string

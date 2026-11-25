@@ -12,6 +12,7 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/semver"
 	"github.com/tallica/incus-beacon/internal/update"
@@ -115,17 +116,11 @@ func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, poo
 	if err != nil {
 		return err
 	}
-	// findInstance drops the ETag, so the update reads its own.
-	inst, etag, err := srv.GetInstance(name)
-	if err == nil {
-		put := inst.Writable()
+	err = incus.UpdateInstance(ctx, srv, name, func(put *api.InstancePut) error {
 		put.Config = with(put.Config, "environment.BEACON_AUDIT_LOG", auditFile)
 		put.Devices = with(put.Devices, logDev, disk(pool, vol, logDir))
-		var op incusclient.Operation
-		if op, err = srv.UpdateInstance(name, put, etag); err == nil {
-			err = op.WaitContext(ctx)
-		}
-	}
+		return nil
+	})
 	if err != nil {
 		err = fmt.Errorf("add the %s device to %s: %w", logDev, name, err)
 		if created {

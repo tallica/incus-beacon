@@ -13,6 +13,11 @@ get an entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- `configure` and `upgrade` retry when `serve` writes beacon's instance at the
+  same moment, instead of failing with a 412.
+
 ## [0.6.0-beta.5] - 2026-11-24
 
 ### Fixed

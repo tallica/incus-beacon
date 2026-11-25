@@ -42,7 +42,7 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                               | check, incus, registry, update, metrics              |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                                                       | check, config, incus                                 |
 | `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares     | incus, registry, check, policy, semver, metrics, log |
-| `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                          | config, log, policy, registry, semver, update        |
+| `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                          | config, incus, log, policy, registry, semver, update |
 | `internal/serve`    | The interval loop with jitter, targeted checks on events, `/health`, `/ready` and `/metrics`, graceful shutdown                           | check, incus, metrics                                |
 | `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                       | stdlib                                               |
 
