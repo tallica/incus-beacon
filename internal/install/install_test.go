@@ -803,3 +803,16 @@ func TestInstallLeavesServeDefaults(t *testing.T) {
 		t.Errorf("serve defaults on the installed instance: %+v", s)
 	}
 }
+
+func TestInstallNotifyErrorsNeedsURLs(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	o := opts()
+	o.NotifyErrs = true
+	if err := Install(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := f.instances["incus-beacon"].Config["environment.BEACON_NOTIFY_ERRORS"]; ok {
+		t.Errorf("BEACON_NOTIFY_ERRORS = %q with no notify URL, want it unset", v)
+	}
+}

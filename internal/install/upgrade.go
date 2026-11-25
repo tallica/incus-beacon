@@ -118,7 +118,7 @@ func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, poo
 		return err
 	}
 	err = incus.UpdateInstance(ctx, srv, name, func(put *api.InstancePut) error {
-		put.Config = with(put.Config, "environment.BEACON_AUDIT_LOG", auditFile)
+		put.Config = with(put.Config, envPrefix+"AUDIT_LOG", auditFile)
 		put.Devices = with(put.Devices, logDev, disk(pool, vol, logDir))
 		return nil
 	})
@@ -149,7 +149,7 @@ func installed(srv incusclient.InstanceServer, name string, logger zerolog.Logge
 	if err != nil {
 		return srv, nil, err
 	}
-	if inst.Devices[stateDev]["source"] != VolumeName(name) || inst.Config["environment.BEACON_TOKEN_FILE"] != tokenFile {
+	if inst.Devices[stateDev]["source"] != VolumeName(name) || inst.Config[envPrefix+"TOKEN_FILE"] != tokenFile {
 		return srv, nil, fmt.Errorf("instance %s was not created by install", name)
 	}
 	return srv, inst, nil

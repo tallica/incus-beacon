@@ -222,7 +222,7 @@ func configured(srv incusclient.InstanceServer, inst *api.Instance, opts Configu
 		env("PROJECT", strings.Join(*opts.Projects, ","))
 	}
 	if opts.Watch != nil {
-		env("WATCH", when(*opts.Watch != "all", *opts.Watch))
+		env("WATCH", when(*opts.Watch != config.WatchAll, *opts.Watch))
 	}
 	if opts.Track != nil {
 		track := *opts.Track
