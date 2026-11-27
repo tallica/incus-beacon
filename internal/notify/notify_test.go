@@ -454,6 +454,9 @@ func TestWithTag(t *testing.T) {
 		"registry.example.com:5000/app:2":                         "registry.example.com:5000/app:1.31",
 		"registry.example.com:5000/app":                           "registry.example.com:5000/app:1.31",
 		"ghcr.io/example/api:2@sha256:" + strings.Repeat("a", 64): "ghcr.io/example/api:1.31",
+		"ghcr.io/example/api:2@sha512:aaaa":                       "ghcr.io/example/api:1.31",
+		"registry.example.com:5000/App:2":                         "registry.example.com:5000/App:1.31",
+		"registry.example.com:5000/App":                           "registry.example.com:5000/App:1.31",
 	} {
 		if got := withTag(ref, "1.31"); got != want {
 			t.Errorf("withTag(%q) = %q, want %q", ref, got, want)

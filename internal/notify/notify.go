@@ -228,6 +228,10 @@ func sameTag(from, to string) bool {
 func withTag(ref, tag string) string {
 	r, err := registry.ParseRef(ref)
 	if err != nil {
+		ref, _, _ = strings.Cut(ref, "@")
+		if i := strings.LastIndexByte(ref, ':'); i > strings.LastIndexByte(ref, '/') {
+			ref = ref[:i]
+		}
 		return ref + ":" + tag
 	}
 	r.Tag, r.Digest = tag, ""
