@@ -43,6 +43,8 @@ type fake struct {
 	failUpdate   error // every instance update's
 	conflicts    int   // instance updates refused with 412, as when serve writes its status keys meanwhile
 	failCert     error // every certificate update's
+	failList     error // every certificate listing's once the instance has started
+	lists        int   // certificate listings once the instance has started
 	joins        bool  // the instance redeems its token when started
 	calls        []string
 	volumeFS     sftp.Handlers // every volume's files, in memory
@@ -143,7 +145,13 @@ func (f *fake) GetInstancesAllProjects(api.InstanceType) ([]api.Instance, error)
 	return all, nil
 }
 
-func (f *fake) GetCertificates() ([]api.Certificate, error) { return f.certs, nil }
+func (f *fake) GetCertificates() ([]api.Certificate, error) {
+	if slices.Contains(f.states, "start") {
+		f.lists++
+		return f.certs, f.failList
+	}
+	return f.certs, nil
+}
 
 func (f *fake) DeleteCertificate(fp string) error {
 	f.calls = append(f.calls, "delete cert "+fp)
@@ -522,6 +530,21 @@ func TestInstallKeepsInstanceThatDidNotJoin(t *testing.T) {
 		t.Error("instance removed; its log is what explains the failure")
 	}
 	checkAudit(t, &buf, "install begin", "install failed")
+}
+
+func TestInstallFailsAtOnceWhenCertificatesCannotBeListed(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.failList = errors.New("forbidden")
+	o := opts()
+	o.Wait = time.Minute
+	err := Install(context.Background(), f, o)
+	if err == nil || !strings.Contains(err.Error(), "list certificates: forbidden") || strings.Contains(err.Error(), "--show-log") {
+		t.Fatalf("err %v, want the listing error without the instance-log hint", err)
+	}
+	if f.lists != 1 {
+		t.Errorf("%d listings once started, want the first failure to end the wait", f.lists)
+	}
 }
 
 func TestInstallRecordsARollbackOfNothing(t *testing.T) {

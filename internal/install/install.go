@@ -223,7 +223,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 
 	// Past here the instance stays: its log says why it didn't join.
 	if err := waitTrusted(ctx, srv, opts.Name, opts.Wait); err != nil {
-		return fmt.Errorf("%w; see incus console %s --show-log", err, opts.Name)
+		return err
 	}
 	if err := srv.DeleteInstanceFile(opts.Name, tokenFile); err != nil {
 		opts.Log.Warn().Err(err).Str("file", tokenFile).Msg("spent token not removed")
@@ -608,17 +608,25 @@ func deleteInstance(ctx context.Context, srv incusclient.InstanceServer, name st
 	return op.WaitContext(wctx)
 }
 
-// waitTrusted polls: the certificate appears once the token is redeemed.
+// waitTrusted polls: the certificate appears once the token is redeemed. A failed listing is
+// this client's problem, not the instance's, so it ends the wait at once.
 func waitTrusted(ctx context.Context, srv incusclient.InstanceServer, name string, wait time.Duration) error {
+	var listErr error
 	err := update.Poll(ctx, wait, 2*time.Second, func(context.Context) error {
 		certs, err := srv.GetCertificates()
-		if err == nil && !slices.ContainsFunc(certs, func(c api.Certificate) bool { return c.Name == name }) {
-			err = errors.New("no certificate trusted under its name yet")
+		switch {
+		case err != nil:
+			listErr = err
+		case !slices.ContainsFunc(certs, func(c api.Certificate) bool { return c.Name == name }):
+			return errors.New("no certificate trusted under its name yet")
 		}
-		return err
+		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("%s did not join: %w", name, err)
+	switch {
+	case listErr != nil:
+		return fmt.Errorf("list certificates: %w", listErr)
+	case err != nil:
+		return fmt.Errorf("%s did not join: %w; see incus console %s --show-log", name, err, name)
 	}
 	return nil
 }
