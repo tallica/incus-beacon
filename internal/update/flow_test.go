@@ -694,7 +694,7 @@ func TestNextOf(t *testing.T) {
 
 func TestAtLeast(t *testing.T) {
 	t.Parallel()
-	for v, want := range map[string]bool{"7.6": true, "7.6.1": true, "7.10": true, "8.0": true, "7.5": false, "6.20": false, "7.6-rc1": true, "": false, "x": false} {
+	for v, want := range map[string]bool{"7.6": true, "7.6.1": true, "7.10": true, "8.0": true, "7.5": false, "6.20": false, "7.6-rc1": true, "7.6.1.2": true, "7.6~rc1": true, "7.6+ds1": true, "7.": false, "": false, "x": false} {
 		if got := atLeast(v, 7, 6); got != want {
 			t.Errorf("atLeast(%q) = %t, want %t", v, got, want)
 		}

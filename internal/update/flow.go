@@ -9,7 +9,9 @@ import (
 	"maps"
 	"net/http"
 	"path"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +23,6 @@ import (
 	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/registry"
-	"github.com/tallica/incus-beacon/internal/semver"
 )
 
 // Outcomes, as written to user.incus-beacon.update-status.
@@ -589,13 +590,20 @@ func isBeacon(cfg map[string]string, to string) bool {
 	return err == nil && path.Base(ref.Repository) == "incus-beacon"
 }
 
+// leadingVersion reads major.minor as Incus's own version.Parse does, ignoring what follows.
+var leadingVersion = regexp.MustCompile(`^([0-9]+)\.([0-9]+)`)
+
 // atLeast compares the major and minor parts of an Incus version such as 7.6 or 7.6.1.
 func atLeast(v string, major, minor int) bool {
-	ver, ok := semver.Parse(v)
-	if !ok || len(ver.Parts) < 2 {
+	m := leadingVersion.FindStringSubmatch(v)
+	if m == nil {
 		return false
 	}
-	ma, mi := ver.Parts[0], ver.Parts[1]
+	ma, err := strconv.Atoi(m[1])
+	mi, err2 := strconv.Atoi(m[2])
+	if err != nil || err2 != nil {
+		return false
+	}
 	return ma > major || ma == major && mi >= minor
 }
 
