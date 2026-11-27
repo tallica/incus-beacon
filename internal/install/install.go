@@ -105,7 +105,10 @@ func trackFor(track, image string) string {
 func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) (err error) {
 	if opts.Name == "" {
 		if _, _, err := findInstance(srv, legacyName, opts.Log); err == nil {
-			return fmt.Errorf("an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another", legacyName)
+			return fmt.Errorf(
+				"an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another",
+				legacyName,
+			)
 		}
 		opts.Name = DefaultName
 	}
@@ -155,7 +158,13 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		return err
 	}
 
-	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Str("log_volume", LogVolumeName(opts.Name)).Logger()
+	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).
+		With().
+		Str("image", opts.Image).
+		Str("pool", pool).
+		Str("volume", VolumeName(opts.Name)).
+		Str("log_volume", LogVolumeName(opts.Name)).
+		Logger()
 	log.AuditBegin(audit, "install").Send()
 	defer func() { log.AuditEnd(audit, "install", err).Send() }()
 
@@ -190,7 +199,10 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		if err := writeNotifyURLs(srv, pool, vol, opts.NotifyURLs); err != nil {
 			return rollback(err)
 		}
-		opts.Log.Info().Int("urls", len(opts.NotifyURLs)).Str("file", vol+"/"+notifyFile).Msg("notification URLs stored")
+		opts.Log.Info().
+			Int("urls", len(opts.NotifyURLs)).
+			Str("file", vol+"/"+notifyFile).
+			Msg("notification URLs stored")
 	}
 
 	token, opID, err := createToken(srv, opts.Name, opts.Projects)
@@ -306,7 +318,10 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 				errs = append(errs, err)
 			} else if ok {
 				kept = vol
-				logger.Info().Str("pool", p).Str("volume", vol).Msg("log volume kept; uninstall --delete-log removes it")
+				logger.Info().
+					Str("pool", p).
+					Str("volume", vol).
+					Msg("log volume kept; uninstall --delete-log removes it")
 			}
 		default:
 			if deleted, err := deleteVolume(srv, p, vol); err != nil {
@@ -358,7 +373,11 @@ func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
 }
 
 // ensureLogVolume reuses a log volume already there, records and all.
-func ensureLogVolume(srv incusclient.InstanceServer, pool, vol string, logger zerolog.Logger) (created bool, err error) {
+func ensureLogVolume(
+	srv incusclient.InstanceServer,
+	pool, vol string,
+	logger zerolog.Logger,
+) (created bool, err error) {
 	err = createVolume(srv, pool, vol)
 	switch {
 	case err == nil:
@@ -411,7 +430,11 @@ func volumeExists(srv incusclient.InstanceServer, pool, vol string) (bool, error
 }
 
 // findInstance also searches other projects; the server it returns uses the instance's.
-func findInstance(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+func findInstance(
+	srv incusclient.InstanceServer,
+	name string,
+	logger zerolog.Logger,
+) (incusclient.InstanceServer, *api.Instance, error) {
 	inst, _, err := srv.GetInstance(name)
 	if !notFound(err) {
 		return srv, inst, err

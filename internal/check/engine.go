@@ -215,7 +215,12 @@ func keyOf(p plan) lookupKey {
 	return lookupKey{ref: p.ref.String(), platform: p.platform.String()}
 }
 
-func (e *Engine) lookup(ctx context.Context, plans []plan, digests map[lookupKey]*digestOutcome, tagLists map[string]*tagsOutcome) {
+func (e *Engine) lookup(
+	ctx context.Context,
+	plans []plan,
+	digests map[lookupKey]*digestOutcome,
+	tagLists map[string]*tagsOutcome,
+) {
 	var mu sync.Mutex
 	run, wait := e.pool()
 	started := map[lookupKey]bool{}
@@ -262,7 +267,12 @@ func (e *Engine) pool() (run func(func()), wait func()) {
 	}, wg.Wait
 }
 
-func (e *Engine) image(ctx context.Context, ref registry.Ref, p registry.Platform, k lookupKey) (registry.Image, error) {
+func (e *Engine) image(
+	ctx context.Context,
+	ref registry.Ref,
+	p registry.Platform,
+	k lookupKey,
+) (registry.Image, error) {
 	head, err := e.reg.Head(ctx, ref)
 	if err != nil {
 		return registry.Image{}, err
@@ -336,7 +346,13 @@ func (e *Engine) cool(ctx context.Context, plans []plan) {
 	wait()
 }
 
-func (e *Engine) coolOne(ctx context.Context, p *plan, cd time.Duration, now time.Time, images *memo[lookupKey, registry.Image]) {
+func (e *Engine) coolOne(
+	ctx context.Context,
+	p *plan,
+	cd time.Duration,
+	now time.Time,
+	images *memo[lookupKey, registry.Image],
+) {
 	r := p.result
 	var held string
 	settle := func(status Status, latest, digest string) {
@@ -401,7 +417,10 @@ func (e *Engine) pinDigests(ctx context.Context, plans []plan) {
 			k := lookupKey{ref: ref.String(), platform: p.platform.String()}
 			img, err := images.do(k, func() (registry.Image, error) { return e.image(ctx, ref, p.platform, k) })
 			if err != nil {
-				e.log.Warn().Err(err).Str("ref", ref.String()).Msg("could not pin the digest, an update rebuilds from the tag")
+				e.log.Warn().
+					Err(err).
+					Str("ref", ref.String()).
+					Msg("could not pin the digest, an update rebuilds from the tag")
 				return
 			}
 			r.LatestDigest = img.Digest
@@ -416,7 +435,12 @@ func fail(r *Result, msg string) {
 }
 
 // ripeAt is zero for an unknown age; reproducible builds set the epoch.
-func (e *Engine) ripeAt(ctx context.Context, ref registry.Ref, img registry.Image, cd time.Duration) (time.Time, error) {
+func (e *Engine) ripeAt(
+	ctx context.Context,
+	ref registry.Ref,
+	img registry.Image,
+	cd time.Duration,
+) (time.Time, error) {
 	created, err := e.created.do(img.Config.Digest.String(), func() (time.Time, error) {
 		return e.reg.Created(ctx, ref, img)
 	})

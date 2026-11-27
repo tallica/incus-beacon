@@ -145,7 +145,22 @@ func TestTargetsAllProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pinned", "apps/pruned", "apps/repinned", "apps/retagged", "apps/reused", "apps/rolled", "default/db", "default/db2", "default/web"}
+	want := []string{
+		"apps/api",
+		"apps/bad",
+		"apps/built",
+		"apps/moved",
+		"apps/orphan",
+		"apps/pinned",
+		"apps/pruned",
+		"apps/repinned",
+		"apps/retagged",
+		"apps/reused",
+		"apps/rolled",
+		"default/db",
+		"default/db2",
+		"default/web",
+	}
 	if got := names(targets); !slices.Equal(got, want) {
 		t.Fatalf("targets %q, want %q (non-OCI and enable=false left out, sorted)", got, want)
 	}
@@ -180,8 +195,14 @@ func TestTargetsAllProjects(t *testing.T) {
 			t.Errorf("%s: ref %q from %q, want %q from %q", r.name, tg.Ref, tg.RefSource, r.ref, r.from)
 		}
 	}
-	if w := byName["default/web"]; w.ImageRef != "docker.io/library/nginx:1.28" || w.ComposeProject != "shop" || w.ComposeService != "web" {
-		t.Errorf("default/web: image ref %q, compose %q/%q; want the image keys' tag and the compose labels", w.ImageRef, w.ComposeProject, w.ComposeService)
+	if w := byName["default/web"]; w.ImageRef != "docker.io/library/nginx:1.28" || w.ComposeProject != "shop" ||
+		w.ComposeService != "web" {
+		t.Errorf(
+			"default/web: image ref %q, compose %q/%q; want the image keys' tag and the compose labels",
+			w.ImageRef,
+			w.ComposeProject,
+			w.ComposeService,
+		)
 	}
 	if a := byName["apps/api"]; a.ComposeProject != "" || a.ComposeService != "" {
 		t.Errorf("apps/api: compose %q/%q, want none", a.ComposeProject, a.ComposeService)
@@ -195,7 +216,8 @@ func TestTargetsAllProjects(t *testing.T) {
 	if byName["apps/bad"].PolicyErr == nil {
 		t.Error("apps/bad: want a policy error for track=weird")
 	}
-	if a := byName["apps/api"]; a.Beacon.Status != "update-available" || a.Beacon.Latest != "1.3.0" || a.Arch != "x86_64" {
+	if a := byName["apps/api"]; a.Beacon.Status != "update-available" || a.Beacon.Latest != "1.3.0" ||
+		a.Arch != "x86_64" {
 		t.Errorf("apps/api: %+v", a)
 	}
 	if n := f.count("/1.0/images/" + fpPostgres); n != 1 {
@@ -211,7 +233,24 @@ func TestTargetsFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := names(targets), []string{"apps/api", "apps/bad", "apps/built", "apps/moved", "apps/orphan", "apps/pinned", "apps/pruned", "apps/repinned", "apps/retagged", "apps/reused", "apps/rolled"}; !slices.Equal(got, want) {
+	if got, want := names(
+		targets,
+	), []string{
+		"apps/api",
+		"apps/bad",
+		"apps/built",
+		"apps/moved",
+		"apps/orphan",
+		"apps/pinned",
+		"apps/pruned",
+		"apps/repinned",
+		"apps/retagged",
+		"apps/reused",
+		"apps/rolled",
+	}; !slices.Equal(
+		got,
+		want,
+	) {
 		t.Errorf("projects=apps: %q, want %q", got, want)
 	}
 
@@ -246,11 +285,20 @@ func TestSourceRef(t *testing.T) {
 		{nil, ""},
 		{&api.ImageSource{Protocol: "simplestreams", Server: "https://images.example.com", Alias: "debian/12"}, ""},
 		{&api.ImageSource{Protocol: "oci", Server: "https://ghcr.io", Alias: "example/app:2"}, "ghcr.io/example/app:2"},
-		{&api.ImageSource{Protocol: "oci", Server: "https://registry.example.com/mirror/", Alias: "app:2"}, "registry.example.com/mirror/app:2"},
+		{
+			&api.ImageSource{Protocol: "oci", Server: "https://registry.example.com/mirror/", Alias: "app:2"},
+			"registry.example.com/mirror/app:2",
+		},
 		{&api.ImageSource{Protocol: "oci", Server: "not a url", Alias: "app:2"}, ""},
-		{&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres:17@sha256:abc"}, "docker.io/library/postgres:17"},
+		{
+			&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres:17@sha256:abc"},
+			"docker.io/library/postgres:17",
+		},
 		{&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres@sha256:abc"}, ""},
-		{&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres"}, "docker.io/library/postgres"},
+		{
+			&api.ImageSource{Protocol: "oci", Server: "https://docker.io", Alias: "library/postgres"},
+			"docker.io/library/postgres",
+		},
 	}
 	for _, tt := range tests {
 		if got := sourceRef(tt.src); got != tt.want {
@@ -293,7 +341,10 @@ func TestTrusted(t *testing.T) {
 	}
 	f := fixture()
 	f.untrusted = true
-	if err := trusted(f.connect(t)); err == nil || !strings.Contains(err.Error(), "doesn't trust this client certificate") {
+	if err := trusted(
+		f.connect(t),
+	); err == nil ||
+		!strings.Contains(err.Error(), "doesn't trust this client certificate") {
 		t.Errorf("untrusted server: err %v", err)
 	}
 }
@@ -343,7 +394,13 @@ func TestComposeOverrideAfterARecreate(t *testing.T) {
 		t.Errorf("set against an older file ref: %+v; want the file's ref", tg)
 	}
 	// An image key from a compose label survives the recreate; the override still decides.
-	tg = resolve(map[string]string{"user.label.incus-beacon.image": file, ComposeOverrideKey: override, ComposeOverrideOfKey: file})
+	tg = resolve(
+		map[string]string{
+			"user.label.incus-beacon.image": file,
+			ComposeOverrideKey:              override,
+			ComposeOverrideOfKey:            file,
+		},
+	)
 	if tg.Ref != override || !tg.Applied || tg.RefSource != RefFromBeacon {
 		t.Errorf("with an image label: %+v", tg)
 	}

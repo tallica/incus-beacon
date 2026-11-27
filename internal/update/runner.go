@@ -45,8 +45,11 @@ func (r *Runner) Init() {
 			r.Now = time.Now
 		}
 		if r.Metrics != nil {
-			r.updates = r.Metrics.Counter("incus_beacon_updates_total",
-				"Updates tried by serve, by outcome: updated, rolled-back, failed or refused, recorded on the instance or not.", "result")
+			r.updates = r.Metrics.Counter(
+				"incus_beacon_updates_total",
+				"Updates tried by serve, by outcome: updated, rolled-back, failed or refused, recorded on the instance or not.",
+				"result",
+			)
 			for _, s := range []string{Updated, RolledBack, Failed, Refused} {
 				r.updates.Add(0, s)
 			}

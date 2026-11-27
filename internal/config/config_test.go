@@ -26,12 +26,19 @@ func TestDefaultsPerCommand(t *testing.T) {
 	}
 	s := cfg.Serve
 	if s.Interval != 6*time.Hour || s.Listen != ":9153" || s.LogFormat != FormatConsole || s.Events {
-		t.Errorf("serve defaults: interval %s, listen %q, log format %q, events %t", s.Interval, s.Listen, s.LogFormat, s.Events)
+		t.Errorf(
+			"serve defaults: interval %s, listen %q, log format %q, events %t",
+			s.Interval,
+			s.Listen,
+			s.LogFormat,
+			s.Events,
+		)
 	}
 	if s.LogColor != ColorAuto {
 		t.Errorf("log color %q, want auto", s.LogColor)
 	}
-	if s.Watch != WatchAll || s.Concurrency != 4 || s.Timeout != 30*time.Second || s.Cooldown != 0 || s.LogLevel != "info" {
+	if s.Watch != WatchAll || s.Concurrency != 4 || s.Timeout != 30*time.Second || s.Cooldown != 0 ||
+		s.LogLevel != "info" {
 		t.Errorf("common defaults: %+v", s.Common)
 	}
 
@@ -121,7 +128,12 @@ func TestUsageErrors(t *testing.T) {
 		{"unknown command", nil, []string{"frobnicate"}, "unknown command"},
 		{"unknown flag", nil, []string{CmdCheck, "--nope"}, "not defined"},
 		{"extra argument", nil, []string{CmdStatus, "web"}, "unexpected argument"},
-		{"flag before command", nil, ForProgram(DaemonName, []string{"--log-level", "debug", CmdCheck}), "give one command, before its flags"},
+		{
+			"flag before command",
+			nil,
+			ForProgram(DaemonName, []string{"--log-level", "debug", CmdCheck}),
+			"give one command, before its flags",
+		},
 		{"second command", nil, []string{CmdCheck, "--write", CmdStatus}, "give one command, before its flags"},
 		{"short interval", nil, []string{CmdServe, "--interval", "10s"}, "at least 1m"},
 		{"bad level", nil, []string{CmdCheck, "--log-level", "loud"}, "log-level"},
@@ -131,12 +143,64 @@ func TestUsageErrors(t *testing.T) {
 		{"negative cooldown", nil, []string{CmdCheck, "--cooldown", "-1h"}, "cooldown"},
 		{"zero concurrency", nil, []string{CmdCheck, "--concurrency", "0"}, "concurrency"},
 		{"cert without key", nil, []string{CmdCheck, "--client-cert", "c.crt"}, "together"},
-		{"remote and url", nil, []string{CmdCheck, "--remote", "r", "--incus", "https://example.com:8443"}, "mutually exclusive"},
-		{"token without incus", nil, []string{CmdServe, "--token", "t", "--state-dir", "/path/to/state"}, "token needs incus"},
-		{"token without state dir", map[string]string{"BEACON_TOKEN": "t"}, []string{CmdServe, "--incus", "https://example.com:8443"}, "token needs state-dir"},
-		{"token and cert", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--token", "t", "--state-dir", "/s", "--client-cert", "c", "--client-key", "k"}, "token and client-cert"},
-		{"token and token file", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--state-dir", "/s", "--token", "t", "--token-file", "/f"}, "token and token-file"},
-		{"token file without state dir", nil, []string{CmdServe, "--incus", "https://example.com:8443", "--token-file", "/f"}, "token needs state-dir"},
+		{
+			"remote and url",
+			nil,
+			[]string{CmdCheck, "--remote", "r", "--incus", "https://example.com:8443"},
+			"mutually exclusive",
+		},
+		{
+			"token without incus",
+			nil,
+			[]string{CmdServe, "--token", "t", "--state-dir", "/path/to/state"},
+			"token needs incus",
+		},
+		{
+			"token without state dir",
+			map[string]string{"BEACON_TOKEN": "t"},
+			[]string{CmdServe, "--incus", "https://example.com:8443"},
+			"token needs state-dir",
+		},
+		{
+			"token and cert",
+			nil,
+			[]string{
+				CmdServe,
+				"--incus",
+				"https://example.com:8443",
+				"--token",
+				"t",
+				"--state-dir",
+				"/s",
+				"--client-cert",
+				"c",
+				"--client-key",
+				"k",
+			},
+			"token and client-cert",
+		},
+		{
+			"token and token file",
+			nil,
+			[]string{
+				CmdServe,
+				"--incus",
+				"https://example.com:8443",
+				"--state-dir",
+				"/s",
+				"--token",
+				"t",
+				"--token-file",
+				"/f",
+			},
+			"token and token-file",
+		},
+		{
+			"token file without state dir",
+			nil,
+			[]string{CmdServe, "--incus", "https://example.com:8443", "--token-file", "/f"},
+			"token needs state-dir",
+		},
 		{"bad env value", map[string]string{"BEACON_CONCURRENCY": "many"}, []string{CmdCheck}, "BEACON_CONCURRENCY"},
 		{"notify errors alone", nil, []string{CmdServe, "--notify-errors"}, "notify-errors needs"},
 		{"install notify errors alone", nil, []string{CmdInstall, "--notify-errors"}, "notify-errors needs notify-url"},
@@ -215,13 +279,30 @@ func TestStatusHasNoRegistryFlags(t *testing.T) {
 
 func TestNotifyFlags(t *testing.T) {
 	t.Parallel()
-	cfg, err := parse(t, nil, CmdServe, "--notify-url", "https://example.com/a", "--notify-url", "discord://example.com/b  slack://example.com/c",
-		"--notify-command", "/path/to/notify --to ops", "--notify-errors")
+	cfg, err := parse(
+		t,
+		nil,
+		CmdServe,
+		"--notify-url",
+		"https://example.com/a",
+		"--notify-url",
+		"discord://example.com/b  slack://example.com/c",
+		"--notify-command",
+		"/path/to/notify --to ops",
+		"--notify-errors",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	n := cfg.Serve.Notify
-	if want := []string{"https://example.com/a", "discord://example.com/b", "slack://example.com/c"}; !slices.Equal(n.NotifyURLs, want) {
+	if want := []string{
+		"https://example.com/a",
+		"discord://example.com/b",
+		"slack://example.com/c",
+	}; !slices.Equal(
+		n.NotifyURLs,
+		want,
+	) {
 		t.Errorf("urls %q, want %q", n.NotifyURLs, want)
 	}
 	if n.NotifyCommand != "/path/to/notify --to ops" || !n.NotifyErrors {
@@ -234,14 +315,30 @@ func TestNotifyFlags(t *testing.T) {
 	if len(cfg.Serve.NotifyURLs) != 2 {
 		t.Errorf("BEACON_NOTIFY_URL gave %q, want two URLs", cfg.Serve.NotifyURLs)
 	}
-	cfg, err = parse(t, map[string]string{"BEACON_NOTIFY_URL_FILE": "/var/lib/incus-beacon/notify-urls", "BEACON_NOTIFY_ERRORS": "true"}, CmdServe)
+	cfg, err = parse(
+		t,
+		map[string]string{
+			"BEACON_NOTIFY_URL_FILE": "/var/lib/incus-beacon/notify-urls",
+			"BEACON_NOTIFY_ERRORS":   "true",
+		},
+		CmdServe,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Serve.NotifyURLFile != "/var/lib/incus-beacon/notify-urls" || !cfg.Serve.NotifyErrors {
 		t.Errorf("as install sets it: %+v", cfg.Serve.Notify)
 	}
-	cfg, err = parse(t, nil, CmdInstall, "--notify-url", "https://example.com/a", "--notify-url", "slack://example.com/b", "--notify-errors")
+	cfg, err = parse(
+		t,
+		nil,
+		CmdInstall,
+		"--notify-url",
+		"https://example.com/a",
+		"--notify-url",
+		"slack://example.com/b",
+		"--notify-errors",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,14 +354,27 @@ func TestInstallFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cfg.Install
-	if c.Name != "" || c.Wait != time.Minute || c.Remote != "r" || !slices.Equal(c.Projects, []string{"default", "apps"}) {
+	if c.Name != "" || c.Wait != time.Minute || c.Remote != "r" ||
+		!slices.Equal(c.Projects, []string{"default", "apps"}) {
 		t.Errorf("install config %+v", c)
 	}
 	if _, err := parse(t, nil, CmdInstall, "--client-cert", "c"); !errors.Is(err, ErrUsage) {
 		t.Errorf("install took a connection flag it doesn't use: err %v", err)
 	}
-	cfg, err = parse(t, nil, CmdInstall, "--update", "--update-window", "02:00-05:00", "--cooldown", "48h", "--interval", "1h")
-	if c := cfg.Install; err != nil || !c.Update || c.UpdateWindow != "02:00-05:00" || c.Cooldown != 48*time.Hour || c.Interval != time.Hour {
+	cfg, err = parse(
+		t,
+		nil,
+		CmdInstall,
+		"--update",
+		"--update-window",
+		"02:00-05:00",
+		"--cooldown",
+		"48h",
+		"--interval",
+		"1h",
+	)
+	if c := cfg.Install; err != nil || !c.Update || c.UpdateWindow != "02:00-05:00" || c.Cooldown != 48*time.Hour ||
+		c.Interval != time.Hour {
 		t.Errorf("install serve settings: %+v, %v", c, err)
 	}
 	cfg, err = parse(t, nil, CmdInstall)
@@ -304,7 +414,9 @@ func TestUpdateFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cfg.Update
-	if c.Instance != "web" || !c.DryRun || c.StopTimeout != 30*time.Second || c.Wait != 5*time.Minute || c.Settle != 30*time.Second || c.Keep != 3 {
+	if c.Instance != "web" || !c.DryRun || c.StopTimeout != 30*time.Second || c.Wait != 5*time.Minute ||
+		c.Settle != 30*time.Second ||
+		c.Keep != 3 {
 		t.Errorf("update config %+v", c)
 	}
 	for _, args := range [][]string{
@@ -422,7 +534,12 @@ func TestConfigureFlags(t *testing.T) {
 	if c.Given("events") || c.Given("watch") {
 		t.Error("Given holds flags not given")
 	}
-	cfg, err = parse(t, map[string]string{"BEACON_COOLDOWN": "1h", "BEACON_PROJECT": "apps", "BEACON_INTERVAL": "1s"}, CmdConfigure, "--events")
+	cfg, err = parse(
+		t,
+		map[string]string{"BEACON_COOLDOWN": "1h", "BEACON_PROJECT": "apps", "BEACON_INTERVAL": "1s"},
+		CmdConfigure,
+		"--events",
+	)
 	if err != nil {
 		t.Fatalf("BEACON_* setting variables: %v, want them ignored", err)
 	}
@@ -477,7 +594,11 @@ func TestAuditFlags(t *testing.T) {
 		if a := cfg.AuditOf(); a != (Audit{AuditLogMaxSize: 10 << 20, AuditLogKeep: 5}) {
 			t.Errorf("%s defaults %+v", cmd[0], a)
 		}
-		vars := map[string]string{"BEACON_AUDIT_LOG": "/var/log/b/audit.log", "BEACON_AUDIT_LOG_MAX_SIZE": "4KiB", "BEACON_AUDIT_LOG_KEEP": "2"}
+		vars := map[string]string{
+			"BEACON_AUDIT_LOG":          "/var/log/b/audit.log",
+			"BEACON_AUDIT_LOG_MAX_SIZE": "4KiB",
+			"BEACON_AUDIT_LOG_KEEP":     "2",
+		}
 		cfg, err = parse(t, vars, cmd...)
 		if err != nil {
 			t.Fatalf("%s from the environment: %v", cmd[0], err)

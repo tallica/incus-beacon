@@ -106,7 +106,9 @@ func (f *fake) UseProject(p string) incusclient.InstanceServer {
 }
 
 func (f *fake) GetServer() (*api.Server, string, error) {
-	return &api.Server{ServerPut: api.ServerPut{Config: map[string]string{"core.https_address": f.httpsAddress}}}, "", nil
+	return &api.Server{
+		ServerPut: api.ServerPut{Config: map[string]string{"core.https_address": f.httpsAddress}},
+	}, "", nil
 }
 
 func (f *fake) GetProfile(string) (*api.Profile, string, error) {
@@ -117,7 +119,9 @@ func (f *fake) GetProfile(string) (*api.Profile, string, error) {
 }
 
 func (f *fake) GetNetwork(name string) (*api.Network, string, error) {
-	return &api.Network{NetworkPut: api.NetworkPut{Config: map[string]string{"ipv4.address": "192.168.1.10/24"}}}, "", nil
+	return &api.Network{
+		NetworkPut: api.NetworkPut{Config: map[string]string{"ipv4.address": "192.168.1.10/24"}},
+	}, "", nil
 }
 
 func (f *fake) GetProject(name string) (*api.Project, string, error) {
@@ -196,7 +200,12 @@ func (f *fake) CreateCertificateToken(req api.CertificatesPost) (incusclient.Ope
 	f.calls = append(f.calls, "create token")
 	id := "tok-" + req.Name
 	f.tokenOps[id] = req
-	tok := api.CertificateAddToken{ClientName: req.Name, Fingerprint: "ab", Addresses: []string{"192.168.1.10:8443"}, Secret: "s"}
+	tok := api.CertificateAddToken{
+		ClientName:  req.Name,
+		Fingerprint: "ab",
+		Addresses:   []string{"192.168.1.10:8443"},
+		Secret:      "s",
+	}
 	return op{meta: tokenOp(id, tok)}, nil
 }
 
@@ -212,7 +221,13 @@ func tokenOp(id string, tok api.CertificateAddToken) api.Operation {
 func (f *fake) GetOperations() ([]api.Operation, error) {
 	ops := make([]api.Operation, 0, len(f.tokenOps))
 	for id, req := range f.tokenOps {
-		ops = append(ops, tokenOp(id, api.CertificateAddToken{ClientName: req.Name, Fingerprint: "ab", Addresses: []string{"a"}, Secret: "s"}))
+		ops = append(
+			ops,
+			tokenOp(
+				id,
+				api.CertificateAddToken{ClientName: req.Name, Fingerprint: "ab", Addresses: []string{"a"}, Secret: "s"},
+			),
+		)
 	}
 	return ops, nil
 }
@@ -228,7 +243,12 @@ func (f *fake) CreateInstance(req api.InstancesPost) (incusclient.Operation, err
 		return nil, f.failCreate
 	}
 	f.calls = append(f.calls, "create instance "+req.Name)
-	f.instances[req.Name] = &api.Instance{Name: req.Name, StatusCode: api.Stopped, InstancePut: req.InstancePut, ExpandedDevices: req.Devices}
+	f.instances[req.Name] = &api.Instance{
+		Name:            req.Name,
+		StatusCode:      api.Stopped,
+		InstancePut:     req.InstancePut,
+		ExpandedDevices: req.Devices,
+	}
 	f.instances[req.Name].Devices = req.Devices
 	return op{}, nil
 }
@@ -350,7 +370,8 @@ func TestInstall(t *testing.T) {
 	if d := inst.Devices[stateDev]; d["source"] != "incus-beacon-state" || d["path"] != stateDir {
 		t.Errorf("state device %v", d)
 	}
-	if d := inst.Devices[logDev]; d["type"] != "disk" || d["pool"] != "default" || d["source"] != "incus-beacon-log" || d["path"] != "/var/log/incus-beacon" {
+	if d := inst.Devices[logDev]; d["type"] != "disk" || d["pool"] != "default" || d["source"] != "incus-beacon-log" ||
+		d["path"] != "/var/log/incus-beacon" {
 		t.Errorf("log device %v", d)
 	}
 	if a := f.files[tokenFile]; a.Mode != 0o400 || a.UID != imageUID || f.fileData[tokenFile] == "" {
@@ -369,7 +390,12 @@ func TestInstallRefusesAMalformedImageFirst(t *testing.T) {
 	f := newFake()
 	o := opts()
 	o.Image = "image=ghcr.io/tallica/incus-beacon:0.1"
-	if err := Install(context.Background(), f, o); err == nil || !strings.Contains(err.Error(), "not a valid reference") {
+	if err := Install(
+		context.Background(),
+		f,
+		o,
+	); err == nil ||
+		!strings.Contains(err.Error(), "not a valid reference") {
 		t.Fatalf("err %v, want the image refused", err)
 	}
 	if len(f.calls) != 0 || len(f.volumes) != 0 || len(f.tokenOps) != 0 {
@@ -389,18 +415,23 @@ func TestInstallStoresNotifyURLsInTheVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range checkAudit(t, &buf, "install begin", "install done") {
-		if r["image"] != o.Image || r["pool"] != "default" || r["volume"] != "incus-beacon-state" || r["log_volume"] != "incus-beacon-log" {
+		if r["image"] != o.Image || r["pool"] != "default" || r["volume"] != "incus-beacon-state" ||
+			r["log_volume"] != "incus-beacon-log" {
 			t.Errorf("record %v: want image, pool and both volumes", r)
 		}
 	}
 	if strings.Contains(buf.String(), "example.com") {
 		t.Errorf("a notification URL reached the audit log: %s", buf.String())
 	}
-	if got, want := f.readVolumeFile(t, "/"+notifyFile), "https://example.com/hook\nslack://hooks.example.com/services/T0K3N\n"; got != want {
+	if got, want := f.readVolumeFile(
+		t,
+		"/"+notifyFile,
+	), "https://example.com/hook\nslack://hooks.example.com/services/T0K3N\n"; got != want {
 		t.Errorf("volume file %q, want %q", got, want)
 	}
 	cfg := f.instances["incus-beacon"].Config
-	if cfg["environment.BEACON_NOTIFY_URL_FILE"] != stateDir+"/"+notifyFile || cfg["environment.BEACON_NOTIFY_ERRORS"] != "true" {
+	if cfg["environment.BEACON_NOTIFY_URL_FILE"] != stateDir+"/"+notifyFile ||
+		cfg["environment.BEACON_NOTIFY_ERRORS"] != "true" {
 		t.Errorf("config %v", cfg)
 	}
 	for k, v := range cfg {
@@ -408,7 +439,14 @@ func TestInstallStoresNotifyURLsInTheVolume(t *testing.T) {
 			t.Errorf("%s holds a notification URL", k)
 		}
 	}
-	if i, j := slices.Index(f.calls, "sftp incus-beacon-state"), slices.Index(f.calls, "create instance incus-beacon"); i < 0 || i > j {
+	if i, j := slices.Index(
+		f.calls,
+		"sftp incus-beacon-state",
+	), slices.Index(
+		f.calls,
+		"create instance incus-beacon",
+	); i < 0 ||
+		i > j {
 		t.Errorf("calls %v, want the file written before the instance exists", f.calls)
 	}
 
@@ -481,10 +519,27 @@ func TestInstallRollsBack(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "image not found") {
 		t.Fatalf("err %v", err)
 	}
-	if r := checkAudit(t, &buf, "install begin", "install.rollback begin", "install.rollback done", "install failed"); !strings.Contains(fmt.Sprint(r[3]["error"]), "image not found") {
+	if r := checkAudit(
+		t,
+		&buf,
+		"install begin",
+		"install.rollback begin",
+		"install.rollback done",
+		"install failed",
+	); !strings.Contains(
+		fmt.Sprint(r[3]["error"]),
+		"image not found",
+	) {
 		t.Errorf("failed record %v, want the error", r[3])
 	}
-	want := []string{"create volume incus-beacon-state", "create volume incus-beacon-log", "create token", "delete token", "delete volume incus-beacon-log", "delete volume incus-beacon-state"}
+	want := []string{
+		"create volume incus-beacon-state",
+		"create volume incus-beacon-log",
+		"create token",
+		"delete token",
+		"delete volume incus-beacon-log",
+		"delete volume incus-beacon-state",
+	}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("calls %v, want %v", f.calls, want)
 	}
@@ -510,7 +565,8 @@ func TestInstallReusesALogVolume(t *testing.T) {
 	if err := Install(context.Background(), f, opts()); err == nil {
 		t.Fatal("want the failed create")
 	}
-	if _, ok := f.volumes["default/incus-beacon-log"]; !ok || slices.Contains(f.calls, "delete volume incus-beacon-log") {
+	if _, ok := f.volumes["default/incus-beacon-log"]; !ok ||
+		slices.Contains(f.calls, "delete volume incus-beacon-log") {
 		t.Errorf("calls %v, want the reused log volume left by the rollback", f.calls)
 	}
 }
@@ -539,7 +595,8 @@ func TestInstallFailsAtOnceWhenCertificatesCannotBeListed(t *testing.T) {
 	o := opts()
 	o.Wait = time.Minute
 	err := Install(context.Background(), f, o)
-	if err == nil || !strings.Contains(err.Error(), "list certificates: forbidden") || strings.Contains(err.Error(), "--show-log") {
+	if err == nil || !strings.Contains(err.Error(), "list certificates: forbidden") ||
+		strings.Contains(err.Error(), "--show-log") {
 		t.Fatalf("err %v, want the listing error without the instance-log hint", err)
 	}
 	if f.lists != 1 {
@@ -631,18 +688,32 @@ func TestUninstall(t *testing.T) {
 	o.Wait = 10 * time.Millisecond
 	_ = Install(context.Background(), f, o)
 	f.instances["incus-beacon"].StatusCode = api.Running
-	f.certs = []api.Certificate{{Name: "incus-beacon", Fingerprint: "mine"}, {Name: "someone-else", Fingerprint: "theirs"}}
+	f.certs = []api.Certificate{
+		{Name: "incus-beacon", Fingerprint: "mine"},
+		{Name: "someone-else", Fingerprint: "theirs"},
+	}
 	f.calls = nil
 
 	var buf bytes.Buffer
-	if err := Uninstall(context.Background(), f, UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)}); err != nil {
+	if err := Uninstall(
+		context.Background(),
+		f,
+		UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)},
+	); err != nil {
 		t.Fatal(err)
 	}
 	r := checkAudit(t, &buf, "uninstall begin", "uninstall done")
-	if got, want := fmt.Sprint(r[1]["removed"]), "[instance incus-beacon volume incus-beacon-state trust token tok-incus-beacon certificate mine]"; got != want {
+	if got, want := fmt.Sprint(
+		r[1]["removed"],
+	), "[instance incus-beacon volume incus-beacon-state trust token tok-incus-beacon certificate mine]"; got != want {
 		t.Errorf("removed %s, want %s", got, want)
 	}
-	want := []string{"delete instance incus-beacon", "delete volume incus-beacon-state", "delete token", "delete cert mine"}
+	want := []string{
+		"delete instance incus-beacon",
+		"delete volume incus-beacon-state",
+		"delete token",
+		"delete cert mine",
+	}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("calls %v, want %v", f.calls, want)
 	}
@@ -670,7 +741,11 @@ func TestUninstallFinishesAnAcceptedDeleteOnceCancelled(t *testing.T) {
 	f.instances["incus-beacon"].StatusCode = api.Stopped
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := Uninstall(ctx, f, UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.Nop()}); err != nil {
+	if err := Uninstall(
+		ctx,
+		f,
+		UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.Nop()},
+	); err != nil {
 		t.Fatalf("interrupted once the delete was accepted: %v", err)
 	}
 	if _, ok := f.volumes["default/incus-beacon-state"]; ok {
@@ -726,10 +801,20 @@ func TestUninstallFindsVolumesOnAnotherPoolOnceTheInstanceIsGone(t *testing.T) {
 func TestUninstallNothingThere(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	if err := Uninstall(context.Background(), newFake(), UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)}); err != nil {
+	if err := Uninstall(
+		context.Background(),
+		newFake(),
+		UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)},
+	); err != nil {
 		t.Errorf("err %v", err)
 	}
-	if r := checkAudit(t, &buf, "uninstall begin", "uninstall done"); r[1]["removed"] != nil || r[1]["kept_volume"] != nil {
+	if r := checkAudit(
+		t,
+		&buf,
+		"uninstall begin",
+		"uninstall done",
+	); r[1]["removed"] != nil ||
+		r[1]["kept_volume"] != nil {
 		t.Errorf("done record %v, want nothing removed or kept", r[1])
 	}
 }
@@ -737,10 +822,16 @@ func TestUninstallNothingThere(t *testing.T) {
 func TestUninstallFindsInstanceInAnotherProject(t *testing.T) {
 	t.Parallel()
 	f := newFake()
-	f.elsewhere = map[string]*api.Instance{"incus-beacon": {Name: "incus-beacon", Project: "apps", StatusCode: api.Stopped}}
+	f.elsewhere = map[string]*api.Instance{
+		"incus-beacon": {Name: "incus-beacon", Project: "apps", StatusCode: api.Stopped},
+	}
 	f.certs = []api.Certificate{{Name: "incus-beacon", Fingerprint: "mine"}}
 	var buf bytes.Buffer
-	if err := Uninstall(context.Background(), f, UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)}); err != nil {
+	if err := Uninstall(
+		context.Background(),
+		f,
+		UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)},
+	); err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range checkAudit(t, &buf, "uninstall begin", "uninstall done") {

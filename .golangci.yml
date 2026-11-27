@@ -43,5 +43,10 @@ formatters:
   enable:
     - gofumpt
     - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 120
+      tab-len: 4
   exclusions:
     generated: lax

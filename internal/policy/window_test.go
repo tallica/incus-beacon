@@ -56,7 +56,8 @@ func TestWindowContainsUsesTheTimesOwnClock(t *testing.T) {
 	t.Parallel()
 	w, _ := ParseWindow("02:00-05:00")
 	zone := time.FixedZone("UTC+3", 3*60*60)
-	if !w.Contains(time.Date(2026, 1, 1, 4, 59, 59, 0, time.UTC)) || w.Contains(time.Date(2026, 1, 1, 5, 0, 30, 0, time.UTC)) {
+	if !w.Contains(time.Date(2026, 1, 1, 4, 59, 59, 0, time.UTC)) ||
+		w.Contains(time.Date(2026, 1, 1, 5, 0, 30, 0, time.UTC)) {
 		t.Error("seconds should not move a time across the window's minute edges")
 	}
 	if !w.Contains(time.Date(2026, 1, 1, 0, 30, 0, 0, time.UTC).In(zone)) {

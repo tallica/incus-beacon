@@ -134,10 +134,14 @@ func TestRunCyclesAndShutsDown(t *testing.T) {
 
 func TestCycleGetsADeadline(t *testing.T) {
 	t.Parallel()
-	s := &Server{Interval: 50 * time.Millisecond, Log: zerolog.Nop(), Cycle: func(ctx context.Context) (Summary, error) {
-		<-ctx.Done()
-		return Summary{}, ctx.Err()
-	}}
+	s := &Server{
+		Interval: 50 * time.Millisecond,
+		Log:      zerolog.Nop(),
+		Cycle: func(ctx context.Context) (Summary, error) {
+			<-ctx.Done()
+			return Summary{}, ctx.Err()
+		},
+	}
 	start := time.Now()
 	s.runCycle(t.Context())
 	if took := time.Since(start); took > 2*time.Second {
@@ -188,12 +192,17 @@ func TestBackoffCapsAtInterval(t *testing.T) {
 func TestRetrySoonerAfterError(t *testing.T) {
 	t.Parallel()
 	var cycles atomic.Int32
-	s := &Server{Interval: time.Hour, Retry: 20 * time.Millisecond, Log: zerolog.Nop(), Cycle: func(context.Context) (Summary, error) {
-		if cycles.Add(1) == 1 {
-			return Summary{}, errors.New("incus unreachable")
-		}
-		return Summary{}, nil
-	}}
+	s := &Server{
+		Interval: time.Hour,
+		Retry:    20 * time.Millisecond,
+		Log:      zerolog.Nop(),
+		Cycle: func(context.Context) (Summary, error) {
+			if cycles.Add(1) == 1 {
+				return Summary{}, errors.New("incus unreachable")
+			}
+			return Summary{}, nil
+		},
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +293,16 @@ func wantLines(t *testing.T, body string, lines ...string) {
 
 func TestMetrics(t *testing.T) {
 	t.Parallel()
-	web, api, db := incus.Key{Project: "apps", Instance: "web"}, incus.Key{Project: "apps", Instance: "api"}, incus.Key{Project: "apps", Instance: "db"}
+	web, api, db := incus.Key{
+		Project:  "apps",
+		Instance: "web",
+	}, incus.Key{
+		Project:  "apps",
+		Instance: "api",
+	}, incus.Key{
+		Project:  "apps",
+		Instance: "db",
+	}
 	fail := false
 	s := &Server{
 		Interval: time.Hour, Log: zerolog.Nop(),

@@ -25,7 +25,11 @@ func (f *fake) RebuildInstance(name string, req api.InstanceRebuildPost) (incusc
 	return op{}, nil
 }
 
-func (f *fake) ExecInstance(_ string, req api.InstanceExecPost, _ *incusclient.InstanceExecArgs) (incusclient.Operation, error) {
+func (f *fake) ExecInstance(
+	_ string,
+	req api.InstanceExecPost,
+	_ *incusclient.InstanceExecArgs,
+) (incusclient.Operation, error) {
 	f.calls = append(f.calls, "exec "+strings.Join(req.Command, " "))
 	code := 1.0
 	if f.ready != nil && f.ready(len(f.rebuilds)) {
@@ -48,7 +52,9 @@ func installedFake() *fake {
 				"image.id":                      oldImage,
 				"volatile.base_image":           "fp-old",
 			},
-			Devices: map[string]map[string]string{stateDev: {"type": "disk", "pool": "default", "source": "incus-beacon-state", "path": stateDir}},
+			Devices: map[string]map[string]string{
+				stateDev: {"type": "disk", "pool": "default", "source": "incus-beacon-state", "path": stateDir},
+			},
 		},
 	}
 	f.ready = func(int) bool { return true }
@@ -69,15 +75,25 @@ func TestUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range checkAudit(t, &buf, "upgrade begin", "upgrade done") {
-		if r["project"] != "default" || r["from"] != oldImage || r["from_image"] != "fp-old" || r["image"] != o.Image || r["log_volume"] != "incus-beacon-log" {
+		if r["project"] != "default" || r["from"] != oldImage || r["from_image"] != "fp-old" || r["image"] != o.Image ||
+			r["log_volume"] != "incus-beacon-log" {
 			t.Errorf("record %v: want project, from, from_image, image and log_volume", r)
 		}
 	}
 	checkLogVolume(t, f)
-	if i, j := slices.Index(f.calls, "update instance incus-beacon"), slices.Index(f.calls, "create volume incus-beacon-log"); j < 0 || i < j {
+	if i, j := slices.Index(
+		f.calls,
+		"update instance incus-beacon",
+	), slices.Index(
+		f.calls,
+		"create volume incus-beacon-log",
+	); j < 0 ||
+		i < j {
 		t.Errorf("calls %v, want the volume created, then the instance updated", f.calls)
 	}
-	want := []api.InstanceSource{{Type: "image", Protocol: "oci", Server: "https://ghcr.io", Alias: "tallica/incus-beacon:0.5"}}
+	want := []api.InstanceSource{
+		{Type: "image", Protocol: "oci", Server: "https://ghcr.io", Alias: "tallica/incus-beacon:0.5"},
+	}
 	if !reflect.DeepEqual(f.rebuilds, want) {
 		t.Errorf("rebuilds %+v, want %+v", f.rebuilds, want)
 	}
@@ -94,10 +110,12 @@ func TestUpgradeRollsBack(t *testing.T) {
 	f := installedFake()
 	f.ready = func(rebuilds int) bool { return rebuilds != 1 }
 	err := Upgrade(context.Background(), f, upgradeOpts("ghcr.io/tallica/incus-beacon:0.5"))
-	if err == nil || !strings.Contains(err.Error(), "not ready within") || !strings.Contains(err.Error(), "rolled back to "+oldImage) {
+	if err == nil || !strings.Contains(err.Error(), "not ready within") ||
+		!strings.Contains(err.Error(), "rolled back to "+oldImage) {
 		t.Fatalf("err %v, want not ready and rolled back", err)
 	}
-	if len(f.rebuilds) != 2 || !reflect.DeepEqual(f.rebuilds[1], api.InstanceSource{Type: "image", Fingerprint: "fp-old"}) {
+	if len(f.rebuilds) != 2 ||
+		!reflect.DeepEqual(f.rebuilds[1], api.InstanceSource{Type: "image", Fingerprint: "fp-old"}) {
 		t.Errorf("rebuilds %+v, want the new image, then the old fingerprint", f.rebuilds)
 	}
 	if !slices.Equal(f.states, []string{"stop", "start", "stop", "start"}) {
@@ -115,7 +133,9 @@ func checkLogVolume(t *testing.T, f *fake) {
 	if d := inst.Devices[logDev]; d["pool"] != "default" || d["source"] != "incus-beacon-log" || d["path"] != logDir {
 		t.Errorf("log device %v", d)
 	}
-	if inst.Devices[stateDev]["source"] != "incus-beacon-state" || inst.Config["environment.BEACON_AUDIT_LOG"] != auditFile || inst.Config["volatile.base_image"] != "fp-old" {
+	if inst.Devices[stateDev]["source"] != "incus-beacon-state" ||
+		inst.Config["environment.BEACON_AUDIT_LOG"] != auditFile ||
+		inst.Config["volatile.base_image"] != "fp-old" {
 		t.Errorf("instance %+v, want the state device and config kept and the audit path added", inst.InstancePut)
 	}
 }
@@ -193,7 +213,8 @@ func TestUpgradeRollsBackAFailedRebuild(t *testing.T) {
 	if !slices.Equal(f.states, []string{"stop", "start"}) || f.instances["incus-beacon"].StatusCode != api.Running {
 		t.Errorf("states %v, want the instance started again without a second stop", f.states)
 	}
-	if len(f.rebuilds) != 2 || !reflect.DeepEqual(f.rebuilds[1], api.InstanceSource{Type: "image", Fingerprint: "fp-old"}) {
+	if len(f.rebuilds) != 2 ||
+		!reflect.DeepEqual(f.rebuilds[1], api.InstanceSource{Type: "image", Fingerprint: "fp-old"}) {
 		t.Errorf("rebuilds %+v, want the failed one, then the old fingerprint", f.rebuilds)
 	}
 }
@@ -201,7 +222,12 @@ func TestUpgradeRollsBackAFailedRebuild(t *testing.T) {
 func TestStopIfRunningStopsAnUnreadableInstance(t *testing.T) {
 	t.Parallel()
 	f := newFake()
-	if err := stopIfRunning(context.Background(), f, "unreadable"); err != nil || !slices.Equal(f.states, []string{"stop"}) {
+	if err := stopIfRunning(
+		context.Background(),
+		f,
+		"unreadable",
+	); err != nil ||
+		!slices.Equal(f.states, []string{"stop"}) {
 		t.Errorf("err %v, states %v, want the stop tried", err, f.states)
 	}
 }
@@ -215,11 +241,36 @@ func TestUpgradeRefuses(t *testing.T) {
 		want  string
 	}{
 		{"downgrade", func(*fake) {}, "ghcr.io/tallica/incus-beacon:0.3", "give --force to downgrade"},
-		{"downgrade by digest", func(*fake) {}, "ghcr.io/tallica/incus-beacon:0.3@sha256:" + strings.Repeat("a", 64), "give --force to downgrade"},
-		{"snapshots", func(f *fake) { f.snapshots = []string{"snap0"} }, "ghcr.io/tallica/incus-beacon:0.5", "has snapshots (snap0)"},
-		{"not installed", func(f *fake) { delete(f.instances["incus-beacon"].Devices, stateDev) }, "ghcr.io/tallica/incus-beacon:0.5", "not created by install"},
-		{"missing", func(f *fake) { delete(f.instances, "incus-beacon") }, "ghcr.io/tallica/incus-beacon:0.5", "install it first"},
-		{"no base image", func(f *fake) { delete(f.instances["incus-beacon"].Config, "volatile.base_image") }, "ghcr.io/tallica/incus-beacon:0.5", "no base image"},
+		{
+			"downgrade by digest",
+			func(*fake) {},
+			"ghcr.io/tallica/incus-beacon:0.3@sha256:" + strings.Repeat("a", 64),
+			"give --force to downgrade",
+		},
+		{
+			"snapshots",
+			func(f *fake) { f.snapshots = []string{"snap0"} },
+			"ghcr.io/tallica/incus-beacon:0.5",
+			"has snapshots (snap0)",
+		},
+		{
+			"not installed",
+			func(f *fake) { delete(f.instances["incus-beacon"].Devices, stateDev) },
+			"ghcr.io/tallica/incus-beacon:0.5",
+			"not created by install",
+		},
+		{
+			"missing",
+			func(f *fake) { delete(f.instances, "incus-beacon") },
+			"ghcr.io/tallica/incus-beacon:0.5",
+			"install it first",
+		},
+		{
+			"no base image",
+			func(f *fake) { delete(f.instances["incus-beacon"].Config, "volatile.base_image") },
+			"ghcr.io/tallica/incus-beacon:0.5",
+			"no base image",
+		},
 		{"bad image", func(*fake) {}, "incus-beacon:0.5", "want registry/repository"},
 		{"mistyped image", func(*fake) {}, "image=ghcr.io/tallica/incus-beacon:0.5", "not a valid reference"},
 	}

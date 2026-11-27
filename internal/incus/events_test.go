@@ -31,7 +31,11 @@ func operation(t *testing.T, projectName string, op api.Operation) api.Event {
 }
 
 func rebuild(status api.StatusCode, resources ...string) api.Operation {
-	return api.Operation{Description: rebuildDescription, StatusCode: status, Resources: map[string][]string{"instances": resources}}
+	return api.Operation{
+		Description: rebuildDescription,
+		StatusCode:  status,
+		Resources:   map[string][]string{"instances": resources},
+	}
 }
 
 func TestInstanceOf(t *testing.T) {
@@ -42,16 +46,31 @@ func TestInstanceOf(t *testing.T) {
 		want Key
 		ok   bool
 	}{
-		{"created", lifecycle(t, "apps", api.EventLifecycle{Action: api.EventLifecycleInstanceCreated, Name: "web"}), Key{"apps", "web"}, true},
+		{
+			"created",
+			lifecycle(t, "apps", api.EventLifecycle{Action: api.EventLifecycleInstanceCreated, Name: "web"}),
+			Key{"apps", "web"},
+			true,
+		},
 		{"updated, named from the source", lifecycle(t, "", api.EventLifecycle{
 			Action: api.EventLifecycleInstanceUpdated, Source: "/1.0/instances/web?project=default",
 		}), Key{"default", "web"}, true},
-		{"started", lifecycle(t, "apps", api.EventLifecycle{Action: api.EventLifecycleInstanceStarted, Name: "web"}), Key{}, false},
+		{
+			"started",
+			lifecycle(t, "apps", api.EventLifecycle{Action: api.EventLifecycleInstanceStarted, Name: "web"}),
+			Key{},
+			false,
+		},
 		{"snapshot source", lifecycle(t, "apps", api.EventLifecycle{
 			Action: api.EventLifecycleInstanceUpdated, Source: "/1.0/instances/web/snapshots/s1",
 		}), Key{}, false},
 		{"rebuilt", operation(t, "apps", rebuild(api.Success, "/1.0/instances/web")), Key{"apps", "web"}, true},
-		{"rebuilt in the default project", operation(t, "", rebuild(api.Success, "/1.0/instances/db")), Key{"default", "db"}, true},
+		{
+			"rebuilt in the default project",
+			operation(t, "", rebuild(api.Success, "/1.0/instances/db")),
+			Key{"default", "db"},
+			true,
+		},
 		{"rebuild still running", operation(t, "apps", rebuild(api.Running, "/1.0/instances/web")), Key{}, false},
 		{"other operation", operation(t, "apps", api.Operation{
 			Description: "Restarting instance", StatusCode: api.Success,
@@ -84,7 +103,14 @@ func TestFollowReconnects(t *testing.T) {
 		return ch, func() {}, nil
 	}
 	out := make(chan Key, 4)
-	f := follower{open: open, projects: []string{"apps"}, out: out, log: zerolog.Nop(), retry: time.Millisecond, maxRetry: 4 * time.Millisecond}
+	f := follower{
+		open:     open,
+		projects: []string{"apps"},
+		out:      out,
+		log:      zerolog.Nop(),
+		retry:    time.Millisecond,
+		maxRetry: 4 * time.Millisecond,
+	}
 	go f.run(ctx)
 
 	first := <-streams

@@ -182,7 +182,10 @@ func manifestBlob(t *testing.T, mediaType string, layers ...string) blob {
 	m := ocispec.Manifest{MediaType: mediaType}
 	m.SchemaVersion = 2
 	for _, l := range layers {
-		m.Layers = append(m.Layers, ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digestOf(l), Size: 1})
+		m.Layers = append(
+			m.Layers,
+			ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digestOf(l), Size: 1},
+		)
 	}
 	return newBlob(t, mediaType, m)
 }
@@ -205,7 +208,10 @@ func withConfig(t *testing.T, cfg blob, layers ...string) blob {
 	}}
 	m.SchemaVersion = 2
 	for _, l := range layers {
-		m.Layers = append(m.Layers, ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digestOf(l), Size: 1})
+		m.Layers = append(
+			m.Layers,
+			ocispec.Descriptor{MediaType: ocispec.MediaTypeImageLayerGzip, Digest: digestOf(l), Size: 1},
+		)
 	}
 	return newBlob(t, m.MediaType, m)
 }

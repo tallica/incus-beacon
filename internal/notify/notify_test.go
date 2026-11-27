@@ -48,12 +48,33 @@ func TestNotable(t *testing.T) {
 }
 
 var sample = []Transition{
-	{Project: "default", Instance: "web", Image: "docker.io/library/nginx:1.27", Status: "update-available", Previous: "current", Latest: "1.31", Kind: "tag"},
 	{
-		Project: "apps", Instance: "api", Image: "ghcr.io/example/api:2", Status: "update-available", Latest: "2@sha256:bbbbbbbbbbbb", Kind: "digest",
-		ComposeProject: "apps", ComposeService: "api",
+		Project:  "default",
+		Instance: "web",
+		Image:    "docker.io/library/nginx:1.27",
+		Status:   "update-available",
+		Previous: "current",
+		Latest:   "1.31",
+		Kind:     "tag",
 	},
-	{Project: "apps", Instance: "db", Image: "docker.io/library/postgres:17", Status: "error", Previous: "current", Reason: "registry auth failed"},
+	{
+		Project:        "apps",
+		Instance:       "api",
+		Image:          "ghcr.io/example/api:2",
+		Status:         "update-available",
+		Latest:         "2@sha256:bbbbbbbbbbbb",
+		Kind:           "digest",
+		ComposeProject: "apps",
+		ComposeService: "api",
+	},
+	{
+		Project:  "apps",
+		Instance: "db",
+		Image:    "docker.io/library/postgres:17",
+		Status:   "error",
+		Previous: "current",
+		Reason:   "registry auth failed",
+	},
 }
 
 func TestNewTransition(t *testing.T) {
@@ -65,14 +86,39 @@ func TestNewTransition(t *testing.T) {
 		next   incus.Beacon
 		kind   string
 	}{
-		{"digest", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "2@sha256:bbbbbbbbbbbb"}, "digest"},
-		{"digest-pinned", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2@sha256:" + strings.Repeat("a", 64), Latest: "2@sha256:bbbbbbbbbbbb"}, "digest"},
-		{"tag", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "3"}, "tag"},
-		{"error", compose, incus.Beacon{Status: "error", Current: "ghcr.io/example/api:2", Error: "registry timeout"}, ""},
+		{
+			"digest",
+			compose,
+			incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "2@sha256:bbbbbbbbbbbb"},
+			"digest",
+		},
+		{
+			"digest-pinned",
+			compose,
+			incus.Beacon{
+				Status:  "update-available",
+				Current: "ghcr.io/example/api:2@sha256:" + strings.Repeat("a", 64),
+				Latest:  "2@sha256:bbbbbbbbbbbb",
+			},
+			"digest",
+		},
+		{
+			"tag",
+			compose,
+			incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "3"},
+			"tag",
+		},
+		{
+			"error",
+			compose,
+			incus.Beacon{Status: "error", Current: "ghcr.io/example/api:2", Error: "registry timeout"},
+			"",
+		},
 	}
 	for _, tt := range tests {
 		got := NewTransition(tt.target, tt.next)
-		if got.Kind != tt.kind || got.ComposeProject != tt.target.ComposeProject || got.ComposeService != tt.target.ComposeService {
+		if got.Kind != tt.kind || got.ComposeProject != tt.target.ComposeProject ||
+			got.ComposeService != tt.target.ComposeService {
 			t.Errorf("%s: %+v, want kind %q and the compose labels", tt.name, got, tt.kind)
 		}
 	}
@@ -117,7 +163,13 @@ func TestMessageWithUpdates(t *testing.T) {
 	cache := incus.Target{Project: "default", Instance: "cache"}
 	b := Batch{Transitions: sorted([]Transition{
 		sample[2],
-		NewApplied(api, "rolled-back", "ghcr.io/example/api:2", "ghcr.io/example/api:3", "the health check reports unhealthy"),
+		NewApplied(
+			api,
+			"rolled-back",
+			"ghcr.io/example/api:2",
+			"ghcr.io/example/api:3",
+			"the health check reports unhealthy",
+		),
 		NewApplied(web, "updated", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", ""),
 		NewApplied(cache, "updated", "docker.io/library/redis:8", "docker.io/library/redis:8", ""),
 	})}
@@ -143,11 +195,17 @@ func TestWithApplied(t *testing.T) {
 		Status: "update-available", Current: "docker.io/library/nginx:1.27", Latest: "1.31",
 	}}
 	offered := sample[:1]
-	updated := WithApplied(offered, NewApplied(web, "updated", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", ""))
+	updated := WithApplied(
+		offered,
+		NewApplied(web, "updated", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", ""),
+	)
 	if len(updated) != 1 || updated[0].Status != "updated" || updated[0].Kind != "tag" {
 		t.Errorf("updated: %+v; want only the outcome, of kind tag", updated)
 	}
-	refused := WithApplied(offered, NewApplied(web, "refused", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", "snapshots"))
+	refused := WithApplied(
+		offered,
+		NewApplied(web, "refused", "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.31", "snapshots"),
+	)
 	if len(refused) != 2 || len(offered) != 1 {
 		t.Errorf("refused: %+v; want the offer kept beside the refusal, and the input untouched", refused)
 	}
@@ -211,7 +269,9 @@ func sender(t *testing.T, ts *httptest.Server, set *metrics.Set, log io.Writer, 
 	if log == nil {
 		log = io.Discard
 	}
-	s, err := New(Options{URLs: urls, Client: ts.Client(), Timeout: 5 * time.Second, Metrics: set, Log: zerolog.New(log)})
+	s, err := New(
+		Options{URLs: urls, Client: ts.Client(), Timeout: 5 * time.Second, Metrics: set, Log: zerolog.New(log)},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +300,8 @@ func TestWebhook(t *testing.T) {
 	if err := json.Unmarshal(r.body, &raw); err != nil {
 		t.Fatal(err)
 	}
-	if api := raw.Transitions[0]; api["kind"] != "digest" || api["compose_project"] != "apps" || api["compose_service"] != "api" {
+	if api := raw.Transitions[0]; api["kind"] != "digest" || api["compose_project"] != "apps" ||
+		api["compose_service"] != "api" {
 		t.Errorf("api fields: %v", api)
 	}
 	if _, ok := raw.Transitions[1]["compose_service"]; ok {
@@ -308,7 +369,13 @@ func TestDiscordTruncates(t *testing.T) {
 	for i := range many {
 		many[i] = sample[0]
 	}
-	sender(t, ts, nil, nil, "discord://"+strings.TrimPrefix(ts.URL, "https://")+"/x").Notify(t.Context(), Batch{Transitions: many})
+	sender(
+		t,
+		ts,
+		nil,
+		nil,
+		"discord://"+strings.TrimPrefix(ts.URL, "https://")+"/x",
+	).Notify(t.Context(), Batch{Transitions: many})
 	var got map[string]string
 	if err := json.Unmarshal(c.last(t).body, &got); err != nil {
 		t.Fatal(err)
@@ -393,7 +460,10 @@ func TestURLFile(t *testing.T) {
 	if want := "discord slack webhook"; strings.Join(kinds, " ") != want {
 		t.Errorf("notifiers %q, want %q", kinds, want)
 	}
-	if _, err := New(Options{URLFile: filepath.Join(t.TempDir(), "missing")}); err == nil || !strings.Contains(err.Error(), "notify-url-file") {
+	if _, err := New(
+		Options{URLFile: filepath.Join(t.TempDir(), "missing")},
+	); err == nil ||
+		!strings.Contains(err.Error(), "notify-url-file") {
 		t.Errorf("missing file: %v", err)
 	}
 }

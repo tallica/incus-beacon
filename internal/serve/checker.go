@@ -64,7 +64,11 @@ func (c *Checker) Run(ctx context.Context, srv incusclient.InstanceServer, targe
 	return sum
 }
 
-func (c *Checker) checkWrite(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) ([]check.Result, Summary, []notify.Transition) {
+func (c *Checker) checkWrite(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	targets []incus.Target,
+) ([]check.Result, Summary, []notify.Transition) {
 	if c.seen == nil {
 		c.seen = incus.Seen{}
 	}
@@ -113,7 +117,11 @@ func WriteResults(ctx context.Context, srv incusclient.InstanceServer, results [
 		next := check.Beacon(*r, now)
 		changed, err := incus.WriteStatus(ctx, srv, r.Target, next)
 		if err != nil {
-			logger.Warn().Err(err).Str("project", r.Target.Project).Str("instance", r.Target.Instance).Msg("status not recorded")
+			logger.Warn().
+				Err(err).
+				Str("project", r.Target.Project).
+				Str("instance", r.Target.Instance).
+				Msg("status not recorded")
 			failed++
 			continue
 		}

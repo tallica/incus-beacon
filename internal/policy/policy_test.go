@@ -150,13 +150,18 @@ func TestUpdate(t *testing.T) {
 		t.Errorf("got %+v, %v", p, err)
 	}
 	p, err = Parse(map[string]string{"user.incus-beacon.update": "yes", "user.incus-beacon.update-window": "2-5"}, true)
-	if err == nil || !strings.Contains(err.Error(), `update "yes"`) || !strings.Contains(err.Error(), `update-window "2-5"`) {
+	if err == nil || !strings.Contains(err.Error(), `update "yes"`) ||
+		!strings.Contains(err.Error(), `update-window "2-5"`) {
 		t.Errorf("error %v, want both keys named", err)
 	}
 	if p.Update != UpdateNotify || p.Window != nil {
 		t.Errorf("bad keys gave update %q, window %v; want notify and none", p.Update, p.Window)
 	}
-	if p, _ := Parse(map[string]string{"user.beacon.update": "auto", "user.label.beacon.update-window": "02:00-03:00"}, true); p.Update != UpdateNotify || p.Window != nil {
+	if p, _ := Parse(
+		map[string]string{"user.beacon.update": "auto", "user.label.beacon.update-window": "02:00-03:00"},
+		true,
+	); p.Update != UpdateNotify ||
+		p.Window != nil {
 		t.Errorf("old-prefix keys read: update %q, window %v", p.Update, p.Window)
 	}
 }

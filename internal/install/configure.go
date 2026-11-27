@@ -77,7 +77,10 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 		opts.Log.Info().Str("instance", name).Msg("settings already as given; nothing changed")
 		return nil
 	}
-	audit := log.AuditFor(opts.Audit, log.Process(), inst.Project, name).With().Strs("settings", changed(before, cfg, urlsChange, certChange)).Logger()
+	audit := log.AuditFor(opts.Audit, log.Process(), inst.Project, name).
+		With().
+		Strs("settings", changed(before, cfg, urlsChange, certChange)).
+		Logger()
 	log.AuditBegin(audit, "configure").Send()
 	defer func() { log.AuditEnd(audit, "configure", err).Send() }()
 	running := inst.StatusCode != api.Stopped
@@ -124,7 +127,9 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 	opts.Log.Info().Str("instance", name).Msg("settings changed")
 	switch {
 	case !running:
-		opts.Log.Warn().Str("instance", name).Msg("stopped, so not checked beyond serve's flag parsing; the settings apply when it starts")
+		opts.Log.Warn().
+			Str("instance", name).
+			Msg("stopped, so not checked beyond serve's flag parsing; the settings apply when it starts")
 		return nil
 	case !restart:
 		return nil

@@ -253,7 +253,11 @@ func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger
 	}
 	runner.Init()
 	checker := &serve.Checker{
-		Engine:       check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update}, logger),
+		Engine: check.New(
+			reg,
+			check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update},
+			logger,
+		),
 		Runner:       runner,
 		Sender:       sender,
 		NotifyErrors: c.NotifyErrors,
@@ -458,11 +462,20 @@ func listOptions(c config.Common, instance string) incus.ListOptions {
 }
 
 func newRegistry(r config.Registry, m *metrics.Set) (*registry.Client, error) {
-	return registry.New(registry.Options{AuthFile: r.RegistryAuthFile, Timeout: r.Timeout, UserAgent: userAgent(), Metrics: m})
+	return registry.New(
+		registry.Options{AuthFile: r.RegistryAuthFile, Timeout: r.Timeout, UserAgent: userAgent(), Metrics: m},
+	)
 }
 
 func updateOptions(u config.UpdateFlags, logger, audit zerolog.Logger) update.Options {
-	return update.Options{StopTimeout: u.StopTimeout, Wait: u.Wait, Settle: u.Settle, Keep: u.Keep, Log: logger, Audit: audit}
+	return update.Options{
+		StopTimeout: u.StopTimeout,
+		Wait:        u.Wait,
+		Settle:      u.Settle,
+		Keep:        u.Keep,
+		Log:         logger,
+		Audit:       audit,
+	}
 }
 
 func userAgent() string { return "incus-beacon/" + version.Version }

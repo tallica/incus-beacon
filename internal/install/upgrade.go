@@ -51,13 +51,21 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 		return fmt.Errorf("list snapshots of %s: %w", opts.Name, err)
 	}
 	if len(snaps) > 0 {
-		return fmt.Errorf("instance %s has snapshots (%s), which rebuild refuses; delete them first", opts.Name, strings.Join(snaps, ", "))
+		return fmt.Errorf(
+			"instance %s has snapshots (%s), which rebuild refuses; delete them first",
+			opts.Name,
+			strings.Join(snaps, ", "),
+		)
 	}
 	old := inst.Config["volatile.base_image"]
 	if old == "" {
 		return fmt.Errorf("instance %s records no base image to roll back to", opts.Name)
 	}
-	fields := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image)
+	fields := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).
+		With().
+		Str("from", from).
+		Str("from_image", old).
+		Str("image", opts.Image)
 	addLog := inst.Devices[logDev] == nil
 	if addLog {
 		fields = fields.Str("log_volume", LogVolumeName(opts.Name))
@@ -78,7 +86,12 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 			return fmt.Errorf("stop %s: %w", opts.Name, err)
 		}
 	}
-	err = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias})
+	err = update.Rebuild(
+		ctx,
+		srv,
+		opts.Name,
+		api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias},
+	)
 	if err == nil {
 		opts.Log.Info().Str("instance", opts.Name).Str("from", from).Str("image", opts.Image).Msg("instance rebuilt")
 		err = update.SetState(ctx, srv, opts.Name, "start")
@@ -141,7 +154,11 @@ func with[V any](m map[string]V, k string, v V) map[string]V {
 }
 
 // installed finds the instance for upgrade and configure, refusing one install didn't create; uninstall tolerates any.
-func installed(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+func installed(
+	srv incusclient.InstanceServer,
+	name string,
+	logger zerolog.Logger,
+) (incusclient.InstanceServer, *api.Instance, error) {
 	srv, inst, err := findInstance(srv, name, logger)
 	if notFound(err) {
 		return srv, nil, fmt.Errorf("instance %s not found; install it first", name)

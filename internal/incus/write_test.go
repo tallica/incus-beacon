@@ -37,7 +37,12 @@ func TestWriteTouchesOnlyBeaconKeys(t *testing.T) {
 	t.Parallel()
 	f, tg := writeFixture()
 	before := maps.Clone(f.instances[0].Config)
-	b := Beacon{Status: "update-available", Current: "ghcr.io/example/web:1", Latest: "2", Since: "2026-11-04T12:00:00Z"}
+	b := Beacon{
+		Status:  "update-available",
+		Current: "ghcr.io/example/web:1",
+		Latest:  "2",
+		Since:   "2026-11-04T12:00:00Z",
+	}
 
 	changed, err := WriteStatus(t.Context(), f.connect(t), tg, b)
 	if err != nil || !changed {
@@ -158,7 +163,8 @@ func TestReadAndMigrateLegacyStatus(t *testing.T) {
 			t.Errorf("%s left after the write", k)
 		}
 	}
-	if got["user.incus-beacon.status"] != "update-available" || got["user.incus-beacon.since"] != "2026-11-04T12:00:00Z" {
+	if got["user.incus-beacon.status"] != "update-available" ||
+		got["user.incus-beacon.since"] != "2026-11-04T12:00:00Z" {
 		t.Errorf("config %v, want the values under the new names, since kept", got)
 	}
 }
@@ -173,7 +179,8 @@ func TestTargetOfLegacyKeys(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ok %v, err %v", ok, err)
 	}
-	if !tg.LegacyStatus || tg.Beacon.Status != "current" || tg.Policy.Track != "semver" || len(tg.Legacy) != 1 || tg.Legacy[0] != "user.beacon.track" {
+	if !tg.LegacyStatus || tg.Beacon.Status != "current" || tg.Policy.Track != "semver" || len(tg.Legacy) != 1 ||
+		tg.Legacy[0] != "user.beacon.track" {
 		t.Errorf("target %+v, want the old keys read and both kinds marked legacy", tg)
 	}
 }
