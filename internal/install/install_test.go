@@ -547,6 +547,20 @@ func TestInstallFailsAtOnceWhenCertificatesCannotBeListed(t *testing.T) {
 	}
 }
 
+func TestInstallInterruptedDuringWaitDoesNotBlameTheInstance(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.joins = false
+	o := opts()
+	o.Wait = time.Minute
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	err := Install(ctx, f, o)
+	if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "did not join") {
+		t.Fatalf("err %v, want the interruption, not a join failure", err)
+	}
+}
+
 func TestInstallRecordsARollbackOfNothing(t *testing.T) {
 	t.Parallel()
 	f := newFake()

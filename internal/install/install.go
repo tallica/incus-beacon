@@ -625,6 +625,8 @@ func waitTrusted(ctx context.Context, srv incusclient.InstanceServer, name strin
 	switch {
 	case listErr != nil:
 		return fmt.Errorf("list certificates: %w", listErr)
+	case ctx.Err() != nil:
+		return fmt.Errorf("wait for %s to join: %w", name, ctx.Err())
 	case err != nil:
 		return fmt.Errorf("%s did not join: %w; see incus console %s --show-log", name, err, name)
 	}
