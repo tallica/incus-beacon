@@ -72,15 +72,6 @@ type Filter struct {
 	Constraint *mmsemver.Constraints
 }
 
-// Newest returns "" when current is newest; ok is false if it isn't a version.
-func Newest(current string, tags []string, f Filter) (newest string, ok bool) {
-	c, ok := Candidates(current, tags, f)
-	if len(c) == 0 {
-		return "", ok
-	}
-	return c[0], true
-}
-
 // Candidates lists the tags above current that pass f, newest first.
 func Candidates(current string, tags []string, f Filter) ([]string, bool) {
 	cur, ok := Parse(current)

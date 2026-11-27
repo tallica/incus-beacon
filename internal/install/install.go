@@ -17,6 +17,8 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/config"
+	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/registry"
@@ -41,21 +43,13 @@ type Options struct {
 	Name        string
 	Image       string
 	StoragePool string
-	APIURL      string
 	Projects    []string
 	Watch       string
-	Events      bool
-	Track       string
-	NotifyURLs  []string
-	NotifyErrs  bool
-	// Serve settings for the instance; a zero value leaves serve's default.
-	Interval     time.Duration
-	Cooldown     time.Duration
-	Update       bool
-	UpdateWindow string
-	Wait         time.Duration
-	Log          zerolog.Logger
-	Audit        zerolog.Logger // gets begin and done or failed; the zero Logger writes none
+	// Settings are serve's for the instance; a zero value leaves serve's default.
+	config.Settings
+	Wait  time.Duration
+	Log   zerolog.Logger
+	Audit zerolog.Logger // gets begin and done or failed; the zero Logger writes none
 }
 
 // DefaultName is what install calls the instance; legacyName is what it did before 0.6.
@@ -118,12 +112,6 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if err := checkFree(srv, opts.Name); err != nil {
 		return err
 	}
-	// Incus accepts a token for a missing project; the instance then never joins.
-	for _, p := range opts.Projects {
-		if _, _, err := srv.GetProject(p); err != nil {
-			return fmt.Errorf("project %s: %w", p, err)
-		}
-	}
 	pool, network, err := profileDefaults(srv)
 	if err != nil {
 		return err
@@ -140,6 +128,28 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 			return err
 		}
 	}
+	// configured also refuses a missing project: Incus accepts a token for one, and the instance then never joins.
+	s, track := opts.Settings, trackFor(opts.Track, opts.Image)
+	s.NotifyErrs = s.NotifyErrs && len(s.NotifyURLs) > 0 // with nothing to notify, serve would refuse the flag
+	fresh := &api.Instance{InstancePut: api.InstancePut{Config: map[string]string{}}}
+	env, err := configured(srv, fresh, ConfigureOptions{
+		APIURL:       &apiURL,
+		Projects:     &opts.Projects,
+		Watch:        &opts.Watch,
+		Events:       &s.Events,
+		Track:        &track,
+		NotifyURLs:   &s.NotifyURLs,
+		NotifyErrs:   &s.NotifyErrs,
+		Interval:     &s.Interval,
+		Cooldown:     &s.Cooldown,
+		Update:       &s.Update,
+		UpdateWindow: &s.UpdateWindow,
+	})
+	if err != nil {
+		return err
+	}
+	env[envPrefix+"TOKEN_FILE"] = tokenFile
+	env[envPrefix+"AUDIT_LOG"] = auditFile
 	server, alias, err := update.SplitImage(opts.Image)
 	if err != nil {
 		return err
@@ -189,39 +199,6 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	}
 	undo = append(undo, func() error { return tokens(srv).DeleteOperation(opID) })
 
-	env := map[string]string{
-		"environment.BEACON_INCUS":      apiURL,
-		"environment.BEACON_TOKEN_FILE": tokenFile,
-		"environment.BEACON_AUDIT_LOG":  auditFile,
-	}
-	if len(opts.Projects) > 0 {
-		env["environment.BEACON_PROJECT"] = strings.Join(opts.Projects, ",")
-	}
-	if opts.Watch != "" && opts.Watch != "all" {
-		env["environment.BEACON_WATCH"] = opts.Watch
-	}
-	if opts.Events {
-		env["environment.BEACON_EVENTS"] = "true"
-	}
-	if opts.Interval > 0 {
-		env["environment.BEACON_INTERVAL"] = opts.Interval.String()
-	}
-	if opts.Cooldown > 0 {
-		env["environment.BEACON_COOLDOWN"] = opts.Cooldown.String()
-	}
-	if opts.Update {
-		env["environment.BEACON_UPDATE"] = "true"
-	}
-	if opts.UpdateWindow != "" {
-		env["environment.BEACON_UPDATE_WINDOW"] = opts.UpdateWindow
-	}
-	env[policy.Prefix+"track"] = trackFor(opts.Track, opts.Image)
-	if len(opts.NotifyURLs) > 0 {
-		env["environment.BEACON_NOTIFY_URL_FILE"] = stateDir + "/" + notifyFile
-		if opts.NotifyErrs {
-			env["environment.BEACON_NOTIFY_ERRORS"] = "true"
-		}
-	}
 	op, err := srv.CreateInstance(api.InstancesPost{
 		Name: opts.Name,
 		Type: api.InstanceTypeContainer,
@@ -242,7 +219,8 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if err != nil {
 		return rollback(fmt.Errorf("create instance %s from %s: %w", opts.Name, opts.Image, err))
 	}
-	undo = append(undo, func() error { return deleteInstance(srv, opts.Name) })
+	// A rollback finishes even when the caller gives up: no undo step stops on ctx.
+	undo = append(undo, func() error { return deleteInstance(ctx, srv, opts.Name) })
 	opts.Log.Info().Str("instance", opts.Name).Str("image", opts.Image).Str("incus", apiURL).Msg("instance created")
 
 	if err := pushToken(srv, opts.Name, token); err != nil {
@@ -254,7 +232,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 
 	// Past here the instance stays: its log says why it didn't join.
 	if err := waitTrusted(ctx, srv, opts.Name, opts.Wait); err != nil {
-		return fmt.Errorf("%w; see incus console %s --show-log", err, opts.Name)
+		return err
 	}
 	if err := srv.DeleteInstanceFile(opts.Name, tokenFile); err != nil {
 		opts.Log.Warn().Err(err).Str("file", tokenFile).Msg("spent token not removed")
@@ -302,7 +280,7 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 				errs = append(errs, fmt.Errorf("stop %s: %w", name, err))
 			}
 		}
-		if err := deleteInstance(srv, name); err != nil {
+		if err := deleteInstance(ctx, srv, name); err != nil {
 			errs = append(errs, fmt.Errorf("delete %s: %w", name, err))
 		} else {
 			removed = append(removed, "instance "+name)
@@ -629,31 +607,36 @@ func writeNotifyURLs(srv incusclient.InstanceServer, pool, vol string, urls []st
 	return nil
 }
 
-func deleteInstance(srv incusclient.InstanceServer, name string) error {
+func deleteInstance(ctx context.Context, srv incusclient.InstanceServer, name string) error {
 	op, err := srv.DeleteInstance(name)
 	if err != nil {
 		return err
 	}
-	return op.Wait()
+	wctx, cancel := incus.OpContext(ctx)
+	defer cancel()
+	return op.WaitContext(wctx)
 }
 
 // waitTrusted polls: the certificate appears once the token is redeemed.
 func waitTrusted(ctx context.Context, srv incusclient.InstanceServer, name string, wait time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, wait)
+	wctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	for {
 		certs, err := srv.GetCertificates()
 		if err != nil {
-			return err
+			return fmt.Errorf("list certificates: %w", err)
 		}
 		if slices.ContainsFunc(certs, func(c api.Certificate) bool { return c.Name == name }) {
 			return nil
 		}
 		select {
-		case <-ctx.Done():
-			return fmt.Errorf("%s did not join within %s", name, wait)
+		case <-wctx.Done():
+			if ctx.Err() != nil {
+				return fmt.Errorf("wait for %s to join: %w", name, ctx.Err())
+			}
+			return fmt.Errorf("%s did not join within %s; see incus console %s --show-log", name, wait, name)
 		case <-tick.C:
 		}
 	}

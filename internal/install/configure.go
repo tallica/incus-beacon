@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/tallica/incus-beacon/internal/config"
+	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/update"
@@ -221,7 +222,7 @@ func configured(srv incusclient.InstanceServer, inst *api.Instance, opts Configu
 		env("PROJECT", strings.Join(*opts.Projects, ","))
 	}
 	if opts.Watch != nil {
-		env("WATCH", when(*opts.Watch != "all", *opts.Watch))
+		env("WATCH", when(*opts.Watch != config.WatchAll, *opts.Watch))
 	}
 	if opts.Track != nil {
 		track := *opts.Track
@@ -273,24 +274,21 @@ func serveEnv(cfg map[string]string) map[string]string {
 
 // rewriteKeys writes only the keys from and to differ in, so keys someone else changed meanwhile stay.
 func rewriteKeys(ctx context.Context, srv incusclient.InstanceServer, name string, from, to map[string]string) error {
-	inst, etag, err := srv.GetInstance(name)
-	if err != nil {
-		return err
-	}
-	put := inst.Writable()
-	put.Config = maps.Clone(put.Config)
-	for k := range keysOf(from, to) {
-		if v, ok := to[k]; ok {
-			put.Config[k] = v
-		} else {
-			delete(put.Config, k)
+	err := incus.UpdateInstance(ctx, srv, name, func(put *api.InstancePut) error {
+		put.Config = maps.Clone(put.Config)
+		for k := range keysOf(from, to) {
+			if v, ok := to[k]; ok {
+				put.Config[k] = v
+			} else {
+				delete(put.Config, k)
+			}
 		}
-	}
-	op, err := srv.UpdateInstance(name, put, etag)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("update %s: %w", name, err)
 	}
-	return op.WaitContext(ctx)
+	return nil
 }
 
 func keysOf(a, b map[string]string) map[string]bool {

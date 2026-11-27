@@ -41,7 +41,10 @@ type fake struct {
 	states       []string
 	failCreate   error
 	failUpdate   error // every instance update's
+	conflicts    int   // instance updates refused with 412, as when serve writes its status keys meanwhile
 	failCert     error // every certificate update's
+	failList     error // every certificate listing's once the instance has started
+	lists        int   // certificate listings once the instance has started
 	joins        bool  // the instance redeems its token when started
 	calls        []string
 	volumeFS     sftp.Handlers // every volume's files, in memory
@@ -142,7 +145,13 @@ func (f *fake) GetInstancesAllProjects(api.InstanceType) ([]api.Instance, error)
 	return all, nil
 }
 
-func (f *fake) GetCertificates() ([]api.Certificate, error) { return f.certs, nil }
+func (f *fake) GetCertificates() ([]api.Certificate, error) {
+	if slices.Contains(f.states, "start") {
+		f.lists++
+		return f.certs, f.failList
+	}
+	return f.certs, nil
+}
 
 func (f *fake) DeleteCertificate(fp string) error {
 	f.calls = append(f.calls, "delete cert "+fp)
@@ -266,9 +275,9 @@ type op struct {
 	meta api.Operation
 }
 
-func (o op) Get() api.Operation                { return o.meta }
-func (o op) Wait() error                       { return nil }
-func (o op) WaitContext(context.Context) error { return nil }
+func (o op) Get() api.Operation                    { return o.meta }
+func (o op) Wait() error                           { return nil }
+func (o op) WaitContext(ctx context.Context) error { return ctx.Err() } // as the client's event-listener wait does
 
 func opts() Options {
 	return Options{
@@ -523,6 +532,35 @@ func TestInstallKeepsInstanceThatDidNotJoin(t *testing.T) {
 	checkAudit(t, &buf, "install begin", "install failed")
 }
 
+func TestInstallFailsAtOnceWhenCertificatesCannotBeListed(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.failList = errors.New("forbidden")
+	o := opts()
+	o.Wait = time.Minute
+	err := Install(context.Background(), f, o)
+	if err == nil || !strings.Contains(err.Error(), "list certificates: forbidden") || strings.Contains(err.Error(), "--show-log") {
+		t.Fatalf("err %v, want the listing error without the instance-log hint", err)
+	}
+	if f.lists != 1 {
+		t.Errorf("%d listings once started, want the first failure to end the wait", f.lists)
+	}
+}
+
+func TestInstallInterruptedDuringWaitDoesNotBlameTheInstance(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.joins = false
+	o := opts()
+	o.Wait = time.Minute
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	err := Install(ctx, f, o)
+	if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "did not join") {
+		t.Fatalf("err %v, want the interruption, not a join failure", err)
+	}
+}
+
 func TestInstallRecordsARollbackOfNothing(t *testing.T) {
 	t.Parallel()
 	f := newFake()
@@ -619,6 +657,24 @@ func TestUninstall(t *testing.T) {
 	}
 	if r[1]["kept_volume"] != "incus-beacon-log" {
 		t.Errorf("kept_volume %v, want the log volume", r[1]["kept_volume"])
+	}
+}
+
+func TestUninstallFinishesAnAcceptedDeleteOnceCancelled(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.joins = false
+	o := opts()
+	o.Wait = 10 * time.Millisecond
+	_ = Install(context.Background(), f, o)
+	f.instances["incus-beacon"].StatusCode = api.Stopped
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Uninstall(ctx, f, UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.Nop()}); err != nil {
+		t.Fatalf("interrupted once the delete was accepted: %v", err)
+	}
+	if _, ok := f.volumes["default/incus-beacon-state"]; ok {
+		t.Error("state volume left behind")
 	}
 }
 
@@ -800,5 +856,18 @@ func TestInstallLeavesServeDefaults(t *testing.T) {
 	}
 	if s := serveFrom(t, inst); s.Interval != 6*time.Hour || s.Cooldown != 0 || s.Update || s.UpdateWindow != "" {
 		t.Errorf("serve defaults on the installed instance: %+v", s)
+	}
+}
+
+func TestInstallNotifyErrorsNeedsURLs(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	o := opts()
+	o.NotifyErrs = true
+	if err := Install(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := f.instances["incus-beacon"].Config["environment.BEACON_NOTIFY_ERRORS"]; ok {
+		t.Errorf("BEACON_NOTIFY_ERRORS = %q with no notify URL, want it unset", v)
 	}
 }

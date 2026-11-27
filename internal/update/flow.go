@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"path"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -140,12 +141,15 @@ func Apply(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t 
 
 func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) *updater {
 	from := registry.Normalize(t.Ref)
-	return &updater{
-		srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts, digest: next.Digest,
-		log:   opts.Log.With().Str("project", t.Project).Str("instance", t.Instance).Str("to", next.Ref).Logger(),
-		audit: log.AuditFor(opts.Audit, opts.Owner, t.Project, t.Instance).With().Str("from", from).Str("to", next.Ref).Logger(),
-		o:     Outcome{From: from, To: next.Ref},
-	}
+	u := &updater{srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts, digest: next.Digest, o: Outcome{From: from, To: next.Ref}}
+	u.loggers(from, next.Ref)
+	return u
+}
+
+// loggers names the instance and the update's refs in every log and audit record.
+func (u *updater) loggers(from, to string) {
+	u.log = u.opts.Log.With().Str("project", u.t.Project).Str("instance", u.t.Instance).Str("to", to).Logger()
+	u.audit = log.AuditFor(u.opts.Audit, u.opts.Owner, u.t.Project, u.t.Instance).With().Str("from", from).Str("to", to).Logger()
 }
 
 type updater struct {
@@ -348,8 +352,8 @@ func (u *updater) abandon(err error) (Outcome, error) {
 // recover rolls back an update whose claim expired, from what the claim recorded.
 func (u *updater) recover(ctx context.Context, c claim) (Outcome, error) {
 	u.c, u.o.To, u.o.From = c, c.To, cmp.Or(c.FromRef, u.o.From)
-	u.log = u.opts.Log.With().Str("project", u.t.Project).Str("instance", u.t.Instance).Str("to", c.To).Logger()
-	u.audit = log.AuditFor(u.opts.Audit, u.opts.Owner, u.t.Project, u.t.Instance).With().Str("from", u.o.From).Str("to", c.To).Str("op", c.Snapshot).Logger()
+	u.loggers(u.o.From, c.To)
+	u.audit = u.audit.With().Str("op", c.Snapshot).Logger()
 	for _, v := range c.Volumes {
 		pool, name, _ := strings.Cut(v, "/")
 		u.vols = append(u.vols, volume{pool: pool, name: name})
@@ -548,7 +552,7 @@ func (u *updater) release(ctx context.Context) error {
 func (u *updater) refusal() string {
 	cfg := u.inst.ExpandedConfig
 	switch {
-	case u.compose() && u.inst.Config["user.image_alias"] == "":
+	case u.compose() && u.inst.Config[incus.RefFromCompose] == "":
 		return "managed by incus-compose, but has no user.image_alias for the image override to name"
 	case isBeacon(cfg, u.o.To):
 		return "an incus-beacon instance; use incus-beacon upgrade"
@@ -586,18 +590,17 @@ func isBeacon(cfg map[string]string, to string) bool {
 	return err == nil && path.Base(ref.Repository) == "incus-beacon"
 }
 
+// leadingVersion reads major.minor as Incus's own version.Parse does, ignoring what follows.
+var leadingVersion = regexp.MustCompile(`^([0-9]+)\.([0-9]+)`)
+
 // atLeast compares the major and minor parts of an Incus version such as 7.6 or 7.6.1.
 func atLeast(v string, major, minor int) bool {
-	parts := strings.SplitN(v, ".", 3)
-	if len(parts) < 2 {
+	m := leadingVersion.FindStringSubmatch(v)
+	if m == nil {
 		return false
 	}
-	digits := strings.IndexFunc(parts[1], func(r rune) bool { return r < '0' || r > '9' })
-	if digits < 0 {
-		digits = len(parts[1])
-	}
-	ma, err := strconv.Atoi(parts[0])
-	mi, err2 := strconv.Atoi(parts[1][:digits])
+	ma, err := strconv.Atoi(m[1])
+	mi, err2 := strconv.Atoi(m[2])
 	if err != nil || err2 != nil {
 		return false
 	}
@@ -748,7 +751,7 @@ func (u *updater) startOld(ctx context.Context) error {
 }
 
 func (u *updater) compose() bool {
-	return u.inst.Config["user.incus-compose.managed"] == "true"
+	return incus.ComposeManaged(u.inst.Config)
 }
 
 // setOverride keeps incus-compose on the new image while its file names user.image_alias.
@@ -758,7 +761,7 @@ func (u *updater) setOverride(ctx context.Context) error {
 	}
 	return u.setConfig(ctx, map[string]string{
 		incus.ComposeOverrideKey:   u.c.To,
-		incus.ComposeOverrideOfKey: u.inst.Config["user.image_alias"],
+		incus.ComposeOverrideOfKey: u.inst.Config[incus.RefFromCompose],
 	}, nil)
 }
 

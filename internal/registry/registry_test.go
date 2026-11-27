@@ -197,7 +197,7 @@ func TestRateLimit429(t *testing.T) {
 
 	_, err := c.Head(t.Context(), ref)
 	var rl *RateLimitError
-	if !errors.As(err, &rl) || !errors.Is(err, ErrRateLimited) {
+	if !errors.As(err, &rl) {
 		t.Fatalf("err %v, want a RateLimitError", err)
 	}
 	if d := time.Until(rl.Until); d < 100*time.Second || d > 130*time.Second {
@@ -205,8 +205,8 @@ func TestRateLimit429(t *testing.T) {
 	}
 
 	before := f.count(http.MethodHead) + f.count(http.MethodGet)
-	if _, err := c.Head(t.Context(), ref); !errors.Is(err, ErrRateLimited) {
-		t.Errorf("second call: err %v, want ErrRateLimited", err)
+	if _, err := c.Head(t.Context(), ref); !errors.As(err, &rl) {
+		t.Errorf("second call: err %v, want a RateLimitError", err)
 	}
 	if after := f.count(http.MethodHead) + f.count(http.MethodGet); after != before {
 		t.Errorf("paused host still got %d requests", after-before)
@@ -229,8 +229,9 @@ func TestRateLimitRemainingZeroKeepsHeads(t *testing.T) {
 	if _, err := c.Head(t.Context(), ref); err != nil {
 		t.Errorf("HEAD after remaining=0: %v, want it still allowed", err)
 	}
-	if _, err := c.Resolve(t.Context(), ref, amd64); !errors.Is(err, ErrRateLimited) {
-		t.Errorf("GET after remaining=0: err %v, want ErrRateLimited", err)
+	var rl *RateLimitError
+	if _, err := c.Resolve(t.Context(), ref, amd64); !errors.As(err, &rl) {
+		t.Errorf("GET after remaining=0: err %v, want a RateLimitError", err)
 	}
 }
 

@@ -66,6 +66,7 @@ func TestNewTransition(t *testing.T) {
 		kind   string
 	}{
 		{"digest", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "2@sha256:bbbbbbbbbbbb"}, "digest"},
+		{"digest-pinned", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2@sha256:" + strings.Repeat("a", 64), Latest: "2@sha256:bbbbbbbbbbbb"}, "digest"},
 		{"tag", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "3"}, "tag"},
 		{"error", compose, incus.Beacon{Status: "error", Current: "ghcr.io/example/api:2", Error: "registry timeout"}, ""},
 	}
@@ -152,17 +153,17 @@ func TestWithApplied(t *testing.T) {
 	}
 }
 
-func TestShortRefAndTag(t *testing.T) {
+func TestShortRef(t *testing.T) {
 	t.Parallel()
-	for ref, want := range map[string][2]string{
-		"docker.io/library/nginx:1.27":     {"nginx:1.27", "1.27"},
-		"docker.io/grafana/grafana:11":     {"grafana/grafana:11", "11"},
-		"ghcr.io/example/api:2":            {"ghcr.io/example/api:2", "2"},
-		"registry.example.com:5000/app":    {"registry.example.com:5000/app", ""},
-		"registry.example.com:5000/app:v3": {"registry.example.com:5000/app:v3", "v3"},
+	for ref, want := range map[string]string{
+		"docker.io/library/nginx:1.27":     "nginx:1.27",
+		"docker.io/grafana/grafana:11":     "grafana/grafana:11",
+		"ghcr.io/example/api:2":            "ghcr.io/example/api:2",
+		"registry.example.com:5000/app":    "registry.example.com:5000/app",
+		"registry.example.com:5000/app:v3": "registry.example.com:5000/app:v3",
 	} {
-		if got := [2]string{shortRef(ref), tagOf(ref)}; got != want {
-			t.Errorf("%s: short, tag = %q, want %q", ref, got, want)
+		if got := shortRef(ref); got != want {
+			t.Errorf("shortRef(%q) = %q, want %q", ref, got, want)
 		}
 	}
 }
@@ -453,6 +454,9 @@ func TestWithTag(t *testing.T) {
 		"registry.example.com:5000/app:2":                         "registry.example.com:5000/app:1.31",
 		"registry.example.com:5000/app":                           "registry.example.com:5000/app:1.31",
 		"ghcr.io/example/api:2@sha256:" + strings.Repeat("a", 64): "ghcr.io/example/api:1.31",
+		"ghcr.io/example/api:2@sha512:aaaa":                       "ghcr.io/example/api:1.31",
+		"registry.example.com:5000/App:2":                         "registry.example.com:5000/App:1.31",
+		"registry.example.com:5000/App":                           "registry.example.com:5000/App:1.31",
 	} {
 		if got := withTag(ref, "1.31"); got != want {
 			t.Errorf("withTag(%q) = %q, want %q", ref, got, want)

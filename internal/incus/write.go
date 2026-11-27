@@ -111,14 +111,31 @@ func WriteUpdate(ctx context.Context, srv incusclient.InstanceServer, t Target, 
 }
 
 func write(ctx context.Context, srv incusclient.InstanceServer, t Target, keys map[string]string, drop []string) error {
-	project := srv.UseProject(t.Project)
+	return UpdateInstance(ctx, srv.UseProject(t.Project), t.Instance, func(put *api.InstancePut) error {
+		for _, k := range drop {
+			delete(put.Config, k)
+		}
+		for k, v := range keys {
+			if v == "" {
+				delete(put.Config, k)
+			} else {
+				put.Config[k] = v
+			}
+		}
+		return nil
+	})
+}
+
+// UpdateInstance applies change to a fresh read of the instance and writes it under that ETag,
+// reading again once on a 412 and backing off while another operation holds the instance.
+func UpdateInstance(ctx context.Context, srv incusclient.InstanceServer, name string, change func(*api.InstancePut) error) error {
 	var err error
 	conflicts, wait := 0, busyRetry
 	for {
 		if err = ctx.Err(); err != nil {
 			return err
 		}
-		err = writeOnce(project, t.Instance, keys, drop)
+		err = updateOnce(ctx, srv, name, change)
 		if api.StatusErrorCheck(err, http.StatusPreconditionFailed) && conflicts == 0 {
 			conflicts++
 			continue
@@ -136,7 +153,7 @@ func write(ctx context.Context, srv incusclient.InstanceServer, t Target, keys m
 	return err
 }
 
-func writeOnce(srv incusclient.InstanceServer, name string, keys map[string]string, drop []string) error {
+func updateOnce(ctx context.Context, srv incusclient.InstanceServer, name string, change func(*api.InstancePut) error) error {
 	inst, etag, err := srv.GetInstance(name)
 	if err != nil {
 		return err
@@ -145,19 +162,24 @@ func writeOnce(srv incusclient.InstanceServer, name string, keys map[string]stri
 	if put.Config == nil {
 		put.Config = map[string]string{}
 	}
-	for _, k := range drop {
-		delete(put.Config, k)
-	}
-	for k, v := range keys {
-		if v == "" {
-			delete(put.Config, k)
-		} else {
-			put.Config[k] = v
-		}
+	if err := change(&put); err != nil {
+		return err
 	}
 	op, err := srv.UpdateInstance(name, put, etag)
 	if err != nil {
 		return err
 	}
-	return op.Wait()
+	wctx, cancel := OpContext(ctx)
+	defer cancel()
+	return op.WaitContext(wctx)
+}
+
+// OpContext is for waiting on an operation Incus has accepted: Incus runs it on whether or not
+// anyone waits, so the wait keeps ctx's deadline but not its cancellation.
+func OpContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached := context.WithoutCancel(ctx)
+	if d, ok := ctx.Deadline(); ok {
+		return context.WithDeadline(detached, d)
+	}
+	return detached, func() {}
 }

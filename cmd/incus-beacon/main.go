@@ -6,15 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 	_ "time/tzdata" // update windows read TZ; the image has no zoneinfo
 
-	incusclient "github.com/lxc/incus/v7/client"
 	"github.com/rs/zerolog"
 
 	"github.com/tallica/incus-beacon/internal/check"
@@ -60,7 +57,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return exitOK
 	}
 
-	common := commonOf(cfg)
+	common := cfg.CommonOf()
 	logger, err := log.New(stderr, common.LogLevel, common.LogFormat, common.LogColor)
 	if err != nil {
 		fmt.Fprintln(stderr, "incus-beacon:", err)
@@ -71,27 +68,6 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	defer closer.Close()
 	audit = audit.With().Str("version", version.Version).Logger()
 	return dispatch(ctx, cfg, logger, audit, stdout)
-}
-
-func commonOf(cfg *config.Config) config.Common {
-	switch {
-	case cfg.Check != nil:
-		return cfg.Check.Common
-	case cfg.Status != nil:
-		return cfg.Status.Common
-	case cfg.Install != nil:
-		return cfg.Install.Common
-	case cfg.Configure != nil:
-		return cfg.Configure.Common
-	case cfg.Upgrade != nil:
-		return cfg.Upgrade.Common
-	case cfg.Uninstall != nil:
-		return cfg.Uninstall.Common
-	case cfg.Update != nil:
-		return cfg.Update.Common
-	default:
-		return cfg.Serve.Common
-	}
 }
 
 func dispatch(ctx context.Context, cfg *config.Config, logger, audit zerolog.Logger, stdout io.Writer) int {
@@ -130,19 +106,11 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	if err != nil {
 		return err
 	}
-	targets, err := incus.Targets(ctx, srv, incus.ListOptions{
-		Projects: c.Projects,
-		Instance: c.Instance,
-		WatchAll: c.Watch == config.WatchAll,
-	})
+	targets, err := incus.Targets(ctx, srv, listOptions(c.Common, c.Instance))
 	if err != nil {
 		return err
 	}
-	reg, err := registry.New(registry.Options{
-		AuthFile:  c.RegistryAuthFile,
-		Timeout:   c.Timeout,
-		UserAgent: userAgent(),
-	})
+	reg, err := newRegistry(c.Registry, nil)
 	if err != nil {
 		return err
 	}
@@ -151,7 +119,7 @@ func runCheck(ctx context.Context, c *config.Check, logger zerolog.Logger, stdou
 	failed := 0
 	if c.Write {
 		var written int
-		written, failed = writeResults(ctx, srv, results, logger, nil)
+		written, failed = serve.WriteResults(ctx, srv, results, logger, nil)
 		logger.Info().Int("written", written).Int("unchanged", len(results)-written-failed).
 			Int("failed", failed).Msg("status recorded")
 	}
@@ -169,7 +137,7 @@ func runUpdate(ctx context.Context, c *config.Update, logger, audit zerolog.Logg
 	if err != nil {
 		return err
 	}
-	targets, err := incus.Targets(ctx, srv, incus.ListOptions{Projects: c.Projects, Instance: c.Instance, WatchAll: c.Watch == config.WatchAll})
+	targets, err := incus.Targets(ctx, srv, listOptions(c.Common, c.Instance))
 	if err != nil {
 		return err
 	}
@@ -180,11 +148,11 @@ func runUpdate(ctx context.Context, c *config.Update, logger, audit zerolog.Logg
 	default:
 		return fmt.Errorf("%s is in several projects; give --project", c.Instance)
 	}
-	reg, err := registry.New(registry.Options{AuthFile: c.RegistryAuthFile, Timeout: c.Timeout, UserAgent: userAgent()})
+	reg, err := newRegistry(c.Registry, nil)
 	if err != nil {
 		return err
 	}
-	opts := update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger, Audit: audit}
+	opts := updateOptions(c.UpdateFlags, logger, audit)
 	// A claim first: an interrupted update can leave it current on an ungated image.
 	if t := targets[0]; t.Claim != "" {
 		if c.DryRun {
@@ -258,53 +226,15 @@ func printOutcome(w io.Writer, o update.Outcome, snapshot, dropped string) {
 	}
 }
 
-// writeResults goes on after a failed write so the report still covers all.
-func writeResults(ctx context.Context, srv incusclient.InstanceServer, results []check.Result, logger zerolog.Logger,
-	onWrite func(t incus.Target, next incus.Beacon),
-) (written, failed int) {
-	now := time.Now()
-	for i := range results {
-		r := &results[i]
-		if claimedElsewhere(r.Target, now) {
-			continue
-		}
-		next := check.Beacon(*r, now)
-		changed, err := incus.WriteStatus(ctx, srv, r.Target, next)
-		if err != nil {
-			logger.Warn().Err(err).Str("project", r.Target.Project).Str("instance", r.Target.Instance).Msg("status not recorded")
-			failed++
-			continue
-		}
-		if changed {
-			written++
-			if onWrite != nil {
-				onWrite(r.Target, next)
-			}
-		}
-	}
-	return written, failed
-}
-
-// claimedElsewhere leaves an instance's status to the process updating it: docs/ARCHITECTURE.md#updating says why.
-func claimedElsewhere(t incus.Target, now time.Time) bool {
-	return t.Claim != "" && !update.Abandoned(t.Claim, now)
-}
-
 func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger) error {
 	logger.Info().Str("version", version.String()).Msg("incus-beacon")
 	set := &metrics.Set{}
 	set.Gauge("incus_beacon_build_info", "Always 1; the version label is the running build.", "version").
 		Set(1, version.Version)
-	reg, err := registry.New(registry.Options{
-		AuthFile:  c.RegistryAuthFile,
-		Timeout:   c.Timeout,
-		UserAgent: userAgent(),
-		Metrics:   set,
-	})
+	reg, err := newRegistry(c.Registry, set)
 	if err != nil {
 		return err
 	}
-	engine := check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update}, logger)
 	sender, err := notify.New(notify.Options{
 		URLs:    c.NotifyURLs,
 		URLFile: c.NotifyURLFile,
@@ -317,67 +247,18 @@ func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger
 	}
 	conn := &incus.Conn{Options: connectOptions(c.Common)}
 	watchAll := c.Watch == config.WatchAll
-	seen := incus.Seen{}
 	runner := &update.Runner{
 		Enabled: c.Update, Window: c.Window, Registry: reg, Metrics: set, Log: logger,
-		Options: update.Options{StopTimeout: c.StopTimeout, Wait: c.Wait, Settle: c.Settle, Keep: c.Keep, Log: logger, Audit: audit},
+		Options: updateOptions(c.UpdateFlags, logger, audit),
 	}
 	runner.Init()
-
-	checkWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) ([]check.Result, serve.Summary, []notify.Transition) {
-		for _, t := range targets {
-			seen.Record(t)
-		}
-		results := engine.Run(ctx, targets)
-		sum := serve.Summary{Targets: len(results), Statuses: map[incus.Key]check.Status{}}
-		var changes []notify.Transition
-		sum.Written, sum.Failed = writeResults(ctx, srv, results, logger, func(t incus.Target, next incus.Beacon) {
-			seen.Wrote(t.Key(), next)
-			if notify.Notable(t.Beacon, next, c.NotifyErrors) {
-				changes = append(changes, notify.NewTransition(t, next))
-			}
-		})
-		for i := range results {
-			sum.Statuses[results[i].Target.Key()] = results[i].Status
-		}
-		return results, sum, changes
-	}
-	// checkAndWrite then applies updates, re-checks what they changed and sends one message.
-	checkAndWrite := func(ctx context.Context, srv incusclient.InstanceServer, targets []incus.Target) serve.Summary {
-		results, sum, changes := checkWrite(ctx, srv, targets)
-		var rechecks []incus.Target
-		for _, d := range runner.Run(ctx, srv, results) {
-			if d.Notable {
-				o := d.Outcome
-				changes = notify.WithApplied(changes, notify.NewApplied(d.Target, o.Status, o.From, o.To, o.Reason))
-			}
-			if !d.Changed() {
-				continue
-			}
-			if t, ok, err := incus.TargetOf(ctx, srv, d.Target.Key(), watchAll); err == nil && ok {
-				rechecks = append(rechecks, t)
-			}
-		}
-		// The status keys of an updated instance still describe its old image.
-		if len(rechecks) > 0 {
-			_, re, more := checkWrite(ctx, srv, rechecks)
-			sum.Written, sum.Failed = sum.Written+re.Written, sum.Failed+re.Failed
-			maps.Copy(sum.Statuses, re.Statuses)
-			changes = append(changes, more...)
-		}
-		for _, st := range sum.Statuses {
-			switch st {
-			case check.UpdateAvailable:
-				sum.Updates++
-			case check.Error:
-				sum.Errors++
-			case check.Current, check.Unknown:
-			}
-		}
-		if len(changes) > 0 {
-			sender.Notify(ctx, notify.Batch{Server: serverName(srv, logger), Transitions: changes})
-		}
-		return sum
+	checker := &serve.Checker{
+		Engine:       check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update}, logger),
+		Runner:       runner,
+		Sender:       sender,
+		NotifyErrors: c.NotifyErrors,
+		WatchAll:     watchAll,
+		Log:          logger,
 	}
 	warned := map[incus.Key]bool{} // only the cycle goroutine touches it
 	cycle := func(ctx context.Context) (serve.Summary, error) {
@@ -385,13 +266,13 @@ func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger
 		if err != nil {
 			return serve.Summary{}, err
 		}
-		targets, err := incus.Targets(ctx, srv, incus.ListOptions{Projects: c.Projects, WatchAll: watchAll})
+		targets, err := incus.Targets(ctx, srv, listOptions(c.Common, ""))
 		if err != nil {
 			conn.Drop()
 			return serve.Summary{}, err
 		}
 		warnLegacy(logger, targets, warned)
-		return checkAndWrite(ctx, srv, targets), nil
+		return checker.Run(ctx, srv, targets), nil
 	}
 	targeted := func(ctx context.Context, keys []incus.Key) (serve.Summary, error) {
 		srv, err := conn.Get(ctx)
@@ -405,11 +286,11 @@ func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger
 				logger.Debug().Err(err).Msg("instance not read") // deleted since the event, most often
 				continue
 			}
-			if ok && seen.Changed(t) {
+			if ok && checker.Changed(t) {
 				targets = append(targets, t)
 			}
 		}
-		return checkAndWrite(ctx, srv, targets), nil
+		return checker.Run(ctx, srv, targets), nil
 	}
 
 	s := &serve.Server{Interval: c.Interval, Cycle: cycle, Log: logger, Metrics: set}
@@ -441,25 +322,12 @@ func warnLegacy(logger zerolog.Logger, targets []incus.Target, warned map[incus.
 	}
 }
 
-// serverName names the Incus server in notifications; a cluster gives the member.
-func serverName(srv incusclient.InstanceServer, logger zerolog.Logger) string {
-	s, _, err := srv.GetServer()
-	if err != nil {
-		logger.Debug().Err(err).Msg("server name not read")
-		return ""
-	}
-	return s.Environment.ServerName
-}
-
 func runStatus(ctx context.Context, c *config.Status, stdout io.Writer) error {
 	srv, err := incus.Connect(ctx, connectOptions(c.Common))
 	if err != nil {
 		return err
 	}
-	targets, err := incus.Targets(ctx, srv, incus.ListOptions{
-		Projects: c.Projects,
-		WatchAll: c.Watch == config.WatchAll,
-	})
+	targets, err := incus.Targets(ctx, srv, listOptions(c.Common, ""))
 	if err != nil {
 		return err
 	}
@@ -471,28 +339,20 @@ func runInstall(ctx context.Context, c *config.Install, logger, audit zerolog.Lo
 		return err
 	}
 	image := imageFor(c.Image, logger)
-	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
+	srv, err := incus.Connect(ctx, remoteOptions(c.Common))
 	if err != nil {
 		return err
 	}
 	return install.Install(ctx, srv, install.Options{
-		Name:         c.Name,
-		Image:        image,
-		StoragePool:  c.StoragePool,
-		APIURL:       c.APIURL,
-		Projects:     c.Projects,
-		Watch:        c.Watch,
-		Events:       c.Events,
-		Track:        c.Track,
-		NotifyURLs:   c.NotifyURLs,
-		NotifyErrs:   c.NotifyErrs,
-		Interval:     c.Interval,
-		Cooldown:     c.Cooldown,
-		Update:       c.Update,
-		UpdateWindow: c.UpdateWindow,
-		Wait:         c.Wait,
-		Log:          logger,
-		Audit:        audit,
+		Name:        c.Name,
+		Image:       image,
+		StoragePool: c.StoragePool,
+		Projects:    c.Projects,
+		Watch:       c.Watch,
+		Settings:    c.Settings,
+		Wait:        c.Wait,
+		Log:         logger,
+		Audit:       audit,
 	})
 }
 
@@ -530,7 +390,7 @@ func runConfigure(ctx context.Context, c *config.Configure, logger, audit zerolo
 		Log:          logger,
 		Audit:        audit,
 	}
-	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
+	srv, err := incus.Connect(ctx, remoteOptions(c.Common))
 	if err != nil {
 		return err
 	}
@@ -547,7 +407,7 @@ func given[T any](c *config.Configure, flagName string, v *T) *T {
 
 func runUpgrade(ctx context.Context, c *config.Upgrade, logger, audit zerolog.Logger) error {
 	image := imageFor(c.Image, logger)
-	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
+	srv, err := incus.Connect(ctx, remoteOptions(c.Common))
 	if err != nil {
 		return err
 	}
@@ -562,7 +422,7 @@ func runUpgrade(ctx context.Context, c *config.Upgrade, logger, audit zerolog.Lo
 }
 
 func runUninstall(ctx context.Context, c *config.Uninstall, logger, audit zerolog.Logger) error {
-	srv, err := incus.Connect(ctx, incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()})
+	srv, err := incus.Connect(ctx, remoteOptions(c.Common))
 	if err != nil {
 		return err
 	}
@@ -586,6 +446,23 @@ func connectOptions(c config.Common) incus.ConnectOptions {
 		StateDir:          c.StateDir,
 		UserAgent:         userAgent(),
 	}
+}
+
+// remoteOptions connects install, configure, upgrade and uninstall, which take only a CLI remote.
+func remoteOptions(c config.Common) incus.ConnectOptions {
+	return incus.ConnectOptions{Remote: c.Remote, RemoteProject: c.RemoteProject, UserAgent: userAgent()}
+}
+
+func listOptions(c config.Common, instance string) incus.ListOptions {
+	return incus.ListOptions{Projects: c.Projects, Instance: instance, WatchAll: c.Watch == config.WatchAll}
+}
+
+func newRegistry(r config.Registry, m *metrics.Set) (*registry.Client, error) {
+	return registry.New(registry.Options{AuthFile: r.RegistryAuthFile, Timeout: r.Timeout, UserAgent: userAgent(), Metrics: m})
+}
+
+func updateOptions(u config.UpdateFlags, logger, audit zerolog.Logger) update.Options {
+	return update.Options{StopTimeout: u.StopTimeout, Wait: u.Wait, Settle: u.Settle, Keep: u.Keep, Log: logger, Audit: audit}
 }
 
 func userAgent() string { return "incus-beacon/" + version.Version }

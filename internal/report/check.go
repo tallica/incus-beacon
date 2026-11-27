@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/tallica/incus-beacon/internal/check"
+	"github.com/tallica/incus-beacon/internal/config"
 )
 
 type CheckRow struct {
@@ -32,7 +33,7 @@ func CheckRows(results []check.Result) []CheckRow {
 }
 
 func WriteCheck(w io.Writer, format string, rows []CheckRow) error {
-	if format == "json" {
+	if format == config.OutputJSON {
 		return writeJSON(w, rows)
 	}
 	table := [][]string{{"PROJECT", "INSTANCE", "STATUS", "IMAGE", "LATEST", "NOTE"}}

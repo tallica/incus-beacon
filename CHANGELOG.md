@@ -13,6 +13,17 @@ get an entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- `configure` and `upgrade` retry when `serve` writes beacon's instance at the
+  same moment, instead of failing with a 412.
+- `upgrade --image` with a pinned `@sha256:` digest compares its tag, so an
+  older release needs `--force`, as it does without a digest.
+- Ctrl-C during `install`'s wait to join reports the interruption, instead of
+  saying the instance did not join and pointing at its log.
+- A notification for an image pinned by tag and digest, `app:1.2@sha256:…`, says
+  "rebuilt" when the tag moves, as it does without the digest.
+
 ## [0.6.0-beta.5] - 2026-11-24
 
 ### Fixed

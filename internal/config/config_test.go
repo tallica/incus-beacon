@@ -188,7 +188,7 @@ func TestProjectFlag(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", cmd, err)
 		}
-		if got, want := commonOf(cfg).Projects, []string{"default", "web"}; !slices.Equal(got, want) {
+		if got, want := cfg.CommonOf().Projects, []string{"default", "web"}; !slices.Equal(got, want) {
 			t.Errorf("%s: projects %q, want %q", cmd, got, want)
 		}
 	}
@@ -210,17 +210,6 @@ func TestStatusHasNoRegistryFlags(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "-project ") {
 		t.Error("status -h lacks -project")
-	}
-}
-
-func commonOf(cfg *Config) Common {
-	switch {
-	case cfg.Check != nil:
-		return cfg.Check.Common
-	case cfg.Status != nil:
-		return cfg.Status.Common
-	default:
-		return cfg.Serve.Common
 	}
 }
 
@@ -534,6 +523,23 @@ func TestSizeValueString(t *testing.T) {
 	for n, want := range map[int64]string{10 << 20: "10MiB", 4 << 10: "4KiB", 1<<20 + 1: "1048577", 0: "0"} {
 		if got := (*sizeValue)(&n).String(); got != want {
 			t.Errorf("String(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestCommonOfEveryCommand(t *testing.T) {
+	t.Parallel()
+	extra := map[string][]string{CmdUpdate: {"--instance", "web"}, CmdConfigure: {"--events"}}
+	for _, cmd := range Commands {
+		if cmd == CmdVersion {
+			continue
+		}
+		cfg, err := parse(t, nil, append([]string{cmd, "--log-level", "warn"}, extra[cmd]...)...)
+		if err != nil {
+			t.Fatalf("%s: %v", cmd, err)
+		}
+		if got := cfg.CommonOf().LogLevel; got != "warn" {
+			t.Errorf("%s: CommonOf().LogLevel = %q, want the flag's warn", cmd, got)
 		}
 	}
 }

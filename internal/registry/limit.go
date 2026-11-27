@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -9,8 +8,6 @@ import (
 	"sync"
 	"time"
 )
-
-var ErrRateLimited = errors.New("rate limited")
 
 type RateLimitError struct {
 	Host  string
@@ -20,8 +17,6 @@ type RateLimitError struct {
 func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("%s: rate limited until %s", e.Host, e.Until.UTC().Format(time.RFC3339))
 }
-
-func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited }
 
 const defaultBackoff = time.Hour
 

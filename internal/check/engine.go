@@ -216,18 +216,8 @@ func keyOf(p plan) lookupKey {
 }
 
 func (e *Engine) lookup(ctx context.Context, plans []plan, digests map[lookupKey]*digestOutcome, tagLists map[string]*tagsOutcome) {
-	var (
-		wg  sync.WaitGroup
-		mu  sync.Mutex
-		sem = make(chan struct{}, e.concurrency)
-	)
-	run := func(f func()) {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			f()
-		})
-	}
+	var mu sync.Mutex
+	run, wait := e.pool()
 	started := map[lookupKey]bool{}
 	for _, p := range plans {
 		k := keyOf(p)
@@ -256,7 +246,20 @@ func (e *Engine) lookup(ctx context.Context, plans []plan, digests map[lookupKey
 			mu.Unlock()
 		})
 	}
-	wg.Wait()
+	wait()
+}
+
+// pool runs what it is given with at most e.concurrency at once; wait returns once all are done.
+func (e *Engine) pool() (run func(func()), wait func()) {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, e.concurrency)
+	return func(f func()) {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			f()
+		})
+	}, wg.Wait
 }
 
 func (e *Engine) image(ctx context.Context, ref registry.Ref, p registry.Platform, k lookupKey) (registry.Image, error) {
@@ -320,25 +323,17 @@ func (e *Engine) cooldownFor(pol policy.Policy) time.Duration {
 
 // cool falls back from updates younger than the cooldown to one old enough.
 func (e *Engine) cool(ctx context.Context, plans []plan) {
-	var (
-		wg     sync.WaitGroup
-		sem    = make(chan struct{}, e.concurrency)
-		images = newMemo[lookupKey, registry.Image]()
-		now    = e.now()
-	)
+	images, now := newMemo[lookupKey, registry.Image](), e.now()
+	run, wait := e.pool()
 	for i := range plans {
 		p := &plans[i]
 		cd := e.cooldownFor(p.target.Policy)
 		if cd <= 0 || p.result.Status != UpdateAvailable {
 			continue
 		}
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			e.coolOne(ctx, p, cd, now, images)
-		})
+		run(func() { e.coolOne(ctx, p, cd, now, images) })
 	}
-	wg.Wait()
+	wait()
 }
 
 func (e *Engine) coolOne(ctx context.Context, p *plan, cd time.Duration, now time.Time, images *memo[lookupKey, registry.Image]) {
@@ -392,20 +387,15 @@ func (e *Engine) coolOne(ctx context.Context, p *plan, cd time.Duration, now tim
 
 // pinDigests does Options.Pin; a failed lookup leaves the update on the tag.
 func (e *Engine) pinDigests(ctx context.Context, plans []plan) {
-	var (
-		wg     sync.WaitGroup
-		sem    = make(chan struct{}, e.concurrency)
-		images = newMemo[lookupKey, registry.Image]()
-	)
+	images := newMemo[lookupKey, registry.Image]()
+	run, wait := e.pool()
 	for i := range plans {
 		p := &plans[i]
 		r := p.result
 		if r.Status != UpdateAvailable || r.LatestDigest != "" {
 			continue
 		}
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
+		run(func() {
 			ref := p.ref
 			ref.Tag, ref.Digest = r.Latest, ""
 			k := lookupKey{ref: ref.String(), platform: p.platform.String()}
@@ -417,7 +407,7 @@ func (e *Engine) pinDigests(ctx context.Context, plans []plan) {
 			r.LatestDigest = img.Digest
 		})
 	}
-	wg.Wait()
+	wait()
 }
 
 // fail clears what an earlier step found, so an error never carries a latest ref or digest.

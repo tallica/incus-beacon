@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -21,6 +22,11 @@ import (
 func (f *fake) UpdateInstance(name string, put api.InstancePut, _ string) (incusclient.Operation, error) {
 	if f.failUpdate != nil {
 		return nil, f.failUpdate
+	}
+	if f.conflicts > 0 {
+		f.conflicts--
+		f.instances[name].Config["user.incus-beacon.status"] = "current"
+		return nil, api.StatusErrorf(http.StatusPreconditionFailed, "ETag mismatch")
 	}
 	f.calls = append(f.calls, "update instance "+name)
 	f.instances[name].InstancePut = put
@@ -369,5 +375,20 @@ func TestConfigureRefuses(t *testing.T) {
 		if len(f.states) != 0 || slices.ContainsFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "update") }) {
 			t.Errorf("%s: calls %v, states %v, want the instance untouched", tt.name, f.calls, f.states)
 		}
+	}
+}
+
+func TestConfigureRetriesAConcurrentWrite(t *testing.T) {
+	t.Parallel()
+	f := configuredFake()
+	f.conflicts = 1
+	o := configureOpts()
+	o.Track = new("digest")
+	if err := Configure(context.Background(), f, o); err != nil {
+		t.Fatal(err)
+	}
+	cfg := f.instances["incus-beacon"].Config
+	if cfg["user.incus-beacon.track"] != "digest" || cfg["user.incus-beacon.status"] != "current" {
+		t.Errorf("config %v, want the new track beside the status written meanwhile", cfg)
 	}
 }

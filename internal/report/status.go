@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/tallica/incus-beacon/internal/check"
+	"github.com/tallica/incus-beacon/internal/config"
 	"github.com/tallica/incus-beacon/internal/incus"
 )
 
@@ -30,7 +31,7 @@ func StatusRows(targets []incus.Target, onlyUpdates bool) []StatusRow {
 	rows := []StatusRow{}
 	for i := range targets {
 		t := &targets[i]
-		if onlyUpdates && t.Beacon.Status != "update-available" {
+		if onlyUpdates && t.Beacon.Status != string(check.UpdateAvailable) {
 			continue
 		}
 		r := StatusRow{
@@ -58,7 +59,7 @@ func StatusRows(targets []incus.Target, onlyUpdates bool) []StatusRow {
 }
 
 func WriteStatus(w io.Writer, format string, rows []StatusRow) error {
-	if format == "json" {
+	if format == config.OutputJSON {
 		return writeJSON(w, rows)
 	}
 	table := [][]string{{"PROJECT", "INSTANCE", "STATUS", "IMAGE", "LATEST", "SINCE", "NOTE"}}

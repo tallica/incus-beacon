@@ -12,7 +12,9 @@ import (
 	"github.com/lxc/incus/v7/shared/api"
 	"github.com/rs/zerolog"
 
+	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
+	"github.com/tallica/incus-beacon/internal/registry"
 	"github.com/tallica/incus-beacon/internal/semver"
 	"github.com/tallica/incus-beacon/internal/update"
 )
@@ -115,17 +117,11 @@ func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, poo
 	if err != nil {
 		return err
 	}
-	// findInstance drops the ETag, so the update reads its own.
-	inst, etag, err := srv.GetInstance(name)
-	if err == nil {
-		put := inst.Writable()
-		put.Config = with(put.Config, "environment.BEACON_AUDIT_LOG", auditFile)
+	err = incus.UpdateInstance(ctx, srv, name, func(put *api.InstancePut) error {
+		put.Config = with(put.Config, envPrefix+"AUDIT_LOG", auditFile)
 		put.Devices = with(put.Devices, logDev, disk(pool, vol, logDir))
-		var op incusclient.Operation
-		if op, err = srv.UpdateInstance(name, put, etag); err == nil {
-			err = op.WaitContext(ctx)
-		}
-	}
+		return nil
+	})
 	if err != nil {
 		err = fmt.Errorf("add the %s device to %s: %w", logDev, name, err)
 		if created {
@@ -153,7 +149,7 @@ func installed(srv incusclient.InstanceServer, name string, logger zerolog.Logge
 	if err != nil {
 		return srv, nil, err
 	}
-	if inst.Devices[stateDev]["source"] != VolumeName(name) || inst.Config["environment.BEACON_TOKEN_FILE"] != tokenFile {
+	if inst.Devices[stateDev]["source"] != VolumeName(name) || inst.Config[envPrefix+"TOKEN_FILE"] != tokenFile {
 		return srv, nil, fmt.Errorf("instance %s was not created by install", name)
 	}
 	return srv, inst, nil
@@ -174,13 +170,13 @@ func older(tag, than string) bool {
 	return ok && ok2 && v.SameShape(w) && v.Less(w)
 }
 
-// tagOf is the tag after the last colon, unless that colon is a registry port.
+// tagOf is ref's tag, "" when ref doesn't parse.
 func tagOf(ref string) string {
-	i := strings.LastIndexByte(ref, ':')
-	if i < 0 || strings.Contains(ref[i:], "/") {
+	r, err := registry.ParseRef(ref)
+	if err != nil {
 		return ""
 	}
-	return ref[i+1:]
+	return r.Tag
 }
 
 func waitReady(ctx context.Context, srv incusclient.InstanceServer, name string, wait time.Duration) error {
