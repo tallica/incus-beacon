@@ -96,6 +96,27 @@ func TestWriteWaitsOutABusyInstance(t *testing.T) {
 	}
 }
 
+func TestOpContextKeepsTheDeadlineButNotTheCancellation(t *testing.T) {
+	t.Parallel()
+	deadline := time.Now().Add(time.Hour)
+	parent, cancel := context.WithDeadline(t.Context(), deadline)
+	ctx, stop := OpContext(parent)
+	defer stop()
+	cancel()
+	if err := ctx.Err(); err != nil {
+		t.Errorf("err %v once the caller cancelled, want nil", err)
+	}
+	if d, ok := ctx.Deadline(); !ok || !d.Equal(deadline) {
+		t.Errorf("deadline %v %v, want the caller's %v", d, ok, deadline)
+	}
+
+	ctx, stop = OpContext(context.Background())
+	defer stop()
+	if _, ok := ctx.Deadline(); ok {
+		t.Error("a deadline from a caller without one")
+	}
+}
+
 func TestWriteRetriesOneHeldUpByAnotherUpdate(t *testing.T) {
 	t.Parallel()
 	f, tg := writeFixture()

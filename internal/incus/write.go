@@ -169,5 +169,17 @@ func updateOnce(ctx context.Context, srv incusclient.InstanceServer, name string
 	if err != nil {
 		return err
 	}
-	return op.WaitContext(ctx)
+	wctx, cancel := OpContext(ctx)
+	defer cancel()
+	return op.WaitContext(wctx)
+}
+
+// OpContext is for waiting on an operation Incus has accepted: Incus runs it on whether or not
+// anyone waits, so the wait keeps ctx's deadline but not its cancellation.
+func OpContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached := context.WithoutCancel(ctx)
+	if d, ok := ctx.Deadline(); ok {
+		return context.WithDeadline(detached, d)
+	}
+	return detached, func() {}
 }
