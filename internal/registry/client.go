@@ -269,12 +269,10 @@ func (c *Client) refused(ctx context.Context, ref Ref) error {
 }
 
 func (c *Client) classify(ctx context.Context, ref Ref, err error) error {
-	var rl *RateLimitError
-	if errors.As(err, &rl) {
+	if rl, ok := errors.AsType[*RateLimitError](err); ok {
 		return rl
 	}
-	var resp *errcode.ErrorResponse
-	if errors.As(err, &resp) {
+	if resp, ok := errors.AsType[*errcode.ErrorResponse](err); ok {
 		switch resp.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return fmt.Errorf("%s: %w", ref, c.refused(ctx, ref))

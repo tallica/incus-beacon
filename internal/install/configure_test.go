@@ -62,7 +62,7 @@ func configuredFake() *fake {
 	inst.Config["environment.BEACON_INCUS"] = "https://192.168.1.10:8443"
 	inst.Devices[stateDev]["pool"] = "default"
 	f.certs = []api.Certificate{
-		{Fingerprint: "fp-incus-beacon", CertificatePut: api.CertificatePut{Name: "incus-beacon"}},
+		{Fingerprint: "fp-incus-beacon", Name: "incus-beacon"},
 	}
 	f.projects = []string{"default", "apps"}
 	return f

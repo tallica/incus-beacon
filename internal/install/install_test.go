@@ -107,20 +107,20 @@ func (f *fake) UseProject(p string) incusclient.InstanceServer {
 
 func (f *fake) GetServer() (*api.Server, string, error) {
 	return &api.Server{
-		ServerPut: api.ServerPut{Config: map[string]string{"core.https_address": f.httpsAddress}},
+		Config: map[string]string{"core.https_address": f.httpsAddress},
 	}, "", nil
 }
 
 func (f *fake) GetProfile(string) (*api.Profile, string, error) {
-	return &api.Profile{ProfilePut: api.ProfilePut{Devices: map[string]map[string]string{
+	return &api.Profile{Devices: map[string]map[string]string{
 		"root": {"type": "disk", "path": "/", "pool": "default"},
 		"eth0": {"type": "nic", "network": "incusbr0", "name": "eth0"},
-	}}}, "", nil
+	}}, "", nil
 }
 
 func (f *fake) GetNetwork(name string) (*api.Network, string, error) {
 	return &api.Network{
-		NetworkPut: api.NetworkPut{Config: map[string]string{"ipv4.address": "192.168.1.10/24"}},
+		Config: map[string]string{"ipv4.address": "192.168.1.10/24"},
 	}, "", nil
 }
 

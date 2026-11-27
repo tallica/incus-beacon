@@ -134,7 +134,7 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	// configured also refuses a missing project: Incus accepts a token for one, and the instance then never joins.
 	s, track := opts.Settings, trackFor(opts.Track, opts.Image)
 	s.NotifyErrs = s.NotifyErrs && len(s.NotifyURLs) > 0 // with nothing to notify, serve would refuse the flag
-	fresh := &api.Instance{InstancePut: api.InstancePut{Config: map[string]string{}}}
+	fresh := &api.Instance{Config: map[string]string{}}
 	env, err := configured(srv, fresh, ConfigureOptions{
 		APIURL:       &apiURL,
 		Projects:     &opts.Projects,
@@ -217,12 +217,10 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		Source: api.InstanceSource{
 			Type: "image", Protocol: "oci", Server: server, Alias: alias,
 		},
-		InstancePut: api.InstancePut{
-			Config: env,
-			Devices: map[string]map[string]string{
-				stateDev: disk(pool, vol, stateDir),
-				logDev:   disk(pool, logVol, logDir),
-			},
+		Config: env,
+		Devices: map[string]map[string]string{
+			stateDev: disk(pool, vol, stateDir),
+			logDev:   disk(pool, logVol, logDir),
 		},
 	})
 	if err == nil {
@@ -361,10 +359,10 @@ func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
 	err := srv.CreateStoragePoolVolume(pool, api.StorageVolumesPost{
 		Name: vol,
 		Type: "custom",
-		StorageVolumePut: api.StorageVolumePut{Config: map[string]string{
+		Config: map[string]string{
 			"initial.uid": fmt.Sprint(imageUID),
 			"initial.gid": fmt.Sprint(imageUID),
-		}},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("create volume %s: %w", vol, err)
@@ -537,13 +535,11 @@ func detectURL(srv incusclient.InstanceServer, network string) (string, error) {
 
 func createToken(srv incusclient.InstanceServer, name string, projects []string) (token, opID string, err error) {
 	op, err := tokens(srv).CreateCertificateToken(api.CertificatesPost{
-		CertificatePut: api.CertificatePut{
-			Name:       name,
-			Type:       api.CertificateTypeClient,
-			Restricted: len(projects) > 0,
-			Projects:   projects,
-		},
-		Token: true,
+		Name:       name,
+		Type:       api.CertificateTypeClient,
+		Restricted: len(projects) > 0,
+		Projects:   projects,
+		Token:      true,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("create trust token: %w", err)

@@ -1,6 +1,7 @@
 package incus
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -14,15 +15,13 @@ const (
 )
 
 func instance(projectName, name string, local, expanded map[string]string) api.Instance {
-	inst := api.Instance{Name: name, Project: projectName}
-	inst.Config = local
-	inst.ExpandedConfig = map[string]string{}
-	for k, v := range local {
-		inst.ExpandedConfig[k] = v
+	inst := api.Instance{
+		Name: name, Project: projectName,
+		Config:         local,
+		ExpandedConfig: map[string]string{},
 	}
-	for k, v := range expanded {
-		inst.ExpandedConfig[k] = v
-	}
+	maps.Copy(inst.ExpandedConfig, local)
+	maps.Copy(inst.ExpandedConfig, expanded)
 	return inst
 }
 
@@ -37,9 +36,7 @@ func oci(extra map[string]string) map[string]string {
 		"image.architecture":     "x86_64",
 		"image.description":      "docker.io/library/example (OCI)",
 	}
-	for k, v := range extra {
-		m[k] = v
-	}
+	maps.Copy(m, extra)
 	return m
 }
 
@@ -377,7 +374,7 @@ func TestComposeOverrideAfterARecreate(t *testing.T) {
 	const file, override = "docker.io/library/nginx:1.27", "docker.io/library/nginx:1.28"
 	resolve := func(cfg map[string]string) Target {
 		cfg["image.type"], cfg["user.image_alias"], cfg["user.incus-compose.managed"] = "oci", file, "true"
-		inst := &api.Instance{Name: "web-1", InstancePut: api.InstancePut{Config: cfg}, ExpandedConfig: cfg}
+		inst := &api.Instance{Name: "web-1", Config: cfg, ExpandedConfig: cfg}
 		tg, ok := target(nil, inst, true, map[string]*api.ImageSource{})
 		if !ok {
 			t.Fatal("not a target")

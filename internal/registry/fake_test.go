@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -86,9 +87,7 @@ func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
-	for k, v := range f.header {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), f.header)
 	if r.URL.Path == "/v2/" {
 		return
 	}
@@ -179,8 +178,10 @@ func newBlob(t *testing.T, mediaType string, v any) blob {
 
 func manifestBlob(t *testing.T, mediaType string, layers ...string) blob {
 	t.Helper()
-	m := ocispec.Manifest{MediaType: mediaType}
-	m.SchemaVersion = 2
+	m := ocispec.Manifest{
+		MediaType:     mediaType,
+		SchemaVersion: 2,
+	}
 	for _, l := range layers {
 		m.Layers = append(
 			m.Layers,
@@ -203,10 +204,13 @@ func configBlob(t *testing.T, created time.Time) blob {
 // withConfig is a manifest whose config is cfg.
 func withConfig(t *testing.T, cfg blob, layers ...string) blob {
 	t.Helper()
-	m := ocispec.Manifest{MediaType: ocispec.MediaTypeImageManifest, Config: ocispec.Descriptor{
-		MediaType: cfg.mediaType, Digest: digestOf(cfg.digest), Size: int64(len(cfg.body)),
-	}}
-	m.SchemaVersion = 2
+	m := ocispec.Manifest{
+		MediaType: ocispec.MediaTypeImageManifest,
+		Config: ocispec.Descriptor{
+			MediaType: cfg.mediaType, Digest: digestOf(cfg.digest), Size: int64(len(cfg.body)),
+		},
+		SchemaVersion: 2,
+	}
 	for _, l := range layers {
 		m.Layers = append(
 			m.Layers,
@@ -218,8 +222,10 @@ func withConfig(t *testing.T, cfg blob, layers ...string) blob {
 
 func indexBlob(t *testing.T, mediaType string, entries map[string]blob) blob {
 	t.Helper()
-	idx := ocispec.Index{MediaType: mediaType}
-	idx.SchemaVersion = 2
+	idx := ocispec.Index{
+		MediaType:     mediaType,
+		SchemaVersion: 2,
+	}
 	keys := make([]string, 0, len(entries))
 	for k := range entries {
 		keys = append(keys, k)

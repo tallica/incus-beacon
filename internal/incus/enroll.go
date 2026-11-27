@@ -82,8 +82,9 @@ func enroll(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServe
 		return nil, errors.Join(err, commit(false))
 	}
 	err = srv.CreateCertificate(api.CertificatesPost{
-		CertificatePut: api.CertificatePut{Name: tok.ClientName, Type: api.CertificateTypeClient},
-		TrustToken:     token,
+		Name:       tok.ClientName,
+		Type:       api.CertificateTypeClient,
+		TrustToken: token,
 	})
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("redeem trust token: %w", err), commit(false))

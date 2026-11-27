@@ -73,10 +73,10 @@ func (f *fakeIncus) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	switch {
 	case r.URL.Path == "/1.0":
-		sync200(w, api.Server{ServerUntrusted: api.ServerUntrusted{
+		sync200(w, api.Server{
 			APIExtensions: []string{"instance_all_projects", "projects"},
 			Auth:          f.auth(),
-		}})
+		})
 	case r.URL.Path == "/1.0/projects":
 		urls := []string{"/1.0/projects/" + api.ProjectDefaultName}
 		for _, inst := range f.instances {

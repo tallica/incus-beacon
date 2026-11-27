@@ -46,15 +46,13 @@ func installedFake() *fake {
 		Name:       "incus-beacon",
 		Project:    "default",
 		StatusCode: api.Running,
-		InstancePut: api.InstancePut{
-			Config: map[string]string{
-				"environment.BEACON_TOKEN_FILE": tokenFile,
-				"image.id":                      oldImage,
-				"volatile.base_image":           "fp-old",
-			},
-			Devices: map[string]map[string]string{
-				stateDev: {"type": "disk", "pool": "default", "source": "incus-beacon-state", "path": stateDir},
-			},
+		Config: map[string]string{
+			"environment.BEACON_TOKEN_FILE": tokenFile,
+			"image.id":                      oldImage,
+			"volatile.base_image":           "fp-old",
+		},
+		Devices: map[string]map[string]string{
+			stateDev: {"type": "disk", "pool": "default", "source": "incus-beacon-state", "path": stateDir},
 		},
 	}
 	f.ready = func(int) bool { return true }

@@ -65,7 +65,7 @@ type fakeIncus struct {
 func (f *fakeIncus) UseProject(string) incusclient.InstanceServer { return f }
 
 func (f *fakeIncus) GetInstance(name string) (*api.Instance, string, error) {
-	return &api.Instance{Name: name, InstancePut: api.InstancePut{Config: maps.Clone(f.config)}}, "etag", nil
+	return &api.Instance{Name: name, Config: maps.Clone(f.config)}, "etag", nil
 }
 
 func (f *fakeIncus) UpdateInstance(_ string, put api.InstancePut, _ string) (incusclient.Operation, error) {

@@ -8,6 +8,7 @@ linters:
     - gocritic
     - makezero
     - misspell
+    - modernize
     - nakedret
     - nilerr
     - prealloc

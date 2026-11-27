@@ -392,7 +392,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			return errors.Join(errs...)
 		}
 	case CmdUpdate:
-		c := &Update{Registry: Registry{Concurrency: 1}}
+		c := &Update{Concurrency: 1}
 		bindCommon(fs, &c.Common)
 		bindRegistry(fs, &c.Registry)
 		fs.StringVar(&c.Instance, "instance", "", "the instance to update (required)")
@@ -439,7 +439,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			return errors.Join(errs...)
 		}
 	case CmdConfigure:
-		c := &Configure{Common: Common{Watch: WatchAll}}
+		c := &Configure{Watch: WatchAll}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
 		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
@@ -459,7 +459,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			return errors.Join(errs...)
 		}
 	case CmdUpgrade:
-		c := &Upgrade{Common: Common{Watch: WatchAll}}
+		c := &Upgrade{Watch: WatchAll}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
 		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
@@ -481,7 +481,7 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 			return errors.Join(errs...)
 		}
 	case CmdUninstall:
-		c := &Uninstall{Common: Common{Watch: WatchAll}}
+		c := &Uninstall{Watch: WatchAll}
 		bindLog(fs, &c.Common)
 		bindRemoteProject(fs, &c.Common)
 		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")

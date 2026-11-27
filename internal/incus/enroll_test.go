@@ -74,7 +74,7 @@ func (ts *trustServer) serve(w http.ResponseWriter, r *http.Request) {
 		if ts.trusted[peer] {
 			auth = "trusted"
 		}
-		sync200(w, api.Server{ServerUntrusted: api.ServerUntrusted{Auth: auth}})
+		sync200(w, api.Server{Auth: auth})
 	case r.URL.Path == "/1.0/certificates" && r.Method == http.MethodPost:
 		ts.posts++
 		var post api.CertificatesPost
