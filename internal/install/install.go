@@ -131,10 +131,19 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	// configured also refuses a missing project: Incus accepts a token for one, and the instance then never joins.
 	s, track := opts.Settings, trackFor(opts.Track, opts.Image)
 	s.NotifyErrs = s.NotifyErrs && len(s.NotifyURLs) > 0 // with nothing to notify, serve would refuse the flag
-	env, err := configured(srv, &api.Instance{InstancePut: api.InstancePut{Config: map[string]string{}}}, ConfigureOptions{
-		APIURL: &apiURL, Projects: &opts.Projects, Watch: &opts.Watch, Events: &s.Events, Track: &track,
-		NotifyURLs: &s.NotifyURLs, NotifyErrs: &s.NotifyErrs, Interval: &s.Interval, Cooldown: &s.Cooldown,
-		Update: &s.Update, UpdateWindow: &s.UpdateWindow,
+	fresh := &api.Instance{InstancePut: api.InstancePut{Config: map[string]string{}}}
+	env, err := configured(srv, fresh, ConfigureOptions{
+		APIURL:       &apiURL,
+		Projects:     &opts.Projects,
+		Watch:        &opts.Watch,
+		Events:       &s.Events,
+		Track:        &track,
+		NotifyURLs:   &s.NotifyURLs,
+		NotifyErrs:   &s.NotifyErrs,
+		Interval:     &s.Interval,
+		Cooldown:     &s.Cooldown,
+		Update:       &s.Update,
+		UpdateWindow: &s.UpdateWindow,
 	})
 	if err != nil {
 		return err
