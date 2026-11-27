@@ -608,29 +608,29 @@ func deleteInstance(ctx context.Context, srv incusclient.InstanceServer, name st
 	return op.WaitContext(wctx)
 }
 
-// waitTrusted polls: the certificate appears once the token is redeemed. A failed listing is
-// this client's problem, not the instance's, so it ends the wait at once.
+// waitTrusted polls: the certificate appears once the token is redeemed.
 func waitTrusted(ctx context.Context, srv incusclient.InstanceServer, name string, wait time.Duration) error {
-	var listErr error
-	err := update.Poll(ctx, wait, 2*time.Second, func(context.Context) error {
+	wctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
+	for {
 		certs, err := srv.GetCertificates()
-		switch {
-		case err != nil:
-			listErr = err
-		case !slices.ContainsFunc(certs, func(c api.Certificate) bool { return c.Name == name }):
-			return errors.New("no certificate trusted under its name yet")
+		if err != nil {
+			return fmt.Errorf("list certificates: %w", err)
 		}
-		return nil
-	})
-	switch {
-	case listErr != nil:
-		return fmt.Errorf("list certificates: %w", listErr)
-	case ctx.Err() != nil:
-		return fmt.Errorf("wait for %s to join: %w", name, ctx.Err())
-	case err != nil:
-		return fmt.Errorf("%s did not join: %w; see incus console %s --show-log", name, err, name)
+		if slices.ContainsFunc(certs, func(c api.Certificate) bool { return c.Name == name }) {
+			return nil
+		}
+		select {
+		case <-wctx.Done():
+			if ctx.Err() != nil {
+				return fmt.Errorf("wait for %s to join: %w", name, ctx.Err())
+			}
+			return fmt.Errorf("%s did not join within %s; see incus console %s --show-log", name, wait, name)
+		case <-tick.C:
+		}
 	}
-	return nil
 }
 
 func notFound(err error) bool { return api.StatusErrorCheck(err, http.StatusNotFound) }
