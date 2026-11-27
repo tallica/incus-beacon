@@ -66,6 +66,7 @@ func TestNewTransition(t *testing.T) {
 		kind   string
 	}{
 		{"digest", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "2@sha256:bbbbbbbbbbbb"}, "digest"},
+		{"digest-pinned", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2@sha256:" + strings.Repeat("a", 64), Latest: "2@sha256:bbbbbbbbbbbb"}, "digest"},
 		{"tag", compose, incus.Beacon{Status: "update-available", Current: "ghcr.io/example/api:2", Latest: "3"}, "tag"},
 		{"error", compose, incus.Beacon{Status: "error", Current: "ghcr.io/example/api:2", Error: "registry timeout"}, ""},
 	}
