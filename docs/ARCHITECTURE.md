@@ -34,14 +34,14 @@ show by itself. Setup and commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
 | `internal/config`   | Flag and `BEACON_*` environment parsing per subcommand, defaults, validation                                                                                     | stdlib                                               |
 | `internal/log`      | zerolog setup: level, JSON or console format, stderr; the size-rotated audit file and the fields its records share                                               | zerolog, config                                      |
 | `internal/metrics`  | Counters, gauges and histograms in the Prometheus text format                                                                                                    | stdlib                                               |
-| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream                        | Incus client, incus-compose trust                    |
+| `internal/incus`    | Connects to Incus, lists watched OCI instances as targets, looks up image sources, writes `user.incus-beacon.*`, follows the event stream                        | Incus client, incus-compose trust, policy, registry  |
 | `internal/policy`   | Turns an instance's user-set keys into a per-instance policy                                                                                                     | Masterminds/semver                                   |
 | `internal/registry` | Manifest HEAD and GET, platform selection, layer fingerprint, tag listing, registry auth, per-host backoff, request metrics                                      | oras-go, metrics                                     |
-| `internal/semver`   | Splits tags into version and suffix, filters candidates and picks the newest                                                                                     | Masterminds/semver                                   |
-| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                                                      | registry, semver, policy                             |
+| `internal/semver`   | Splits tags into version and suffix, filters candidates by track and constraint                                                                                  | Masterminds/semver                                   |
+| `internal/check`    | The engine: turns targets into results, with a per-process cache and dedupe                                                                                      | incus, registry, semver, policy                      |
 | `internal/notify`   | Picks which written changes to send and sends them to webhooks, Discord, Slack or a command                                                                      | check, incus, registry, update, metrics              |
 | `internal/report`   | Table and JSON rendering of results and status rows                                                                                                              | check, config, incus                                 |
-| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares                            | incus, registry, check, policy, semver, metrics, log |
+| `internal/update`   | Updating an instance on its newer image: claim, snapshot, rebuild, health gate, rollback; serve's updater; the calls `upgrade` shares                            | incus, registry, check, policy, metrics, log         |
 | `internal/install`  | `install`, `configure`, `upgrade` and `uninstall`: beacon's own serve instance, its state volume and certificate                                                 | config, incus, log, policy, registry, semver, update |
 | `internal/serve`    | The interval loop with jitter, targeted checks on events, the check, update and notify pass each one runs, `/health`, `/ready` and `/metrics`, graceful shutdown | check, incus, metrics, notify, update                |
 | `internal/version`  | Build metadata the Makefile and GoReleaser stamp in                                                                                                              | stdlib                                               |
@@ -410,7 +410,11 @@ Refs are normalised with Docker conventions: `nginx` becomes
   are guarded by the instance ETag and retried once on a conflict, and wait
   about 15 seconds at most while a start or stop holds the instance, as one does
   right after a launch. `update` retries up to ten times instead, re-reading its
-  claim each time, since ic-healthd writes its status while an update runs.
+  claim each time, since ic-healthd writes its status while an update runs. Once
+  Incus accepts a write or a delete, the wait for it keeps the caller's deadline
+  but not its cancellation: Incus finishes the operation either way, so an
+  interrupted command waits it out rather than report a change that lands as
+  failed.
 - **Logs go to stderr and reports to stdout,** so `check --format json` can be
   piped; audit records go to `--audit-log` as JSON lines, whatever the format.
   Credentials, trust tokens and private keys are never logged.
