@@ -267,9 +267,9 @@ type op struct {
 	meta api.Operation
 }
 
-func (o op) Get() api.Operation                { return o.meta }
-func (o op) Wait() error                       { return nil }
-func (o op) WaitContext(context.Context) error { return nil }
+func (o op) Get() api.Operation                    { return o.meta }
+func (o op) Wait() error                           { return nil }
+func (o op) WaitContext(ctx context.Context) error { return ctx.Err() } // as the client's event-listener wait does
 
 func opts() Options {
 	return Options{
@@ -620,6 +620,24 @@ func TestUninstall(t *testing.T) {
 	}
 	if r[1]["kept_volume"] != "incus-beacon-log" {
 		t.Errorf("kept_volume %v, want the log volume", r[1]["kept_volume"])
+	}
+}
+
+func TestUninstallFinishesAnAcceptedDeleteOnceCancelled(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	f.joins = false
+	o := opts()
+	o.Wait = 10 * time.Millisecond
+	_ = Install(context.Background(), f, o)
+	f.instances["incus-beacon"].StatusCode = api.Stopped
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Uninstall(ctx, f, UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.Nop()}); err != nil {
+		t.Fatalf("interrupted once the delete was accepted: %v", err)
+	}
+	if _, ok := f.volumes["default/incus-beacon-state"]; ok {
+		t.Error("state volume left behind")
 	}
 }
 

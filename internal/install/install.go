@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/tallica/incus-beacon/internal/config"
+	"github.com/tallica/incus-beacon/internal/incus"
 	"github.com/tallica/incus-beacon/internal/log"
 	"github.com/tallica/incus-beacon/internal/policy"
 	"github.com/tallica/incus-beacon/internal/registry"
@@ -209,8 +210,8 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 	if err != nil {
 		return rollback(fmt.Errorf("create instance %s from %s: %w", opts.Name, opts.Image, err))
 	}
-	// A rollback finishes even when the caller gives up.
-	undo = append(undo, func() error { return deleteInstance(context.WithoutCancel(ctx), srv, opts.Name) })
+	// A rollback finishes even when the caller gives up: no undo step stops on ctx.
+	undo = append(undo, func() error { return deleteInstance(ctx, srv, opts.Name) })
 	opts.Log.Info().Str("instance", opts.Name).Str("image", opts.Image).Str("incus", apiURL).Msg("instance created")
 
 	if err := pushToken(srv, opts.Name, token); err != nil {
@@ -602,7 +603,9 @@ func deleteInstance(ctx context.Context, srv incusclient.InstanceServer, name st
 	if err != nil {
 		return err
 	}
-	return op.WaitContext(ctx)
+	wctx, cancel := incus.OpContext(ctx)
+	defer cancel()
+	return op.WaitContext(wctx)
 }
 
 // waitTrusted polls: the certificate appears once the token is redeemed.
