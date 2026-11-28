@@ -3,13 +3,16 @@ linters:
   default: standard
   enable:
     - bodyclose
+    - dupl
     - errorlint
     - exhaustive
     - gocritic
+    - intrange
     - makezero
     - misspell
     - modernize
     - nakedret
+    - nolintlint
     - nilerr
     - prealloc
     - revive
@@ -17,8 +20,11 @@ linters:
     - tparallel
     - unconvert
     - unparam
+    - usestdlibvars
     - wastedassign
   settings:
+    dupl:
+      threshold: 120
     exhaustive:
       default-signifies-exhaustive: true
     nakedret:
@@ -35,6 +41,10 @@ linters:
         - singleCaseSwitch
   exclusions:
     generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
     presets:
       - comments
       - common-false-positives
