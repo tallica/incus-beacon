@@ -13,6 +13,8 @@ get an entry.
 
 ## [Unreleased]
 
+## [0.6.0-beta.6] - 2026-11-28
+
 ### Fixed
 
 - `configure` and `upgrade` retry when `serve` writes beacon's instance at the
@@ -23,6 +25,10 @@ get an entry.
   saying the instance did not join and pointing at its log.
 - A notification for an image pinned by tag and digest, `app:1.2@sha256:…`, says
   "rebuilt" when the tag moves, as it does without the digest.
+- Ctrl-C during `uninstall` or an `install` rollback waits for Incus to finish
+  deleting the instance before it removes the volumes.
+- Ctrl-C during a `configure`, `upgrade` or serve write to the instance no
+  longer reports a failure for a change Incus still applied.
 
 ## [0.6.0-beta.5] - 2026-11-24
 
@@ -243,7 +249,9 @@ get an entry.
   of every module the binary links, not only direct dependencies.
 
 [Unreleased]:
-  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.5...master
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.6...master
+[0.6.0-beta.6]:
+  https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.5...v0.6.0-beta.6
 [0.6.0-beta.5]:
   https://github.com/tallica/incus-beacon/compare/v0.6.0-beta.4...v0.6.0-beta.5
 [0.6.0-beta.4]:
