@@ -101,6 +101,14 @@ func trackFor(track, image string) string {
 	return policy.TrackDigest
 }
 
+// rollBack runs undo between the op's audit begin and end events.
+func rollBack(audit zerolog.Logger, op string, undo func() error) error {
+	log.AuditBegin(audit, op).Send()
+	rerr := undo()
+	log.AuditEnd(audit, op, rerr).Send()
+	return rerr
+}
+
 // Install undoes what it created if a step before the start fails.
 func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) (err error) {
 	if opts.Name == "" {
