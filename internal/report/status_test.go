@@ -40,7 +40,12 @@ func statusTargets() []incus.Target {
 				Latest: "1.3.0", Since: "2026-11-01T10:00:00Z",
 			},
 		},
-		{Project: "apps", Instance: "bad", Ref: "ghcr.io/example/bad:1", PolicyErr: errors.New(`track "weird": must be digest or semver`)},
+		{
+			Project:   "apps",
+			Instance:  "bad",
+			Ref:       "ghcr.io/example/bad:1",
+			PolicyErr: errors.New(`track "weird": must be digest or semver`),
+		},
 		{Project: "apps", Instance: "orphan"},
 		{
 			Project: "default", Instance: "db", Ref: "docker.io/library/postgres:17",
@@ -50,8 +55,20 @@ func statusTargets() []incus.Target {
 			},
 		},
 		{Project: "default", Instance: "cache", Ref: "redis:7", BaseImage: "fp", Arch: "x86_64"},
-		{Project: "default", Instance: "built", Ref: "ghcr.io/example/built:1", BaseImage: "fp", Arch: "x86_64", Local: true},
-		{Project: "default", Instance: "web", Ref: "docker.io/library/nginx:1.27", Beacon: incus.Beacon{Status: "current"}},
+		{
+			Project:   "default",
+			Instance:  "built",
+			Ref:       "ghcr.io/example/built:1",
+			BaseImage: "fp",
+			Arch:      "x86_64",
+			Local:     true,
+		},
+		{
+			Project:  "default",
+			Instance: "web",
+			Ref:      "docker.io/library/nginx:1.27",
+			Beacon:   incus.Beacon{Status: "current"},
+		},
 	}
 }
 

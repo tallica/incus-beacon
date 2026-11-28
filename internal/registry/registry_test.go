@@ -60,10 +60,19 @@ func TestResolveIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	if img.ManifestDigest != arm.digest {
-		t.Errorf("arm64 with variant v8 picked %s, want the variant-less arm64 entry %s", img.ManifestDigest, arm.digest)
+		t.Errorf(
+			"arm64 with variant v8 picked %s, want the variant-less arm64 entry %s",
+			img.ManifestDigest,
+			arm.digest,
+		)
 	}
 
-	if _, err := c.Resolve(t.Context(), ref, Platform{"linux", "s390x", ""}); err == nil || !strings.Contains(err.Error(), "no image for") {
+	if _, err := c.Resolve(
+		t.Context(),
+		ref,
+		Platform{"linux", "s390x", ""},
+	); err == nil ||
+		!strings.Contains(err.Error(), "no image for") {
 		t.Errorf("s390x: err %v, want no image for the platform", err)
 	}
 }
@@ -98,7 +107,11 @@ func TestCreated(t *testing.T) {
 func TestEnv(t *testing.T) {
 	t.Parallel()
 	f := newFakeRegistry(t)
-	cfg := newBlob(t, ocispec.MediaTypeImageConfig, ocispec.Image{Config: ocispec.ImageConfig{Env: []string{"PATH=/usr/bin", "NGINX_VERSION=1.27.5"}}})
+	cfg := newBlob(
+		t,
+		ocispec.MediaTypeImageConfig,
+		ocispec.Image{Config: ocispec.ImageConfig{Env: []string{"PATH=/usr/bin", "NGINX_VERSION=1.27.5"}}},
+	)
 	f.add("example/app", "", cfg)
 	f.add("example/app", "1.27", withConfig(t, cfg, layerA))
 	ref := mustRef(t, f.host+"/example/app:1.27")
@@ -174,7 +187,13 @@ func TestAuthFromConfigJSON(t *testing.T) {
 	if _, err := newTestClient(t, "").Head(t.Context(), ref); !errors.Is(err, ErrNoAccess) {
 		t.Errorf("anonymous: err %v, want ErrNoAccess", err)
 	}
-	if _, err := newTestClient(t, writeAuthFile(t, f.host, "user:wrong")).Head(t.Context(), ref); !errors.Is(err, ErrAuth) {
+	if _, err := newTestClient(
+		t,
+		writeAuthFile(t, f.host, "user:wrong"),
+	).Head(t.Context(), ref); !errors.Is(
+		err,
+		ErrAuth,
+	) {
 		t.Errorf("wrong password: err %v, want ErrAuth", err)
 	}
 	c := newTestClient(t, writeAuthFile(t, f.host, "user:secret"))

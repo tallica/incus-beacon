@@ -15,7 +15,9 @@ import (
 )
 
 // imageRef is the OCI reference grammar, digests sha256 only as in ParseRef; Incus rejects a bad ref only once the instance has stopped.
-var imageRef = regexp.MustCompile(`^[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*(?::[0-9]+)?/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[\w][\w.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$`)
+var imageRef = regexp.MustCompile(
+	`^[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*(?::[0-9]+)?/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[\w][\w.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$`,
+)
 
 // SplitImage turns registry/repo:tag into the OCI source Incus pulls from.
 func SplitImage(ref string) (server, alias string, err error) {
@@ -24,7 +26,10 @@ func SplitImage(ref string) (server, alias string, err error) {
 		return "", "", fmt.Errorf("image %q: want registry/repository[:tag]", ref)
 	}
 	if !imageRef.MatchString(ref) {
-		return "", "", fmt.Errorf("image %q: not a valid reference; want host[:port]/repository[:tag][@sha256:digest], the repository in lower case", ref)
+		return "", "", fmt.Errorf(
+			"image %q: not a valid reference; want host[:port]/repository[:tag][@sha256:digest], the repository in lower case",
+			ref,
+		)
 	}
 	return "https://" + host, rest, nil
 }
@@ -38,7 +43,11 @@ const (
 func SetState(ctx context.Context, srv incusclient.InstanceServer, name, action string) error {
 	wait := stateRetry
 	for try := 1; ; try++ {
-		op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"}, "")
+		op, err := srv.UpdateInstanceState(
+			name,
+			api.InstanceStatePut{Action: action, Timeout: -1, Force: action == "stop"},
+			"",
+		)
 		if err == nil {
 			err = op.WaitContext(ctx)
 		}
@@ -62,7 +71,11 @@ func SetState(ctx context.Context, srv incusclient.InstanceServer, name, action 
 // Stop asks the instance to stop within timeout, then forces it.
 func Stop(ctx context.Context, srv incusclient.InstanceServer, name string, timeout time.Duration) error {
 	// A timeout of 0 would make Incus force the stop at once.
-	op, err := srv.UpdateInstanceState(name, api.InstanceStatePut{Action: "stop", Timeout: max(int(timeout.Seconds()), 1)}, "")
+	op, err := srv.UpdateInstanceState(
+		name,
+		api.InstanceStatePut{Action: "stop", Timeout: max(int(timeout.Seconds()), 1)},
+		"",
+	)
 	if err == nil {
 		err = op.WaitContext(ctx)
 	}

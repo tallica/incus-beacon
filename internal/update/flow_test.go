@@ -119,7 +119,12 @@ func newFake() *fake {
 			"default/web-data": {Name: "web-data", UsedBy: []string{"/1.0/instances/web"}},
 		},
 		volSnaps: map[string][]string{
-			"default/web-data": {"incus-beacon-20260101T000000", "incus-beacon-20260102T000000", "manual", "incus-beacon-20260103T000000"},
+			"default/web-data": {
+				"incus-beacon-20260101T000000",
+				"incus-beacon-20260102T000000",
+				"manual",
+				"incus-beacon-20260103T000000",
+			},
 		},
 		crash: func(int) bool { return false },
 	}
@@ -151,7 +156,9 @@ func (f *fake) GetInstance(string) (*api.Instance, string, error) {
 func (f *fake) UpdateInstance(_ string, put api.InstancePut, etag string) (incusclient.Operation, error) {
 	f.writes++
 	if f.writes == f.lockedAt {
-		return nil, errors.New("Failed to create instance update operation: A matching non-reusable operation has now succeeded")
+		return nil, errors.New(
+			"Failed to create instance update operation: A matching non-reusable operation has now succeeded",
+		)
 	}
 	if f.meddle != nil {
 		before := maps.Clone(f.inst.Config)
@@ -173,7 +180,9 @@ func (f *fake) UpdateInstanceState(_ string, st api.InstanceStatePut, _ string) 
 	f.states = append(f.states, st.Action)
 	if f.busyStates > 0 {
 		f.busyStates--
-		return nil, errors.New(`Failed to create instance ` + st.Action + ` operation: Instance is busy running a "update" operation`)
+		return nil, errors.New(
+			`Failed to create instance ` + st.Action + ` operation: Instance is busy running a "update" operation`,
+		)
 	}
 	switch st.Action {
 	case "stop":
@@ -246,7 +255,10 @@ func (f *fake) UpdateStoragePoolVolume(pool, _, name string, put api.StorageVolu
 	return nil
 }
 
-func (f *fake) CreateStoragePoolVolumeSnapshot(pool, _, name string, req api.StorageVolumeSnapshotsPost) (incusclient.Operation, error) {
+func (f *fake) CreateStoragePoolVolumeSnapshot(
+	pool, _, name string,
+	req api.StorageVolumeSnapshotsPost,
+) (incusclient.Operation, error) {
 	if pool+"/"+name == f.snapFail {
 		return nil, errors.New("no space left")
 	}
@@ -282,14 +294,27 @@ func (fakeRegistry) Env(_ context.Context, ref registry.Ref, _ registry.Image) (
 }
 
 func target() incus.Target {
-	return incus.Target{Project: "default", Instance: "web", Arch: "x86_64", BaseImage: "fp-old", Ref: oldRef, ImageRef: oldRef}
+	return incus.Target{
+		Project:   "default",
+		Instance:  "web",
+		Arch:      "x86_64",
+		BaseImage: "fp-old",
+		Ref:       oldRef,
+		ImageRef:  oldRef,
+	}
 }
 
 func options() Options {
 	at := time.Date(2026, 11, 21, 3, 0, 0, 0, time.UTC)
 	return Options{
-		Owner: "test/1", Keep: 3, Settle: time.Millisecond, Wait: 200 * time.Millisecond, StopTimeout: 50 * time.Millisecond, Every: time.Millisecond,
-		Now: func() time.Time { at = at.Add(time.Second); return at }, Log: zerolog.Nop(),
+		Owner:       "test/1",
+		Keep:        3,
+		Settle:      time.Millisecond,
+		Wait:        200 * time.Millisecond,
+		StopTimeout: 50 * time.Millisecond,
+		Every:       time.Millisecond,
+		Now:         func() time.Time { at = at.Add(time.Second); return at },
+		Log:         zerolog.Nop(),
 	}
 }
 
@@ -310,12 +335,19 @@ func TestApplyPinsDigest(t *testing.T) {
 	if err != nil || o.Status != Updated {
 		t.Fatalf("outcome %+v, %v", o, err)
 	}
-	want := []api.InstanceSource{{Type: "image", Protocol: "oci", Server: "https://docker.io", Alias: "library/nginx:1.28-alpine@" + pin}}
+	want := []api.InstanceSource{
+		{Type: "image", Protocol: "oci", Server: "https://docker.io", Alias: "library/nginx:1.28-alpine@" + pin},
+	}
 	if !reflect.DeepEqual(f.rebuilds, want) {
 		t.Errorf("rebuilds %+v, want %+v", f.rebuilds, want)
 	}
 	if o.To != newRef || f.inst.Config["user.incus-beacon.applied"] != newRef {
-		t.Errorf("recorded %q and %q, want the tag-only ref %q", o.To, f.inst.Config["user.incus-beacon.applied"], newRef)
+		t.Errorf(
+			"recorded %q and %q, want the tag-only ref %q",
+			o.To,
+			f.inst.Config["user.incus-beacon.applied"],
+			newRef,
+		)
 	}
 }
 
@@ -326,7 +358,9 @@ func TestApplyUpdates(t *testing.T) {
 	if o.Status != Updated {
 		t.Fatalf("outcome %+v", o)
 	}
-	want := []api.InstanceSource{{Type: "image", Protocol: "oci", Server: "https://docker.io", Alias: "library/nginx:1.28-alpine"}}
+	want := []api.InstanceSource{
+		{Type: "image", Protocol: "oci", Server: "https://docker.io", Alias: "library/nginx:1.28-alpine"},
+	}
 	if !reflect.DeepEqual(f.rebuilds, want) {
 		t.Errorf("rebuilds %+v, want %+v", f.rebuilds, want)
 	}
@@ -337,19 +371,29 @@ func TestApplyUpdates(t *testing.T) {
 	if _, ok := cfg["environment.NGINX_VERSION"]; ok || cfg["environment.FOO"] != "bar" {
 		t.Errorf("environment: the old image's value should go and the override stay: %v", cfg)
 	}
-	if cfg["user.incus-beacon.applied"] != newRef || cfg["user.incus-beacon.requested"] != oldRef || cfg["user.incus-beacon.update-status"] != Updated ||
+	if cfg["user.incus-beacon.applied"] != newRef || cfg["user.incus-beacon.requested"] != oldRef ||
+		cfg["user.incus-beacon.update-status"] != Updated ||
 		cfg["user.incus-beacon.applied-image"] != "fp-new" {
 		t.Errorf("update keys %v", cfg)
 	}
 	snaps := f.volSnaps["default/web-data"]
-	if len(o.Snapshots) != 1 || !slices.Contains(snaps, "manual") || len(snaps) != 4 || slices.Contains(snaps, "incus-beacon-20260101T000000") {
-		t.Errorf("snapshots %v after %v, want the oldest of four of beacon's pruned and manual kept", snaps, o.Snapshots)
+	if len(o.Snapshots) != 1 || !slices.Contains(snaps, "manual") || len(snaps) != 4 ||
+		slices.Contains(snaps, "incus-beacon-20260101T000000") {
+		t.Errorf(
+			"snapshots %v after %v, want the oldest of four of beacon's pruned and manual kept",
+			snaps,
+			o.Snapshots,
+		)
 	}
 	if len(f.restored) != 0 {
 		t.Errorf("restored %v on success", f.restored)
 	}
 	if _, ok := cfg[incus.ClaimKey]; ok || stepName(f.claimAtRebuild) != "rebuild" {
-		t.Errorf("claim at rebuild: step %q, want rebuild; after: %q, want none", stepName(f.claimAtRebuild), cfg[incus.ClaimKey])
+		t.Errorf(
+			"claim at rebuild: step %q, want rebuild; after: %q, want none",
+			stepName(f.claimAtRebuild),
+			cfg[incus.ClaimKey],
+		)
 	}
 }
 
@@ -384,7 +428,10 @@ func claimJSON(t *testing.T, c claim) string {
 func TestApplyRefusesWhileClaimed(t *testing.T) {
 	t.Parallel()
 	f := newFake()
-	f.inst.Config[incus.ClaimKey] = claimJSON(t, claim{Owner: "other/7", Expires: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), To: newRef})
+	f.inst.Config[incus.ClaimKey] = claimJSON(
+		t,
+		claim{Owner: "other/7", Expires: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), To: newRef},
+	)
 	o := apply(t, f, target())
 	if o.Status != Refused || !strings.Contains(o.Reason, "being updated by other/7") || len(f.states) != 0 {
 		t.Errorf("outcome %+v, states %v", o, f.states)
@@ -406,7 +453,10 @@ func TestPreviewAnAbandonedClaim(t *testing.T) {
 		{-1, Refused, "by other/7 was interrupted before its first step"},
 	} {
 		f := newFake()
-		raw := claimJSON(t, claim{Owner: "other/7", Expires: expired, Step: tt.step, To: newRef, FromRef: oldRef, From: "fp-old"})
+		raw := claimJSON(
+			t,
+			claim{Owner: "other/7", Expires: expired, Step: tt.step, To: newRef, FromRef: oldRef, From: "fp-old"},
+		)
 		f.inst.Config[incus.ClaimKey] = raw
 		o := Preview(context.Background(), f, fakeRegistry{}, target(), Next{}, options())
 		if o.Status != tt.status || !strings.Contains(o.Reason, tt.reason) || o.From != oldRef || o.To != newRef {
@@ -432,7 +482,8 @@ func TestApplyRecoversAnAbandonedClaim(t *testing.T) {
 		Dropped: map[string]string{"environment.NGINX_VERSION": "1.27.5"},
 	})
 	o := apply(t, f, target())
-	if o.Status != RolledBack || !strings.Contains(o.Reason, "by other/7 was interrupted at start") || o.From != oldRef {
+	if o.Status != RolledBack || !strings.Contains(o.Reason, "by other/7 was interrupted at start") ||
+		o.From != oldRef {
 		t.Fatalf("outcome %+v", o)
 	}
 	if !reflect.DeepEqual(f.rebuilds, []api.InstanceSource{{Type: "image", Fingerprint: "fp-old"}}) {
@@ -442,14 +493,18 @@ func TestApplyRecoversAnAbandonedClaim(t *testing.T) {
 		t.Errorf("restored %v", f.restored)
 	}
 	cfg = f.inst.Config
-	if cfg["environment.NGINX_VERSION"] != "1.27.5" || cfg[incus.ClaimKey] != "" || cfg["user.incus-beacon.update-failed"] != newRef {
+	if cfg["environment.NGINX_VERSION"] != "1.27.5" || cfg[incus.ClaimKey] != "" ||
+		cfg["user.incus-beacon.update-failed"] != newRef {
 		t.Errorf("config after recovery: %v", cfg)
 	}
 	if f.inst.StatusCode != api.Running {
 		t.Errorf("instance %s after recovery", f.inst.Status)
 	}
 	if cfg["oci.entrypoint"] != "set by the new image" {
-		t.Errorf("oci.entrypoint %q: a claim from an older process records no oci.* keys to put back", cfg["oci.entrypoint"])
+		t.Errorf(
+			"oci.entrypoint %q: a claim from an older process records no oci.* keys to put back",
+			cfg["oci.entrypoint"],
+		)
 	}
 }
 
@@ -479,7 +534,8 @@ func TestApplyRollbackFinishesARebuildAnotherWriteHeldUp(t *testing.T) {
 		if tc.want != RolledBack {
 			continue
 		}
-		if cfg := f.inst.Config; cfg["oci.entrypoint"] != "nginx-old" || cfg["oci.cwd"] != "/srv" || cfg["volatile.base_image"] != "fp-old" {
+		if cfg := f.inst.Config; cfg["oci.entrypoint"] != "nginx-old" || cfg["oci.cwd"] != "/srv" ||
+			cfg["volatile.base_image"] != "fp-old" {
 			t.Errorf("%s: config %v, want the old image with its oci.* keys", name, cfg)
 		}
 		if f.inst.StatusCode != api.Running {
@@ -511,7 +567,8 @@ func TestApplyStopsWhenItsClaimIsTaken(t *testing.T) {
 		}
 	}
 	o := apply(t, f, target())
-	if o.Status != Failed || !strings.Contains(o.Reason, "taken over by other/7") || len(f.states) != 0 || len(f.rebuilds) != 0 {
+	if o.Status != Failed || !strings.Contains(o.Reason, "taken over by other/7") || len(f.states) != 0 ||
+		len(f.rebuilds) != 0 {
 		t.Errorf("outcome %+v, states %v, rebuilds %v; want hands off", o, f.states, f.rebuilds)
 	}
 }
@@ -524,7 +581,8 @@ func TestApplyRollsBackWhenTheInstanceStops(t *testing.T) {
 	if o.Status != RolledBack || !strings.Contains(o.Reason, "stopped after the start") {
 		t.Fatalf("outcome %+v", o)
 	}
-	if len(f.rebuilds) != 2 || !reflect.DeepEqual(f.rebuilds[1], api.InstanceSource{Type: "image", Fingerprint: "fp-old"}) {
+	if len(f.rebuilds) != 2 ||
+		!reflect.DeepEqual(f.rebuilds[1], api.InstanceSource{Type: "image", Fingerprint: "fp-old"}) {
 		t.Errorf("rebuilds %+v, want the new image, then the old fingerprint", f.rebuilds)
 	}
 	if len(f.restored) != 1 || !strings.HasPrefix(f.restored[0], "default/web-data/incus-beacon-") {
@@ -538,7 +596,8 @@ func TestApplyRollsBackWhenTheInstanceStops(t *testing.T) {
 		cfg["user.incus-beacon.applied"] != oldRef || cfg["user.incus-beacon.applied-image"] != "fp-old" {
 		t.Errorf("update keys %v", cfg)
 	}
-	if snaps := f.volSnaps["default/web-data"]; len(snaps) != 4 || slices.Contains(snaps, "incus-beacon-20260101T000000") {
+	if snaps := f.volSnaps["default/web-data"]; len(snaps) != 4 ||
+		slices.Contains(snaps, "incus-beacon-20260101T000000") {
 		t.Errorf("snapshots %v; want a rollback to prune the oldest of beacon's too", snaps)
 	}
 }
@@ -580,7 +639,11 @@ func TestApplyNeedsTheHealthCheckToSeeTheStop(t *testing.T) {
 	f := withHealth(newFake(), nil) // ic-healthd is down: the old "healthy" stays
 	o := apply(t, f, target())
 	if o.Status != RolledBack || !strings.Contains(o.Reason, "did not report the stop") || len(f.rebuilds) != 0 {
-		t.Errorf("outcome %+v, rebuilds %v; want a restart on the old image, never trusting the old status", o, f.rebuilds)
+		t.Errorf(
+			"outcome %+v, rebuilds %v; want a restart on the old image, never trusting the old status",
+			o,
+			f.rebuilds,
+		)
 	}
 }
 
@@ -594,7 +657,8 @@ func TestApplyFailsWhenTheRollbackFails(t *testing.T) {
 	if o.Status != Failed || !strings.Contains(o.Reason, "roll back stop: the instance is stopped") {
 		t.Errorf("outcome %+v", o)
 	}
-	if cfg := f.inst.Config; cfg["user.incus-beacon.applied"] != "docker.io/library/nginx:1.26-alpine" || cfg["user.incus-beacon.applied-image"] != "fp-older" {
+	if cfg := f.inst.Config; cfg["user.incus-beacon.applied"] != "docker.io/library/nginx:1.26-alpine" ||
+		cfg["user.incus-beacon.applied-image"] != "fp-older" {
 		t.Errorf("a failed rollback leaves the instance unknown, so the record stays: %v", cfg)
 	}
 	if f.inst.Config["user.incus-beacon.update-status"] != Failed {
@@ -611,7 +675,8 @@ func TestApplyLeavesSharedVolumes(t *testing.T) {
 	f.volumes["default/web-data"].UsedBy = []string{"/1.0/instances/web", "/1.0/instances/worker"}
 	f.crash = func(n int) bool { return n == 1 }
 	o := apply(t, f, target())
-	if o.Status != RolledBack || len(f.restored) != 0 || !reflect.DeepEqual(o.Unrestored, []string{"default/web-data"}) {
+	if o.Status != RolledBack || len(f.restored) != 0 ||
+		!reflect.DeepEqual(o.Unrestored, []string{"default/web-data"}) {
 		t.Errorf("outcome %+v, restored %v; want the shared volume left alone", o, f.restored)
 	}
 }
@@ -623,10 +688,22 @@ func TestApplyRefuses(t *testing.T) {
 		change func(*fake, *incus.Target)
 		reason string
 	}{
-		{"compose without an image alias", func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" }, "no user.image_alias"},
-		{"beacon", func(f *fake, _ *incus.Target) { f.inst.Config["environment.BEACON_TOKEN_FILE"] = "/run/secrets/token" }, "incus-beacon upgrade"},
+		{
+			"compose without an image alias",
+			func(f *fake, _ *incus.Target) { f.inst.Config["user.incus-compose.managed"] = "true" },
+			"no user.image_alias",
+		},
+		{
+			"beacon",
+			func(f *fake, _ *incus.Target) { f.inst.Config["environment.BEACON_TOKEN_FILE"] = "/run/secrets/token" },
+			"incus-beacon upgrade",
+		},
 		{"failed before", func(_ *fake, t *incus.Target) { t.Update.Failed = newRef }, "failed before"},
-		{"stopped", func(f *fake, _ *incus.Target) { f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped }, "is stopped"},
+		{
+			"stopped",
+			func(f *fake, _ *incus.Target) { f.inst.Status, f.inst.StatusCode = "Stopped", api.Stopped },
+			"is stopped",
+		},
 		{"snapshots", func(f *fake, _ *incus.Target) { f.snapshots = []string{"snap0"} }, "snap0"},
 		{"old server", func(f *fake, _ *incus.Target) { f.version = "7.4" }, "7.6 or later"},
 	}
@@ -704,18 +781,38 @@ func TestAtLeast(t *testing.T) {
 func TestApplyRecoveryBeforeAnyStepBlamesNoImage(t *testing.T) {
 	t.Parallel()
 	f := newFake()
-	f.inst.Config[incus.ClaimKey] = claimJSON(t, claim{Owner: "other/7", Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Step: -1, To: newRef, From: "fp-old"})
+	f.inst.Config[incus.ClaimKey] = claimJSON(
+		t,
+		claim{
+			Owner:   "other/7",
+			Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Step:    -1,
+			To:      newRef,
+			From:    "fp-old",
+		},
+	)
 	o := apply(t, f, target())
 	cfg := f.inst.Config
-	if o.Status != Refused || cfg[incus.ClaimKey] != "" || cfg["user.incus-beacon.update-failed"] != "" || len(f.states) != 0 {
-		t.Errorf("outcome %+v, config %v, states %v; want the claim cleared and the ref not marked failed", o, cfg, f.states)
+	if o.Status != Refused || cfg[incus.ClaimKey] != "" || cfg["user.incus-beacon.update-failed"] != "" ||
+		len(f.states) != 0 {
+		t.Errorf(
+			"outcome %+v, config %v, states %v; want the claim cleared and the ref not marked failed",
+			o,
+			cfg,
+			f.states,
+		)
 	}
 }
 
 func TestApplyRollsBackAFailedSnapshot(t *testing.T) {
 	t.Parallel()
 	f := newFake()
-	f.inst.ExpandedDevices["logs"] = map[string]string{"type": "disk", "pool": "default", "source": "web-logs", "path": "/logs"}
+	f.inst.ExpandedDevices["logs"] = map[string]string{
+		"type":   "disk",
+		"pool":   "default",
+		"source": "web-logs",
+		"path":   "/logs",
+	}
 	f.volumes["default/web-logs"] = &api.StorageVolume{Name: "web-logs", UsedBy: []string{"/1.0/instances/web"}}
 	f.snapFail = "default/web-logs"
 	o := apply(t, f, target())
@@ -723,7 +820,12 @@ func TestApplyRollsBackAFailedSnapshot(t *testing.T) {
 		t.Fatalf("outcome %+v", o)
 	}
 	if len(f.rebuilds) != 0 || len(f.restored) != 0 || f.inst.StatusCode != api.Running {
-		t.Errorf("rebuilds %v, restored %v, status %s; want the instance started again untouched", f.rebuilds, f.restored, f.inst.Status)
+		t.Errorf(
+			"rebuilds %v, restored %v, status %s; want the instance started again untouched",
+			f.rebuilds,
+			f.restored,
+			f.inst.Status,
+		)
 	}
 	if !slices.Contains(f.volSnaps["default/web-data"], o.Snapshots[0][len("default/web-data/"):]) {
 		t.Errorf("the first volume's snapshot %v should stay", o.Snapshots)
@@ -741,7 +843,12 @@ func TestApplyRollsBackWhenTheInstanceStopsOnItsOwn(t *testing.T) {
 		t.Fatalf("outcome %+v, want a rollback", o)
 	}
 	if len(f.rebuilds) != 2 || len(f.restored) != 1 || f.inst.StatusCode != api.Running {
-		t.Errorf("rebuilds %+v, restored %v, status %s; want the old image back and running", f.rebuilds, f.restored, f.inst.Status)
+		t.Errorf(
+			"rebuilds %+v, restored %v, status %s; want the old image back and running",
+			f.rebuilds,
+			f.restored,
+			f.inst.Status,
+		)
 	}
 }
 
@@ -811,7 +918,10 @@ func TestPreview(t *testing.T) {
 	f.volumes["default/web-data"].UsedBy = []string{"/1.0/instances/web", "/1.0/instances/worker"}
 	o := Preview(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef}, options())
 	if o.Status != Ready || !reflect.DeepEqual(o.Snapshots, []string{"default/web-data"}) ||
-		!reflect.DeepEqual(o.Dropped, []string{"environment.NGINX_VERSION"}) || !reflect.DeepEqual(o.Kept, []string{"environment.FOO"}) ||
+		!reflect.DeepEqual(
+			o.Dropped,
+			[]string{"environment.NGINX_VERSION"},
+		) || !reflect.DeepEqual(o.Kept, []string{"environment.FOO"}) ||
 		!reflect.DeepEqual(o.Unrestored, []string{"default/web-data"}) || o.OldEnvUnread {
 		t.Errorf("preview %+v", o)
 	}
@@ -824,7 +934,15 @@ func TestPreview(t *testing.T) {
 		t.Errorf("preview changed the instance: states %v, %d writes", f.states, f.writes)
 	}
 	f.snapshots = []string{"snap0"}
-	if o := Preview(context.Background(), f, fakeRegistry{}, target(), Next{Ref: newRef}, options()); o.Status != Refused || !strings.Contains(o.Reason, "snap0") {
+	if o := Preview(
+		context.Background(),
+		f,
+		fakeRegistry{},
+		target(),
+		Next{Ref: newRef},
+		options(),
+	); o.Status != Refused ||
+		!strings.Contains(o.Reason, "snap0") {
 		t.Errorf("preview with instance snapshots: %+v", o)
 	}
 }
@@ -878,10 +996,17 @@ func TestApplySetsIncusComposesImageOverride(t *testing.T) {
 	}
 	cfg := f.inst.Config
 	if cfg[incus.ComposeOverrideKey] != newRef || cfg[incus.ComposeOverrideOfKey] != oldRef {
-		t.Errorf("override %q of %q; want the new ref over the compose file's", cfg[incus.ComposeOverrideKey], cfg[incus.ComposeOverrideOfKey])
+		t.Errorf(
+			"override %q of %q; want the new ref over the compose file's",
+			cfg[incus.ComposeOverrideKey],
+			cfg[incus.ComposeOverrideOfKey],
+		)
 	}
 	if f.overrideAtRebuild != newRef {
-		t.Errorf("override at rebuild %q; want it set before the rebuild, so an up meanwhile keeps the update", f.overrideAtRebuild)
+		t.Errorf(
+			"override at rebuild %q; want it set before the rebuild, so an up meanwhile keeps the update",
+			f.overrideAtRebuild,
+		)
 	}
 	if cfg["user.incus-beacon.requested"] != oldRef || cfg["user.incus-beacon.applied"] != newRef {
 		t.Errorf("config %v; want the compose file's ref as requested and the new one as applied", cfg)
@@ -889,7 +1014,14 @@ func TestApplySetsIncusComposesImageOverride(t *testing.T) {
 	// A second update, while the compose file is unchanged, keeps its ref as requested.
 	tgt.Ref, tgt.Applied, tgt.Update = newRef, true, incus.Update{Requested: oldRef, Applied: newRef, Status: Updated}
 	f.inst.Config["volatile.base_image"], tgt.BaseImage = "fp-new", "fp-new"
-	o, err := Apply(context.Background(), f, fakeRegistry{}, tgt, Next{Ref: "docker.io/library/nginx:1.29-alpine"}, options())
+	o, err := Apply(
+		context.Background(),
+		f,
+		fakeRegistry{},
+		tgt,
+		Next{Ref: "docker.io/library/nginx:1.29-alpine"},
+		options(),
+	)
 	if err != nil || o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef ||
 		f.inst.Config[incus.ComposeOverrideOfKey] != oldRef {
 		t.Errorf("second update: %+v, %v, config %v", o, err, f.inst.Config)
@@ -911,7 +1043,12 @@ func TestApplyRollbackRestoresTheImageOverride(t *testing.T) {
 	f.crash = func(n int) bool { return n == 1 }
 	f.inst.Config[incus.ComposeOverrideKey] = "docker.io/library/nginx:1.27.1-alpine"
 	f.inst.Config[incus.ComposeOverrideOfKey] = oldRef
-	if o := apply(t, f, composeTarget()); o.Status != RolledBack || f.inst.Config[incus.ComposeOverrideKey] != "docker.io/library/nginx:1.27.1-alpine" {
+	if o := apply(
+		t,
+		f,
+		composeTarget(),
+	); o.Status != RolledBack ||
+		f.inst.Config[incus.ComposeOverrideKey] != "docker.io/library/nginx:1.27.1-alpine" {
 		t.Errorf("outcome %+v, override %q; want the earlier override back", o, f.inst.Config[incus.ComposeOverrideKey])
 	}
 }
@@ -921,9 +1058,17 @@ func TestApplyResetsRequestedOnceTheAskedRefMoved(t *testing.T) {
 	f := newFake()
 	tgt := target()
 	tgt.RefSource = incus.RefFromBeacon
-	tgt.Update = incus.Update{Requested: "docker.io/library/nginx:1.25-alpine", Applied: "docker.io/library/nginx:1.26-alpine", Status: Updated}
+	tgt.Update = incus.Update{
+		Requested: "docker.io/library/nginx:1.25-alpine",
+		Applied:   "docker.io/library/nginx:1.26-alpine",
+		Status:    Updated,
+	}
 	if o := apply(t, f, tgt); o.Status != Updated || f.inst.Config["user.incus-beacon.requested"] != oldRef {
-		t.Errorf("outcome %+v, requested %q; want the ref asked for now", o, f.inst.Config["user.incus-beacon.requested"])
+		t.Errorf(
+			"outcome %+v, requested %q; want the ref asked for now",
+			o,
+			f.inst.Config["user.incus-beacon.requested"],
+		)
 	}
 }
 
@@ -934,7 +1079,11 @@ func TestApplyRecoveryRestoresTheImageOverride(t *testing.T) {
 	cfg["volatile.base_image"] = "fp-new"
 	cfg[incus.ComposeOverrideKey], cfg[incus.ComposeOverrideOfKey] = newRef, oldRef
 	cfg[incus.ClaimKey] = claimJSON(t, claim{
-		Owner: "other/7", Expires: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Step: stepIndex(t, "rebuild"), To: newRef, From: "fp-old",
+		Owner:    "other/7",
+		Expires:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Step:     stepIndex(t, "rebuild"),
+		To:       newRef,
+		From:     "fp-old",
 		Override: map[string]string{incus.ComposeOverrideKey: "", incus.ComposeOverrideOfKey: ""},
 	})
 	o := apply(t, f, composeTarget())
@@ -997,8 +1146,15 @@ func steps(event string, names ...string) []string {
 const dropEnv = "drop environment keys"
 
 var (
-	snapshotted = []string{"update.claim", "update.step stop begin", "update.step stop done", "update.step snapshot begin", "snapshot.create", "update.step snapshot done"}
-	restored    = []string{"update.undo start begin", "snapshot.restore", "update.undo start done"}
+	snapshotted = []string{
+		"update.claim",
+		"update.step stop begin",
+		"update.step stop done",
+		"update.step snapshot begin",
+		"snapshot.create",
+		"update.step snapshot done",
+	}
+	restored = []string{"update.undo start begin", "snapshot.restore", "update.undo start done"}
 )
 
 func checkSequence(t *testing.T, records []map[string]any, want []string) {
@@ -1041,7 +1197,10 @@ func TestAuditAnUpdate(t *testing.T) {
 		switch r["event"] {
 		case "update.claim":
 			if r["from_image"] != "fp-old" || r["from"] != oldRef || r["digest"] != pin ||
-				!reflect.DeepEqual(r["dropped"], []any{"environment.NGINX_VERSION"}) || !reflect.DeepEqual(r["kept"], []any{"environment.FOO"}) {
+				!reflect.DeepEqual(
+					r["dropped"],
+					[]any{"environment.NGINX_VERSION"},
+				) || !reflect.DeepEqual(r["kept"], []any{"environment.FOO"}) {
 				t.Errorf("claim %v", r)
 			}
 		case "snapshot.create":
@@ -1076,7 +1235,8 @@ func TestAuditARollback(t *testing.T) {
 		steps("update.undo", "rebuild", "set the image override", dropEnv, "stop"),
 		[]string{"update.release", "snapshot.prune", "update.outcome rolled-back"})
 	checkSequence(t, records, want)
-	if r := records[len(records)-1]; !strings.Contains(r["reason"].(string), "stopped after the start") || r["image"] != "fp-old" {
+	if r := records[len(records)-1]; !strings.Contains(r["reason"].(string), "stopped after the start") ||
+		r["image"] != "fp-old" {
 		t.Errorf("outcome %v", r)
 	}
 }
@@ -1115,8 +1275,12 @@ func TestAuditARecovery(t *testing.T) {
 	if o.Status != RolledBack {
 		t.Fatalf("outcome %+v", o)
 	}
-	want := slices.Concat([]string{"update.takeover"}, restored, steps("update.undo", "rebuild", "set the image override", dropEnv, "stop"),
-		[]string{"update.release", "update.outcome rolled-back"})
+	want := slices.Concat(
+		[]string{"update.takeover"},
+		restored,
+		steps("update.undo", "rebuild", "set the image override", dropEnv, "stop"),
+		[]string{"update.release", "update.outcome rolled-back"},
+	)
 	checkSequence(t, records, want)
 	checkOp(t, records, op)
 	if !strings.Contains(records[0]["reason"].(string), "by other/7 was interrupted at start") ||

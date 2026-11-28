@@ -37,27 +37,16 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 	if err != nil {
 		return err
 	}
-	server, alias, err := update.SplitImage(opts.Image)
+	server, alias, old, err := upgradable(srv, inst, opts)
 	if err != nil {
 		return err
 	}
 	from := inst.Config["image.id"]
-	if older(tagOf(alias), tagOf(from)) && !opts.Force {
-		return fmt.Errorf("%s is older than the running %s; give --force to downgrade", opts.Image, from)
-	}
-	// Incus refuses to rebuild an instance that has snapshots.
-	snaps, err := srv.GetInstanceSnapshotNames(opts.Name)
-	if err != nil {
-		return fmt.Errorf("list snapshots of %s: %w", opts.Name, err)
-	}
-	if len(snaps) > 0 {
-		return fmt.Errorf("instance %s has snapshots (%s), which rebuild refuses; delete them first", opts.Name, strings.Join(snaps, ", "))
-	}
-	old := inst.Config["volatile.base_image"]
-	if old == "" {
-		return fmt.Errorf("instance %s records no base image to roll back to", opts.Name)
-	}
-	fields := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).With().Str("from", from).Str("from_image", old).Str("image", opts.Image)
+	fields := log.AuditFor(opts.Audit, log.Process(), inst.Project, opts.Name).
+		With().
+		Str("from", from).
+		Str("from_image", old).
+		Str("image", opts.Image)
 	addLog := inst.Devices[logDev] == nil
 	if addLog {
 		fields = fields.Str("log_volume", LogVolumeName(opts.Name))
@@ -78,7 +67,12 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 			return fmt.Errorf("stop %s: %w", opts.Name, err)
 		}
 	}
-	err = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias})
+	err = update.Rebuild(
+		ctx,
+		srv,
+		opts.Name,
+		api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias},
+	)
 	if err == nil {
 		opts.Log.Info().Str("instance", opts.Name).Str("from", from).Str("image", opts.Image).Msg("instance rebuilt")
 		err = update.SetState(ctx, srv, opts.Name, "start")
@@ -93,19 +87,64 @@ func Upgrade(ctx context.Context, srv incusclient.InstanceServer, opts UpgradeOp
 
 	err = fmt.Errorf("upgrade %s to %s: %w", opts.Name, opts.Image, err)
 	opts.Log.Warn().Err(err).Str("image", from).Msg("rolling back")
-	log.AuditBegin(audit, "upgrade.rollback").Send()
-	rerr := stopIfRunning(ctx, srv, opts.Name)
-	if rerr == nil {
-		rerr = update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old})
-	}
-	if rerr == nil {
-		rerr = update.SetState(ctx, srv, opts.Name, "start")
-	}
-	log.AuditEnd(audit, "upgrade.rollback", rerr).Send()
+	return rollBackUpgrade(ctx, srv, opts, audit, from, old, err)
+}
+
+// rollBackUpgrade rebuilds name from its old base image, returning cause with the outcome.
+func rollBackUpgrade(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	opts UpgradeOptions,
+	audit zerolog.Logger,
+	from, old string,
+	cause error,
+) error {
+	rerr := rollBack(audit, "upgrade.rollback", func() error {
+		if err := stopIfRunning(ctx, srv, opts.Name); err != nil {
+			return err
+		}
+		if err := update.Rebuild(ctx, srv, opts.Name, api.InstanceSource{Type: "image", Fingerprint: old}); err != nil {
+			return err
+		}
+		return update.SetState(ctx, srv, opts.Name, "start")
+	})
 	if rerr != nil {
-		return errors.Join(err, fmt.Errorf("roll back to %s: %w", from, rerr))
+		return errors.Join(cause, fmt.Errorf("roll back to %s: %w", from, rerr))
 	}
-	return fmt.Errorf("%w; rolled back to %s", err, from)
+	return fmt.Errorf("%w; rolled back to %s", cause, from)
+}
+
+// upgradable refuses an upgrade Incus or --force rules out, and returns the image's server and alias and the base image to roll back to.
+func upgradable(
+	srv incusclient.InstanceServer,
+	inst *api.Instance,
+	opts UpgradeOptions,
+) (server, alias, old string, err error) {
+	server, alias, err = update.SplitImage(opts.Image)
+	if err != nil {
+		return "", "", "", err
+	}
+	from := inst.Config["image.id"]
+	if older(tagOf(alias), tagOf(from)) && !opts.Force {
+		return "", "", "", fmt.Errorf("%s is older than the running %s; give --force to downgrade", opts.Image, from)
+	}
+	// Incus refuses to rebuild an instance that has snapshots.
+	snaps, err := srv.GetInstanceSnapshotNames(opts.Name)
+	if err != nil {
+		return "", "", "", fmt.Errorf("list snapshots of %s: %w", opts.Name, err)
+	}
+	if len(snaps) > 0 {
+		return "", "", "", fmt.Errorf(
+			"instance %s has snapshots (%s), which rebuild refuses; delete them first",
+			opts.Name,
+			strings.Join(snaps, ", "),
+		)
+	}
+	old = inst.Config["volatile.base_image"]
+	if old == "" {
+		return "", "", "", fmt.Errorf("instance %s records no base image to roll back to", opts.Name)
+	}
+	return server, alias, old, nil
 }
 
 func addLogVolume(ctx context.Context, srv incusclient.InstanceServer, name, pool string, logger zerolog.Logger) error {
@@ -141,7 +180,11 @@ func with[V any](m map[string]V, k string, v V) map[string]V {
 }
 
 // installed finds the instance for upgrade and configure, refusing one install didn't create; uninstall tolerates any.
-func installed(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+func installed(
+	srv incusclient.InstanceServer,
+	name string,
+	logger zerolog.Logger,
+) (incusclient.InstanceServer, *api.Instance, error) {
 	srv, inst, err := findInstance(srv, name, logger)
 	if notFound(err) {
 		return srv, nil, fmt.Errorf("instance %s not found; install it first", name)

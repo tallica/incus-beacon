@@ -36,7 +36,9 @@ func ForProgram(prog string, args []string) []string {
 	if filepath.Base(prog) != DaemonName {
 		return args
 	}
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") && !slices.Contains(helpArgs, args[0]) && !slices.Contains(versionArgs, args[0]) {
+	if len(args) == 0 ||
+		strings.HasPrefix(args[0], "-") && !slices.Contains(helpArgs, args[0]) &&
+			!slices.Contains(versionArgs, args[0]) {
 		return append([]string{CmdServe}, args...)
 	}
 	return args
@@ -309,146 +311,21 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 
 	switch name {
 	case CmdCheck:
-		c := &Check{}
-		bindCommon(fs, &c.Common)
-		bindRegistry(fs, &c.Registry)
-		bindConcurrency(fs, &c.Registry)
-		fs.StringVar(&c.Instance, "instance", "", "check only this instance")
-		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
-		fs.BoolVar(&c.Write, "write", false, "also record results in user.incus-beacon.* keys")
-		cfg.Check, cfg.cmd = c, c
-		validate = func() error {
-			return errors.Join(c.Common.validate(), c.Registry.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))
-		}
+		validate = checkCmd(fs, cfg)
 	case CmdStatus:
-		c := &Status{}
-		bindCommon(fs, &c.Common)
-		fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
-		fs.BoolVar(&c.OnlyUpdates, "only-updates", false, "list only instances with an update available")
-		cfg.Status, cfg.cmd = c, c
-		validate = func() error {
-			return errors.Join(c.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))
-		}
+		validate = statusCmd(fs, cfg)
 	case CmdServe:
-		c := &Serve{}
-		bindCommon(fs, &c.Common)
-		bindRegistry(fs, &c.Registry)
-		bindConcurrency(fs, &c.Registry)
-		fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
-		fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
-		fs.BoolVar(&c.Events, "events", false, "also check instances as soon as they are created, updated or rebuilt")
-		fs.Var((*urlsValue)(&c.NotifyURLs), "notify-url", "where to send notifications: an http(s) webhook, discord:// or slack://; repeat, or space-separate, for several")
-		fs.StringVar(&c.NotifyURLFile, "notify-url-file", "", "file of further --notify-url values, one per line, as install writes it")
-		fs.StringVar(&c.NotifyCommand, "notify-command", "", "program run per notification, with the JSON payload on stdin; arguments split on spaces, no shell")
-		fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when an instance's check starts failing")
-		fs.BoolVar(&c.Update, "update", false, "apply updates to instances that set user.incus-beacon.update=auto")
-		fs.StringVar(&c.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in local time, when updates may run, unless an instance sets its own (default: any time)")
-		bindUpdate(fs, &c.UpdateFlags)
-		bindAudit(fs, &c.Audit)
-		cfg.Serve, cfg.cmd = c, c
-		validate = func() error {
-			errs := []error{c.Common.validate(), c.Registry.validate()}
-			if c.Interval < time.Minute {
-				errs = append(errs, fmt.Errorf("interval %s: must be at least 1m", c.Interval))
-			}
-			if c.Listen == "" {
-				errs = append(errs, errors.New("listen: must not be empty"))
-			}
-			if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyURLFile == "" && c.NotifyCommand == "" {
-				errs = append(errs, errors.New("notify-errors needs notify-url, notify-url-file or notify-command"))
-			}
-			if c.UpdateWindow != "" {
-				var err error
-				if c.Window, err = policy.ParseWindow(c.UpdateWindow); err != nil {
-					errs = append(errs, err)
-				}
-			}
-			errs = append(errs, c.UpdateFlags.validate(), c.Audit.validate())
-			return errors.Join(errs...)
-		}
+		validate = serveCmd(fs, cfg)
 	case CmdUpdate:
-		c := &Update{Registry: Registry{Concurrency: 1}}
-		bindCommon(fs, &c.Common)
-		bindRegistry(fs, &c.Registry)
-		fs.StringVar(&c.Instance, "instance", "", "the instance to update (required)")
-		fs.BoolVar(&c.DryRun, "dry-run", false, "print what would be updated, and change nothing")
-		bindUpdate(fs, &c.UpdateFlags)
-		bindAudit(fs, &c.Audit)
-		cfg.Update, cfg.cmd = c, c
-		validate = func() error {
-			errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate(), c.Audit.validate()}
-			if c.Instance == "" {
-				errs = append(errs, errors.New("instance: required"))
-			}
-			return errors.Join(errs...)
-		}
+		validate = updateCmd(fs, cfg)
 	case CmdInstall:
-		c := &Install{}
-		bindLog(fs, &c.Common)
-		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name, "incus-beacond, refused beside an incus-beacon from before 0.6")
-		fs.StringVar(&c.Image, "image", "", "image to run (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
-		fs.StringVar(&c.StoragePool, "storage-pool", "", "pool for the state volume (default: the default profile's root pool)")
-		fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
-		bindSettings(fs, &c.Common, &c.Settings)
-		bindAudit(fs, &c.Audit)
-		cfg.Install, cfg.cmd = c, c
-		validate = func() error {
-			errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
-			if c.Wait <= 0 {
-				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
-			}
-			if c.NotifyErrs && len(c.NotifyURLs) == 0 {
-				errs = append(errs, errors.New("notify-errors needs notify-url"))
-			}
-			return errors.Join(errs...)
-		}
+		validate = installCmd(fs, cfg)
 	case CmdConfigure:
-		c := &Configure{Common: Common{Watch: WatchAll}}
-		bindLog(fs, &c.Common)
-		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
-		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
-		bindSettings(fs, &c.Common, &c.Settings)
-		bindAudit(fs, &c.Audit)
-		cfg.Configure, cfg.cmd = c, c
-		validate = func() error {
-			errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
-			if c.Wait <= 0 {
-				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
-			}
-			// A bare configure is a usage mistake; settings already as given are a no-op install.Configure reports.
-			if !slices.ContainsFunc(settingFlags, c.Given) {
-				errs = append(errs, errors.New("no setting given; see incus-beacon configure -h"))
-			}
-			return errors.Join(errs...)
-		}
+		validate = configureCmd(fs, cfg)
 	case CmdUpgrade:
-		c := &Upgrade{Common: Common{Watch: WatchAll}}
-		bindLog(fs, &c.Common)
-		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
-		fs.StringVar(&c.Image, "image", "", "image to rebuild from (default: ghcr.io/tallica/incus-beacon at this version's major.minor)")
-		fs.BoolVar(&c.Force, "force", false, "allow an image older than the running one")
-		fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
-		bindAudit(fs, &c.Audit)
-		cfg.Upgrade, cfg.cmd = c, c
-		validate = func() error {
-			errs := []error{c.Common.validate(), c.Audit.validate()}
-			if c.Wait <= 0 {
-				errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
-			}
-			return errors.Join(errs...)
-		}
+		validate = upgradeCmd(fs, cfg)
 	case CmdUninstall:
-		c := &Uninstall{Common: Common{Watch: WatchAll}}
-		bindLog(fs, &c.Common)
-		bindRemoteProject(fs, &c.Common)
-		bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
-		fs.BoolVar(&c.DeleteLog, "delete-log", false, "also delete the <name>-log volume holding the instance's audit log")
-		bindAudit(fs, &c.Audit)
-		cfg.Uninstall, cfg.cmd = c, c
-		validate = func() error { return errors.Join(c.Common.validate(), c.Audit.validate()) }
+		validate = uninstallCmd(fs, cfg)
 	case CmdVersion:
 		validate = func() error { return nil }
 	default:
@@ -456,17 +333,8 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		return nil, fmt.Errorf("%w: unknown command %q", ErrUsage, name)
 	}
 
-	if err := fs.Parse(rest); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil, ErrHelp
-		}
-		return nil, fmt.Errorf("%w: %w", ErrUsage, err)
-	}
-	if fs.NArg() > 0 && slices.Contains(Commands, fs.Arg(0)) {
-		return nil, fmt.Errorf("%w: unexpected argument %q; give one command, before its flags", ErrUsage, fs.Arg(0))
-	}
-	if fs.NArg() > 0 {
-		return nil, fmt.Errorf("%w: unexpected argument %q", ErrUsage, fs.Arg(0))
+	if err := parseFlags(fs, rest); err != nil {
+		return nil, err
 	}
 	var envSkip []string
 	if c := cfg.Configure; c != nil {
@@ -482,6 +350,223 @@ func Parse(args []string, getenv func(string) string, out io.Writer) (*Config, e
 		return nil, fmt.Errorf("%w: %w", ErrUsage, err)
 	}
 	return cfg, nil
+}
+
+// parseFlags parses rest into fs; ErrHelp for -h, and ErrUsage for a bad flag or a stray argument.
+func parseFlags(fs *flag.FlagSet, rest []string) error {
+	if err := fs.Parse(rest); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return ErrHelp
+		}
+		return fmt.Errorf("%w: %w", ErrUsage, err)
+	}
+	if fs.NArg() > 0 && slices.Contains(Commands, fs.Arg(0)) {
+		return fmt.Errorf("%w: unexpected argument %q; give one command, before its flags", ErrUsage, fs.Arg(0))
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("%w: unexpected argument %q", ErrUsage, fs.Arg(0))
+	}
+	return nil
+}
+
+func checkCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Check{}
+	bindCommon(fs, &c.Common)
+	bindRegistry(fs, &c.Registry)
+	bindConcurrency(fs, &c.Registry)
+	fs.StringVar(&c.Instance, "instance", "", "check only this instance")
+	fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
+	fs.BoolVar(&c.Write, "write", false, "also record results in user.incus-beacon.* keys")
+	cfg.Check, cfg.cmd = c, c
+	return func() error {
+		return errors.Join(
+			c.Common.validate(),
+			c.Registry.validate(),
+			oneOf("format", c.Format, OutputTable, OutputJSON),
+		)
+	}
+}
+
+func statusCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Status{}
+	bindCommon(fs, &c.Common)
+	fs.StringVar(&c.Format, "format", OutputTable, "output format: table or json")
+	fs.BoolVar(&c.OnlyUpdates, "only-updates", false, "list only instances with an update available")
+	cfg.Status, cfg.cmd = c, c
+	return func() error {
+		return errors.Join(c.validate(), oneOf("format", c.Format, OutputTable, OutputJSON))
+	}
+}
+
+func serveCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Serve{}
+	bindCommon(fs, &c.Common)
+	bindRegistry(fs, &c.Registry)
+	bindConcurrency(fs, &c.Registry)
+	fs.DurationVar(&c.Interval, "interval", 6*time.Hour, "time between check cycles")
+	fs.StringVar(&c.Listen, "listen", ":9153", "address for /health and /ready")
+	fs.BoolVar(&c.Events, "events", false, "also check instances as soon as they are created, updated or rebuilt")
+	fs.Var(
+		(*urlsValue)(&c.NotifyURLs),
+		"notify-url",
+		"where to send notifications: an http(s) webhook, discord:// or slack://; repeat, or space-separate, for several",
+	)
+	fs.StringVar(
+		&c.NotifyURLFile,
+		"notify-url-file",
+		"",
+		"file of further --notify-url values, one per line, as install writes it",
+	)
+	fs.StringVar(
+		&c.NotifyCommand,
+		"notify-command",
+		"",
+		"program run per notification, with the JSON payload on stdin; arguments split on spaces, no shell",
+	)
+	fs.BoolVar(&c.NotifyErrors, "notify-errors", false, "also notify when an instance's check starts failing")
+	fs.BoolVar(&c.Update, "update", false, "apply updates to instances that set user.incus-beacon.update=auto")
+	fs.StringVar(
+		&c.UpdateWindow,
+		"update-window",
+		"",
+		"daily HH:MM-HH:MM, in local time, when updates may run, unless an instance sets its own (default: any time)",
+	)
+	bindUpdate(fs, &c.UpdateFlags)
+	bindAudit(fs, &c.Audit)
+	cfg.Serve, cfg.cmd = c, c
+	return func() error {
+		errs := []error{c.Common.validate(), c.Registry.validate()}
+		if c.Interval < time.Minute {
+			errs = append(errs, fmt.Errorf("interval %s: must be at least 1m", c.Interval))
+		}
+		if c.Listen == "" {
+			errs = append(errs, errors.New("listen: must not be empty"))
+		}
+		if c.NotifyErrors && len(c.NotifyURLs) == 0 && c.NotifyURLFile == "" && c.NotifyCommand == "" {
+			errs = append(errs, errors.New("notify-errors needs notify-url, notify-url-file or notify-command"))
+		}
+		if c.UpdateWindow != "" {
+			var err error
+			if c.Window, err = policy.ParseWindow(c.UpdateWindow); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		errs = append(errs, c.UpdateFlags.validate(), c.Audit.validate())
+		return errors.Join(errs...)
+	}
+}
+
+func updateCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Update{Concurrency: 1}
+	bindCommon(fs, &c.Common)
+	bindRegistry(fs, &c.Registry)
+	fs.StringVar(&c.Instance, "instance", "", "the instance to update (required)")
+	fs.BoolVar(&c.DryRun, "dry-run", false, "print what would be updated, and change nothing")
+	bindUpdate(fs, &c.UpdateFlags)
+	bindAudit(fs, &c.Audit)
+	cfg.Update, cfg.cmd = c, c
+	return func() error {
+		errs := []error{c.Common.validate(), c.Registry.validate(), c.UpdateFlags.validate(), c.Audit.validate()}
+		if c.Instance == "" {
+			errs = append(errs, errors.New("instance: required"))
+		}
+		return errors.Join(errs...)
+	}
+}
+
+func installCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Install{}
+	bindLog(fs, &c.Common)
+	bindRemoteProject(fs, &c.Common)
+	bindInstance(fs, &c.Name, "incus-beacond, refused beside an incus-beacon from before 0.6")
+	fs.StringVar(
+		&c.Image,
+		"image",
+		"",
+		"image to run (default: ghcr.io/tallica/incus-beacon at this version's major.minor)",
+	)
+	fs.StringVar(
+		&c.StoragePool,
+		"storage-pool",
+		"",
+		"pool for the state volume (default: the default profile's root pool)",
+	)
+	fs.DurationVar(&c.Wait, "wait", time.Minute, "how long to wait for the instance to join")
+	bindSettings(fs, &c.Common, &c.Settings)
+	bindAudit(fs, &c.Audit)
+	cfg.Install, cfg.cmd = c, c
+	return func() error {
+		errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
+		if c.Wait <= 0 {
+			errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
+		}
+		if c.NotifyErrs && len(c.NotifyURLs) == 0 {
+			errs = append(errs, errors.New("notify-errors needs notify-url"))
+		}
+		return errors.Join(errs...)
+	}
+}
+
+func configureCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Configure{Watch: WatchAll}
+	bindLog(fs, &c.Common)
+	bindRemoteProject(fs, &c.Common)
+	bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
+	fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
+	bindSettings(fs, &c.Common, &c.Settings)
+	bindAudit(fs, &c.Audit)
+	cfg.Configure, cfg.cmd = c, c
+	return func() error {
+		errs := []error{c.Common.validate(), c.Settings.validate(), c.Audit.validate()}
+		if c.Wait <= 0 {
+			errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
+		}
+		// A bare configure is a usage mistake; settings already as given are a no-op install.Configure reports.
+		if !slices.ContainsFunc(settingFlags, c.Given) {
+			errs = append(errs, errors.New("no setting given; see incus-beacon configure -h"))
+		}
+		return errors.Join(errs...)
+	}
+}
+
+func upgradeCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Upgrade{Watch: WatchAll}
+	bindLog(fs, &c.Common)
+	bindRemoteProject(fs, &c.Common)
+	bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
+	fs.StringVar(
+		&c.Image,
+		"image",
+		"",
+		"image to rebuild from (default: ghcr.io/tallica/incus-beacon at this version's major.minor)",
+	)
+	fs.BoolVar(&c.Force, "force", false, "allow an image older than the running one")
+	fs.DurationVar(&c.Wait, "wait", 2*time.Minute, "how long to wait for /ready before rolling back")
+	bindAudit(fs, &c.Audit)
+	cfg.Upgrade, cfg.cmd = c, c
+	return func() error {
+		errs := []error{c.Common.validate(), c.Audit.validate()}
+		if c.Wait <= 0 {
+			errs = append(errs, fmt.Errorf("wait %s: must be positive", c.Wait))
+		}
+		return errors.Join(errs...)
+	}
+}
+
+func uninstallCmd(fs *flag.FlagSet, cfg *Config) func() error {
+	c := &Uninstall{Watch: WatchAll}
+	bindLog(fs, &c.Common)
+	bindRemoteProject(fs, &c.Common)
+	bindInstance(fs, &c.Name, "incus-beacond, or an incus-beacon from before 0.6")
+	fs.BoolVar(
+		&c.DeleteLog,
+		"delete-log",
+		false,
+		"also delete the <name>-log volume holding the instance's audit log",
+	)
+	bindAudit(fs, &c.Audit)
+	cfg.Uninstall, cfg.cmd = c, c
+	return func() error { return errors.Join(c.Common.validate(), c.Audit.validate()) }
 }
 
 func Usage(out io.Writer) {
@@ -521,7 +606,11 @@ func bindRemote(fs *flag.FlagSet, c *Common) {
 
 // bindRemoteProject also takes <remote>:<project>, the project the instance lives in.
 func bindRemoteProject(fs *flag.FlagSet, c *Common) {
-	fs.Var(&remoteValue{c: c, project: true}, "remote", "incus CLI `remote[:project]` to use, the project being where the instance lives (default: the CLI's default remote and its current project)")
+	fs.Var(
+		&remoteValue{c: c, project: true},
+		"remote",
+		"incus CLI `remote[:project]` to use, the project being where the instance lives (default: the CLI's default remote and its current project)",
+	)
 }
 
 func bindInstance(fs *flag.FlagSet, name *string, dflt string) {
@@ -545,17 +634,50 @@ func bindCommon(fs *flag.FlagSet, c *Common) {
 
 // bindSettings binds install's settings; never with bindCommon, which binds --project and --watch too.
 func bindSettings(fs *flag.FlagSet, c *Common, s *Settings) {
-	fs.Var((*csvValue)(&c.Projects), "project", "project to watch, and to restrict the certificate to; comma-separate several (default: all)")
+	fs.Var(
+		(*csvValue)(&c.Projects),
+		"project",
+		"project to watch, and to restrict the certificate to; comma-separate several (default: all)",
+	)
 	fs.StringVar(&c.Watch, "watch", WatchAll, "which OCI instances to watch: all or opt-in")
 	fs.StringVar(&s.APIURL, "api-url", "", "Incus API URL the instance connects to (default: detected)")
-	fs.BoolVar(&s.Events, "events", false, "have the instance check instances as soon as they are created, updated or rebuilt")
-	fs.StringVar(&s.Track, "track", "", "how the instance follows its own image: digest or semver (default: semver for a version tag, else digest)")
-	fs.Var((*urlsValue)(&s.NotifyURLs), "notify-url", "where the instance sends notifications; stored in its state volume, not its config")
+	fs.BoolVar(
+		&s.Events,
+		"events",
+		false,
+		"have the instance check instances as soon as they are created, updated or rebuilt",
+	)
+	fs.StringVar(
+		&s.Track,
+		"track",
+		"",
+		"how the instance follows its own image: digest or semver (default: semver for a version tag, else digest)",
+	)
+	fs.Var(
+		(*urlsValue)(&s.NotifyURLs),
+		"notify-url",
+		"where the instance sends notifications; stored in its state volume, not its config",
+	)
 	fs.BoolVar(&s.NotifyErrs, "notify-errors", false, "have the instance also notify when a check starts failing")
 	fs.DurationVar(&s.Interval, "interval", 0, "time between the instance's check cycles (default: serve's 6h)")
-	fs.DurationVar(&s.Cooldown, "cooldown", 0, "have the instance report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
-	fs.BoolVar(&s.Update, "update", false, "have the instance apply updates to instances that set user.incus-beacon.update=auto")
-	fs.StringVar(&s.UpdateWindow, "update-window", "", "daily HH:MM-HH:MM, in the instance's local time (UTC unless TZ is set), when its updates may run (default: any time)")
+	fs.DurationVar(
+		&s.Cooldown,
+		"cooldown",
+		0,
+		"have the instance report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)",
+	)
+	fs.BoolVar(
+		&s.Update,
+		"update",
+		false,
+		"have the instance apply updates to instances that set user.incus-beacon.update=auto",
+	)
+	fs.StringVar(
+		&s.UpdateWindow,
+		"update-window",
+		"",
+		"daily HH:MM-HH:MM, in the instance's local time (UTC unless TZ is set), when its updates may run (default: any time)",
+	)
 }
 
 // SettingFlags names the flags configure changes settings with.
@@ -596,8 +718,18 @@ func CheckServeEnv(env map[string]string) error {
 }
 
 func bindUpdate(fs *flag.FlagSet, c *UpdateFlags) {
-	fs.DurationVar(&c.StopTimeout, "update-stop-timeout", 30*time.Second, "how long an instance may take to stop before it is forced")
-	fs.DurationVar(&c.Wait, "update-wait", 5*time.Minute, "how long an updated instance has to become healthy before it is rolled back")
+	fs.DurationVar(
+		&c.StopTimeout,
+		"update-stop-timeout",
+		30*time.Second,
+		"how long an instance may take to stop before it is forced",
+	)
+	fs.DurationVar(
+		&c.Wait,
+		"update-wait",
+		5*time.Minute,
+		"how long an updated instance has to become healthy before it is rolled back",
+	)
 	fs.DurationVar(&c.Settle, "update-settle", 30*time.Second, "how long an updated instance must keep running")
 	fs.IntVar(&c.Keep, "update-keep", 3, "how many of beacon's snapshots to keep per volume; 0 keeps all")
 }
@@ -620,9 +752,23 @@ func (c *UpdateFlags) validate() error {
 
 func bindAudit(fs *flag.FlagSet, c *Audit) {
 	c.AuditLogMaxSize = 10 << 20
-	fs.StringVar(&c.AuditLog, "audit-log", "", "file to append a JSON line to per change this command makes (default: none)")
-	fs.Var((*sizeValue)(&c.AuditLogMaxSize), "audit-log-max-size", "`size` past which the audit log is rotated: bytes, or a whole number of KiB or MiB")
-	fs.IntVar(&c.AuditLogKeep, "audit-log-keep", 5, "how many rotated audit logs to keep, <file>.1 being the newest; 0 keeps none")
+	fs.StringVar(
+		&c.AuditLog,
+		"audit-log",
+		"",
+		"file to append a JSON line to per change this command makes (default: none)",
+	)
+	fs.Var(
+		(*sizeValue)(&c.AuditLogMaxSize),
+		"audit-log-max-size",
+		"`size` past which the audit log is rotated: bytes, or a whole number of KiB or MiB",
+	)
+	fs.IntVar(
+		&c.AuditLogKeep,
+		"audit-log-keep",
+		5,
+		"how many rotated audit logs to keep, <file>.1 being the newest; 0 keeps none",
+	)
 }
 
 func (c *Audit) validate() error {
@@ -643,7 +789,12 @@ func bindConcurrency(fs *flag.FlagSet, c *Registry) {
 func bindRegistry(fs *flag.FlagSet, c *Registry) {
 	fs.StringVar(&c.RegistryAuthFile, "registry-auth-file", "", "docker config.json with registry credentials")
 	fs.DurationVar(&c.Timeout, "timeout", 30*time.Second, "timeout for each registry call")
-	fs.DurationVar(&c.Cooldown, "cooldown", 0, "report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)")
+	fs.DurationVar(
+		&c.Cooldown,
+		"cooldown",
+		0,
+		"report an image only once it is this old, unless an instance sets user.incus-beacon.cooldown (default: off)",
+	)
 }
 
 func (c *Common) validate() error {

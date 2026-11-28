@@ -11,10 +11,25 @@ import (
 func checkResults() []check.Result {
 	tg := func(project, name string) incus.Target { return incus.Target{Project: project, Instance: name} }
 	return []check.Result{
-		{Target: tg("apps", "api"), Status: check.UpdateAvailable, Current: "ghcr.io/example/api:1.2.0", Latest: "1.3.0"},
-		{Target: tg("apps", "worker"), Status: check.UpdateAvailable, Current: "ghcr.io/example/worker:3", Latest: "3@sha256:bbbbbbbbbbbb"},
+		{
+			Target:  tg("apps", "api"),
+			Status:  check.UpdateAvailable,
+			Current: "ghcr.io/example/api:1.2.0",
+			Latest:  "1.3.0",
+		},
+		{
+			Target:  tg("apps", "worker"),
+			Status:  check.UpdateAvailable,
+			Current: "ghcr.io/example/worker:3",
+			Latest:  "3@sha256:bbbbbbbbbbbb",
+		},
 		{Target: tg("apps", "orphan"), Status: check.Unknown, Reason: "no registry ref"},
-		{Target: tg("default", "db"), Status: check.Error, Current: "docker.io/library/postgres:17", Reason: "rate limited until 2026-11-04T18:00:00Z"},
+		{
+			Target:  tg("default", "db"),
+			Status:  check.Error,
+			Current: "docker.io/library/postgres:17",
+			Reason:  "rate limited until 2026-11-04T18:00:00Z",
+		},
 		{Target: tg("default", "web"), Status: check.Current, Current: "docker.io/library/nginx:1.27"},
 	}
 }

@@ -61,7 +61,9 @@ func configuredFake() *fake {
 	inst := f.instances["incus-beacon"]
 	inst.Config["environment.BEACON_INCUS"] = "https://192.168.1.10:8443"
 	inst.Devices[stateDev]["pool"] = "default"
-	f.certs = []api.Certificate{{Fingerprint: "fp-incus-beacon", CertificatePut: api.CertificatePut{Name: "incus-beacon"}}}
+	f.certs = []api.Certificate{
+		{Fingerprint: "fp-incus-beacon", Name: "incus-beacon"},
+	}
 	f.projects = []string{"default", "apps"}
 	return f
 }
@@ -95,7 +97,14 @@ func TestConfigure(t *testing.T) {
 	if !slices.Equal(f.states, []string{"stop", "start"}) {
 		t.Errorf("states %v, want a restart", f.states)
 	}
-	if i, j := slices.Index(f.calls, "update instance incus-beacon"), slices.Index(f.calls, "exec "+strings.Join(readyProbe, " ")); i < 0 || i > j {
+	if i, j := slices.Index(
+		f.calls,
+		"update instance incus-beacon",
+	), slices.Index(
+		f.calls,
+		"exec "+strings.Join(readyProbe, " "),
+	); i < 0 ||
+		i > j {
 		t.Errorf("calls %v, want the config written before the probe", f.calls)
 	}
 	if !slices.Contains(f.calls, "exec "+strings.Join(readyProbe, " ")) {
@@ -137,7 +146,14 @@ func TestConfigureNotifyURLs(t *testing.T) {
 	if err := Configure(context.Background(), f, o); err != nil {
 		t.Fatal(err)
 	}
-	if r := checkAudit(t, &buf, "configure begin", "configure done"); fmt.Sprint(r[0]["settings"]) != "[notify-url notify-errors]" {
+	if r := checkAudit(
+		t,
+		&buf,
+		"configure begin",
+		"configure done",
+	); fmt.Sprint(
+		r[0]["settings"],
+	) != "[notify-url notify-errors]" {
 		t.Errorf("settings %v, want notify-url and notify-errors", r[0]["settings"])
 	}
 	if strings.Contains(buf.String(), "example.com") {
@@ -190,10 +206,20 @@ func TestConfigureRollsBack(t *testing.T) {
 	var buf bytes.Buffer
 	o.Audit = zerolog.New(&buf)
 	err := Configure(context.Background(), f, o)
-	if err == nil || !strings.Contains(err.Error(), "not ready within") || !strings.Contains(err.Error(), "rolled back to the old settings, which are ready") {
+	if err == nil || !strings.Contains(err.Error(), "not ready within") ||
+		!strings.Contains(err.Error(), "rolled back to the old settings, which are ready") {
 		t.Fatalf("err %v, want not ready and rolled back", err)
 	}
-	if r := checkAudit(t, &buf, "configure begin", "configure.rollback begin", "configure.rollback done", "configure failed"); fmt.Sprint(r[0]["settings"]) != "[project notify-url interval]" {
+	if r := checkAudit(
+		t,
+		&buf,
+		"configure begin",
+		"configure.rollback begin",
+		"configure.rollback done",
+		"configure failed",
+	); fmt.Sprint(
+		r[0]["settings"],
+	) != "[project notify-url interval]" {
 		t.Errorf("settings %v, want project, notify-url and interval", r[0]["settings"])
 	}
 	if got := f.instances["incus-beacon"].Config; !maps.Equal(got, want) {
@@ -247,10 +273,22 @@ func TestConfigureRollsBackAFailedWrite(t *testing.T) {
 	o.Projects = &[]string{"apps"}
 	var buf bytes.Buffer
 	o.Audit = zerolog.New(&buf)
-	if err := Configure(context.Background(), f, o); err == nil || !strings.Contains(err.Error(), "certificate locked") {
+	if err := Configure(
+		context.Background(),
+		f,
+		o,
+	); err == nil ||
+		!strings.Contains(err.Error(), "certificate locked") {
 		t.Fatalf("err %v, want the certificate update's", err)
 	}
-	r := checkAudit(t, &buf, "configure begin", "configure.rollback begin", "configure.rollback failed", "configure failed")
+	r := checkAudit(
+		t,
+		&buf,
+		"configure begin",
+		"configure.rollback begin",
+		"configure.rollback failed",
+		"configure failed",
+	)
 	if !strings.Contains(fmt.Sprint(r[2]["error"]), "certificate locked") {
 		t.Errorf("rollback record %v, want the undo's error", r[2])
 	}
@@ -306,7 +344,11 @@ func TestConfigureWithoutRestart(t *testing.T) {
 		calls []string // must appear
 	}{
 		{"unchanged", func(f *fake, o *ConfigureOptions) { o.Interval = new(time.Duration(0)) }, nil},
-		{"track only", func(f *fake, o *ConfigureOptions) { o.Track = new("digest") }, []string{"update instance incus-beacon"}},
+		{
+			"track only",
+			func(f *fake, o *ConfigureOptions) { o.Track = new("digest") },
+			[]string{"update instance incus-beacon"},
+		},
 		{"stopped", func(f *fake, o *ConfigureOptions) {
 			f.instances["incus-beacon"].StatusCode = api.Stopped
 			o.Interval = new(time.Hour)
@@ -333,7 +375,8 @@ func TestConfigureWithoutRestart(t *testing.T) {
 				t.Errorf("%s: calls %v, want %q", tt.name, f.calls, c)
 			}
 		}
-		if tt.calls == nil && slices.ContainsFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "update") }) {
+		if tt.calls == nil &&
+			slices.ContainsFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "update") }) {
 			t.Errorf("%s: calls %v, want nothing written", tt.name, f.calls)
 		}
 	}
@@ -359,9 +402,17 @@ func TestConfigureRefuses(t *testing.T) {
 		setup func(*fake, *ConfigureOptions)
 		want  string
 	}{
-		{"missing", func(f *fake, o *ConfigureOptions) { delete(f.instances, "incus-beacon"); o.Interval = new(time.Hour) }, "install it first"},
+		{
+			"missing",
+			func(f *fake, o *ConfigureOptions) { delete(f.instances, "incus-beacon"); o.Interval = new(time.Hour) },
+			"install it first",
+		},
 		{"unknown project", func(f *fake, o *ConfigureOptions) { o.Projects = &[]string{"nope"} }, "project nope"},
-		{"no certificate", func(f *fake, o *ConfigureOptions) { f.certs = nil; o.Projects = &[]string{"apps"} }, "no trusted certificate"},
+		{
+			"no certificate",
+			func(f *fake, o *ConfigureOptions) { f.certs = nil; o.Projects = &[]string{"apps"} },
+			"no trusted certificate",
+		},
 		{"serve refuses", func(f *fake, o *ConfigureOptions) { o.NotifyErrs = new(true) }, "notify-errors needs"},
 	}
 	for _, tt := range tests {
@@ -372,7 +423,8 @@ func TestConfigureRefuses(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: err %v, want %q", tt.name, err, tt.want)
 		}
-		if len(f.states) != 0 || slices.ContainsFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "update") }) {
+		if len(f.states) != 0 ||
+			slices.ContainsFunc(f.calls, func(c string) bool { return strings.HasPrefix(c, "update") }) {
 			t.Errorf("%s: calls %v, states %v, want the instance untouched", tt.name, f.calls, f.states)
 		}
 	}

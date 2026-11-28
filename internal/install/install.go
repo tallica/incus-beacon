@@ -101,37 +101,53 @@ func trackFor(track, image string) string {
 	return policy.TrackDigest
 }
 
-// Install undoes what it created if a step before the start fails.
-func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) (err error) {
+// rollBack runs undo between the op's audit begin and end events.
+func rollBack(audit zerolog.Logger, op string, undo func() error) error {
+	log.AuditBegin(audit, op).Send()
+	rerr := undo()
+	log.AuditEnd(audit, op, rerr).Send()
+	return rerr
+}
+
+type installPlan struct {
+	pool, apiURL, server, alias string
+	env                         map[string]string
+}
+
+// prepareInstall settles everything Install needs before it creates anything.
+func prepareInstall(srv incusclient.InstanceServer, opts *Options) (installPlan, error) {
 	if opts.Name == "" {
 		if _, _, err := findInstance(srv, legacyName, opts.Log); err == nil {
-			return fmt.Errorf("an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another", legacyName)
+			return installPlan{}, fmt.Errorf(
+				"an instance %s from before 0.6 exists; upgrade it with incus-beacon upgrade, or give --name to install another",
+				legacyName,
+			)
 		}
 		opts.Name = DefaultName
 	}
 	if err := checkFree(srv, opts.Name); err != nil {
-		return err
+		return installPlan{}, err
 	}
 	pool, network, err := profileDefaults(srv)
 	if err != nil {
-		return err
+		return installPlan{}, err
 	}
 	if opts.StoragePool != "" {
 		pool = opts.StoragePool
 	}
 	if pool == "" {
-		return errors.New("the default profile has no root disk; give --storage-pool")
+		return installPlan{}, errors.New("the default profile has no root disk; give --storage-pool")
 	}
 	apiURL := opts.APIURL
 	if apiURL == "" {
 		if apiURL, err = detectURL(srv, network); err != nil {
-			return err
+			return installPlan{}, err
 		}
 	}
 	// configured also refuses a missing project: Incus accepts a token for one, and the instance then never joins.
 	s, track := opts.Settings, trackFor(opts.Track, opts.Image)
 	s.NotifyErrs = s.NotifyErrs && len(s.NotifyURLs) > 0 // with nothing to notify, serve would refuse the flag
-	fresh := &api.Instance{InstancePut: api.InstancePut{Config: map[string]string{}}}
+	fresh := &api.Instance{Config: map[string]string{}}
 	env, err := configured(srv, fresh, ConfigureOptions{
 		APIURL:       &apiURL,
 		Projects:     &opts.Projects,
@@ -146,88 +162,113 @@ func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) 
 		UpdateWindow: &s.UpdateWindow,
 	})
 	if err != nil {
-		return err
+		return installPlan{}, err
 	}
 	env[envPrefix+"TOKEN_FILE"] = tokenFile
 	env[envPrefix+"AUDIT_LOG"] = auditFile
 	server, alias, err := update.SplitImage(opts.Image)
 	if err != nil {
+		return installPlan{}, err
+	}
+	return installPlan{pool: pool, apiURL: apiURL, server: server, alias: alias, env: env}, nil
+}
+
+// createParts creates the volumes, token and instance and starts it, appending each step's undo.
+func createParts(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	opts Options,
+	p installPlan,
+	undo *[]func() error,
+) error {
+	vol := VolumeName(opts.Name)
+	if err := createVolume(srv, p.pool, vol); err != nil {
 		return err
 	}
-
-	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).With().Str("image", opts.Image).Str("pool", pool).Str("volume", VolumeName(opts.Name)).Str("log_volume", LogVolumeName(opts.Name)).Logger()
-	log.AuditBegin(audit, "install").Send()
-	defer func() { log.AuditEnd(audit, "install", err).Send() }()
-
-	var undo []func() error
-	rollback := func(err error) error {
-		log.AuditBegin(audit, "install.rollback").Send()
-		var rerr error
-		for _, f := range slices.Backward(undo) {
-			rerr = errors.Join(rerr, f())
-		}
-		log.AuditEnd(audit, "install.rollback", rerr).Send()
-		return errors.Join(err, rerr)
-	}
-
-	vol := VolumeName(opts.Name)
-	if err := createVolume(srv, pool, vol); err != nil {
-		return rollback(err)
-	}
-	undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", vol) })
-	opts.Log.Info().Str("pool", pool).Str("volume", vol).Msg("volume created")
+	*undo = append(*undo, func() error { return srv.DeleteStoragePoolVolume(p.pool, "custom", vol) })
+	opts.Log.Info().Str("pool", p.pool).Str("volume", vol).Msg("volume created")
 
 	logVol := LogVolumeName(opts.Name)
-	created, err := ensureLogVolume(srv, pool, logVol, opts.Log)
+	created, err := ensureLogVolume(srv, p.pool, logVol, opts.Log)
 	if err != nil {
-		return rollback(err)
+		return err
 	}
 	if created {
-		undo = append(undo, func() error { return srv.DeleteStoragePoolVolume(pool, "custom", logVol) })
+		*undo = append(*undo, func() error { return srv.DeleteStoragePoolVolume(p.pool, "custom", logVol) })
 	}
 
 	if len(opts.NotifyURLs) > 0 {
-		if err := writeNotifyURLs(srv, pool, vol, opts.NotifyURLs); err != nil {
-			return rollback(err)
+		if err := writeNotifyURLs(srv, p.pool, vol, opts.NotifyURLs); err != nil {
+			return err
 		}
-		opts.Log.Info().Int("urls", len(opts.NotifyURLs)).Str("file", vol+"/"+notifyFile).Msg("notification URLs stored")
+		opts.Log.Info().
+			Int("urls", len(opts.NotifyURLs)).
+			Str("file", vol+"/"+notifyFile).
+			Msg("notification URLs stored")
 	}
 
 	token, opID, err := createToken(srv, opts.Name, opts.Projects)
 	if err != nil {
-		return rollback(err)
+		return err
 	}
-	undo = append(undo, func() error { return tokens(srv).DeleteOperation(opID) })
+	*undo = append(*undo, func() error { return tokens(srv).DeleteOperation(opID) })
 
 	op, err := srv.CreateInstance(api.InstancesPost{
 		Name: opts.Name,
 		Type: api.InstanceTypeContainer,
 		Source: api.InstanceSource{
-			Type: "image", Protocol: "oci", Server: server, Alias: alias,
+			Type: "image", Protocol: "oci", Server: p.server, Alias: p.alias,
 		},
-		InstancePut: api.InstancePut{
-			Config: env,
-			Devices: map[string]map[string]string{
-				stateDev: disk(pool, vol, stateDir),
-				logDev:   disk(pool, logVol, logDir),
-			},
+		Config: p.env,
+		Devices: map[string]map[string]string{
+			stateDev: disk(p.pool, vol, stateDir),
+			logDev:   disk(p.pool, logVol, logDir),
 		},
 	})
 	if err == nil {
 		err = op.WaitContext(ctx)
 	}
 	if err != nil {
-		return rollback(fmt.Errorf("create instance %s from %s: %w", opts.Name, opts.Image, err))
+		return fmt.Errorf("create instance %s from %s: %w", opts.Name, opts.Image, err)
 	}
 	// A rollback finishes even when the caller gives up: no undo step stops on ctx.
-	undo = append(undo, func() error { return deleteInstance(ctx, srv, opts.Name) })
-	opts.Log.Info().Str("instance", opts.Name).Str("image", opts.Image).Str("incus", apiURL).Msg("instance created")
+	*undo = append(*undo, func() error { return deleteInstance(ctx, srv, opts.Name) })
+	opts.Log.Info().Str("instance", opts.Name).Str("image", opts.Image).Str("incus", p.apiURL).Msg("instance created")
 
 	if err := pushToken(srv, opts.Name, token); err != nil {
-		return rollback(err)
+		return err
 	}
 	if err := update.SetState(ctx, srv, opts.Name, "start"); err != nil {
-		return rollback(fmt.Errorf("start %s: %w", opts.Name, err))
+		return fmt.Errorf("start %s: %w", opts.Name, err)
+	}
+	return nil
+}
+
+// Install undoes what it created if a step before the start fails.
+func Install(ctx context.Context, srv incusclient.InstanceServer, opts Options) (err error) {
+	p, err := prepareInstall(srv, &opts)
+	if err != nil {
+		return err
+	}
+	audit := log.AuditFor(opts.Audit, log.Process(), "", opts.Name).
+		With().
+		Str("image", opts.Image).
+		Str("pool", p.pool).
+		Str("volume", VolumeName(opts.Name)).
+		Str("log_volume", LogVolumeName(opts.Name)).
+		Logger()
+	log.AuditBegin(audit, "install").Send()
+	defer func() { log.AuditEnd(audit, "install", err).Send() }()
+
+	var undo []func() error
+	if err := createParts(ctx, srv, opts, p, &undo); err != nil {
+		return errors.Join(err, rollBack(audit, "install.rollback", func() error {
+			var rerr error
+			for _, f := range slices.Backward(undo) {
+				rerr = errors.Join(rerr, f())
+			}
+			return rerr
+		}))
 	}
 
 	// Past here the instance stays: its log says why it didn't join.
@@ -248,6 +289,13 @@ type UninstallOptions struct {
 	Audit     zerolog.Logger // as for Options
 }
 
+// removal is what Uninstall has done so far: what it removed, the volume it kept, and what went wrong.
+type removal struct {
+	removed []string
+	kept    string
+	errs    []error
+}
+
 // Uninstall tolerates any of its parts being gone already.
 func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts UninstallOptions) (err error) {
 	name, logger := opts.Name, opts.Log
@@ -258,98 +306,129 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 	}
 	audit := log.AuditFor(opts.Audit, log.Process(), project, name)
 	log.AuditBegin(audit, "uninstall").Send()
-	var removed []string
-	kept := ""
+	r := &removal{}
 	defer func() {
 		e := log.AuditEnd(audit, "uninstall", err)
-		if len(removed) > 0 {
-			e = e.Strs("removed", removed)
+		if len(r.removed) > 0 {
+			e = e.Strs("removed", r.removed)
 		}
-		if kept != "" {
-			e = e.Str("kept_volume", kept)
+		if r.kept != "" {
+			e = e.Str("kept_volume", r.kept)
 		}
 		e.Send()
 	}()
-	var errs []error
-	pool := ""
+	pool := removeInstance(ctx, srv, name, inst, ferr, logger, r)
+	removeVolumes(srv, name, pool, opts.DeleteLog, logger, r)
+	removeTrust(srv, name, logger, r)
+	return errors.Join(r.errs...)
+}
+
+// removeInstance stops and deletes the instance, and returns the pool its state volume was on.
+func removeInstance(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	name string,
+	inst *api.Instance,
+	ferr error,
+	logger zerolog.Logger,
+	r *removal,
+) (pool string) {
 	switch {
 	case ferr == nil:
 		pool = inst.Devices[stateDev]["pool"]
 		if inst.StatusCode != api.Stopped {
 			if err := update.SetState(ctx, srv, name, "stop"); err != nil {
-				errs = append(errs, fmt.Errorf("stop %s: %w", name, err))
+				r.errs = append(r.errs, fmt.Errorf("stop %s: %w", name, err))
 			}
 		}
 		if err := deleteInstance(ctx, srv, name); err != nil {
-			errs = append(errs, fmt.Errorf("delete %s: %w", name, err))
+			r.errs = append(r.errs, fmt.Errorf("delete %s: %w", name, err))
 		} else {
-			removed = append(removed, "instance "+name)
+			r.removed = append(r.removed, "instance "+name)
 			logger.Info().Str("instance", name).Msg("instance deleted")
 		}
 	case !notFound(ferr):
-		errs = append(errs, ferr)
+		r.errs = append(r.errs, ferr)
 	}
+	return pool
+}
+
+// removeVolumes deletes the state volume, and the log volume only with deleteLog.
+func removeVolumes(
+	srv incusclient.InstanceServer,
+	name, pool string,
+	deleteLog bool,
+	logger zerolog.Logger,
+	r *removal,
+) {
 	for _, vol := range []string{VolumeName(name), LogVolumeName(name)} {
 		p := pool
 		if p == "" {
 			found, err := poolOf(srv, vol)
 			if err != nil {
-				errs = append(errs, err)
+				r.errs = append(r.errs, err)
 				continue
 			}
 			p = found
 		}
 		switch {
 		case p == "": // in no pool: gone already
-		case vol == LogVolumeName(name) && !opts.DeleteLog:
+		case vol == LogVolumeName(name) && !deleteLog:
 			if ok, err := volumeExists(srv, p, vol); err != nil {
-				errs = append(errs, err)
+				r.errs = append(r.errs, err)
 			} else if ok {
-				kept = vol
-				logger.Info().Str("pool", p).Str("volume", vol).Msg("log volume kept; uninstall --delete-log removes it")
+				r.kept = vol
+				logger.Info().
+					Str("pool", p).
+					Str("volume", vol).
+					Msg("log volume kept; uninstall --delete-log removes it")
 			}
 		default:
 			if deleted, err := deleteVolume(srv, p, vol); err != nil {
-				errs = append(errs, err)
+				r.errs = append(r.errs, err)
 			} else if deleted {
-				removed = append(removed, "volume "+vol)
+				r.removed = append(r.removed, "volume "+vol)
 				logger.Info().Str("pool", p).Str("volume", vol).Msg("volume deleted")
 			}
 		}
 	}
+}
+
+// removeTrust revokes the instance's trust tokens and removes its certificates; an unreadable certificate listing ends it.
+func removeTrust(srv incusclient.InstanceServer, name string, logger zerolog.Logger, r *removal) {
 	revoked, err := revokeTokens(srv, name, logger)
 	for _, id := range revoked {
-		removed = append(removed, "trust token "+id)
+		r.removed = append(r.removed, "trust token "+id)
 	}
 	if err != nil {
-		errs = append(errs, err)
+		r.errs = append(r.errs, err)
 	}
 	certs, err := srv.GetCertificates()
 	if err != nil {
-		return errors.Join(append(errs, err)...)
+		r.errs = append(r.errs, err)
+		return
 	}
 	for _, c := range certs {
 		if c.Name != name {
 			continue
 		}
 		if err := srv.DeleteCertificate(c.Fingerprint); err != nil {
-			errs = append(errs, fmt.Errorf("remove certificate %s: %w", c.Fingerprint, err))
+			r.errs = append(r.errs, fmt.Errorf("remove certificate %s: %w", c.Fingerprint, err))
 		} else {
-			removed = append(removed, "certificate "+c.Fingerprint)
+			r.removed = append(r.removed, "certificate "+c.Fingerprint)
 			logger.Info().Str("certificate", c.Name).Msg("certificate removed")
 		}
 	}
-	return errors.Join(errs...)
 }
 
 func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
 	err := srv.CreateStoragePoolVolume(pool, api.StorageVolumesPost{
 		Name: vol,
 		Type: "custom",
-		StorageVolumePut: api.StorageVolumePut{Config: map[string]string{
+		Config: map[string]string{
 			"initial.uid": fmt.Sprint(imageUID),
 			"initial.gid": fmt.Sprint(imageUID),
-		}},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("create volume %s: %w", vol, err)
@@ -358,7 +437,11 @@ func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
 }
 
 // ensureLogVolume reuses a log volume already there, records and all.
-func ensureLogVolume(srv incusclient.InstanceServer, pool, vol string, logger zerolog.Logger) (created bool, err error) {
+func ensureLogVolume(
+	srv incusclient.InstanceServer,
+	pool, vol string,
+	logger zerolog.Logger,
+) (created bool, err error) {
 	err = createVolume(srv, pool, vol)
 	switch {
 	case err == nil:
@@ -411,7 +494,11 @@ func volumeExists(srv incusclient.InstanceServer, pool, vol string) (bool, error
 }
 
 // findInstance also searches other projects; the server it returns uses the instance's.
-func findInstance(srv incusclient.InstanceServer, name string, logger zerolog.Logger) (incusclient.InstanceServer, *api.Instance, error) {
+func findInstance(
+	srv incusclient.InstanceServer,
+	name string,
+	logger zerolog.Logger,
+) (incusclient.InstanceServer, *api.Instance, error) {
 	inst, _, err := srv.GetInstance(name)
 	if !notFound(err) {
 		return srv, inst, err
@@ -514,13 +601,11 @@ func detectURL(srv incusclient.InstanceServer, network string) (string, error) {
 
 func createToken(srv incusclient.InstanceServer, name string, projects []string) (token, opID string, err error) {
 	op, err := tokens(srv).CreateCertificateToken(api.CertificatesPost{
-		CertificatePut: api.CertificatePut{
-			Name:       name,
-			Type:       api.CertificateTypeClient,
-			Restricted: len(projects) > 0,
-			Projects:   projects,
-		},
-		Token: true,
+		Name:       name,
+		Type:       api.CertificateTypeClient,
+		Restricted: len(projects) > 0,
+		Projects:   projects,
+		Token:      true,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("create trust token: %w", err)

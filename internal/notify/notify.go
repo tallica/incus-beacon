@@ -389,7 +389,12 @@ func (s *Sender) Notify(ctx context.Context, b Batch) {
 		result := "sent"
 		if err != nil {
 			result = "failed"
-			s.log.Error().Err(err).Str("notifier", t.kind).Str("to", t.where).Int("transitions", len(ts)).Msg("notification failed")
+			s.log.Error().
+				Err(err).
+				Str("notifier", t.kind).
+				Str("to", t.where).
+				Int("transitions", len(ts)).
+				Msg("notification failed")
 		} else {
 			s.log.Info().Str("notifier", t.kind).Str("to", t.where).Int("transitions", len(ts)).Msg("notification sent")
 		}

@@ -135,13 +135,27 @@ func Abandoned(raw string, now time.Time) bool {
 }
 
 // Apply follows docs/ARCHITECTURE.md#updating and records the outcome on the instance.
-func Apply(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) (Outcome, error) {
+func Apply(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	reg Registry,
+	t incus.Target,
+	next Next,
+	opts Options,
+) (Outcome, error) {
 	return newUpdater(srv, reg, t, next, opts.withDefaults()).apply(ctx)
 }
 
 func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) *updater {
 	from := registry.Normalize(t.Ref)
-	u := &updater{srv: srv.UseProject(t.Project), reg: reg, t: t, opts: opts, digest: next.Digest, o: Outcome{From: from, To: next.Ref}}
+	u := &updater{
+		srv:    srv.UseProject(t.Project),
+		reg:    reg,
+		t:      t,
+		opts:   opts,
+		digest: next.Digest,
+		o:      Outcome{From: from, To: next.Ref},
+	}
 	u.loggers(from, next.Ref)
 	return u
 }
@@ -149,7 +163,11 @@ func newUpdater(srv incusclient.InstanceServer, reg Registry, t incus.Target, ne
 // loggers names the instance and the update's refs in every log and audit record.
 func (u *updater) loggers(from, to string) {
 	u.log = u.opts.Log.With().Str("project", u.t.Project).Str("instance", u.t.Instance).Str("to", to).Logger()
-	u.audit = log.AuditFor(u.opts.Audit, u.opts.Owner, u.t.Project, u.t.Instance).With().Str("from", from).Str("to", to).Logger()
+	u.audit = log.AuditFor(u.opts.Audit, u.opts.Owner, u.t.Project, u.t.Instance).
+		With().
+		Str("from", from).
+		Str("to", to).
+		Logger()
 }
 
 type updater struct {
@@ -194,7 +212,14 @@ func (u *updater) steps() []step {
 }
 
 // Preview runs Apply's read-only checks and says what it would do; it changes nothing.
-func Preview(ctx context.Context, srv incusclient.InstanceServer, reg Registry, t incus.Target, next Next, opts Options) Outcome {
+func Preview(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	reg Registry,
+	t incus.Target,
+	next Next,
+	opts Options,
+) Outcome {
 	u := newUpdater(srv, reg, t, next, opts.withDefaults())
 	if _, reason := u.prepare(ctx); reason != "" {
 		u.o.Status, u.o.Reason = Refused, reason
@@ -230,7 +255,8 @@ func (u *updater) prepare(ctx context.Context) (dropped map[string]string, reaso
 			return nil, "unreadable " + incus.ClaimKey + "; remove it once no update runs: " + err.Error()
 		}
 		if u.opts.Now().Before(u.c.Expires) {
-			return nil, "being updated by " + u.c.Owner + ", whose claim holds until " + u.c.Expires.UTC().Format(time.RFC3339)
+			return nil, "being updated by " + u.c.Owner + ", whose claim holds until " + u.c.Expires.UTC().
+				Format(time.RFC3339)
 		}
 		return nil, ""
 	}
@@ -261,8 +287,14 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 	}
 
 	u.c = claim{
-		Owner: u.opts.Owner, Step: -1, To: u.o.To, FromRef: registry.Normalize(u.t.Ref), From: u.inst.Config["volatile.base_image"], Dropped: dropped,
-		Snapshot: snapshotPrefix + u.opts.Now().UTC().Format("20060102T150405"), OCI: ociKeys(u.inst.Config),
+		Owner:    u.opts.Owner,
+		Step:     -1,
+		To:       u.o.To,
+		FromRef:  registry.Normalize(u.t.Ref),
+		From:     u.inst.Config["volatile.base_image"],
+		Dropped:  dropped,
+		Snapshot: snapshotPrefix + u.opts.Now().UTC().Format("20060102T150405"),
+		OCI:      ociKeys(u.inst.Config),
 	}
 	for _, v := range u.vols {
 		if !v.shared {
@@ -279,7 +311,11 @@ func (u *updater) apply(ctx context.Context) (Outcome, error) {
 		return u.busy("claim the instance: " + err.Error())
 	}
 	u.audit = u.audit.With().Str("op", u.c.Snapshot).Logger()
-	claimed := u.audit.Log().Str("event", "update.claim").Str("from_image", u.c.From).Strs("dropped", u.o.Dropped).Strs("kept", u.o.Kept)
+	claimed := u.audit.Log().
+		Str("event", "update.claim").
+		Str("from_image", u.c.From).
+		Strs("dropped", u.o.Dropped).
+		Strs("kept", u.o.Kept)
 	if u.digest != "" {
 		claimed = claimed.Str("digest", u.digest)
 	}
@@ -559,7 +595,9 @@ func (u *updater) refusal() string {
 	case u.o.To == u.t.Update.Failed:
 		return "the update to " + u.o.To + " failed before; waiting for a newer image"
 	case u.inst.StatusCode != api.Running:
-		return "the instance is " + strings.ToLower(u.inst.Status) + "; only a running one is updated, so its health can be checked"
+		return "the instance is " + strings.ToLower(
+			u.inst.Status,
+		) + "; only a running one is updated, so its health can be checked"
 	case u.inst.Config["volatile.base_image"] == "":
 		return "no base image recorded to roll back to"
 	}
@@ -665,7 +703,9 @@ func (u *updater) staleEnv(ctx context.Context) (map[string]string, error) {
 	slices.Sort(u.o.Kept)
 	u.o.OldEnvUnread = !oldRead
 	if !oldRead && len(u.o.Kept) > 0 {
-		u.log.Warn().Strs("kept", u.o.Kept).Msg("the old image can't be read, so its copied environment keys can't be told from overrides; kept them")
+		u.log.Warn().
+			Strs("kept", u.o.Kept).
+			Msg("the old image can't be read, so its copied environment keys can't be told from overrides; kept them")
 	}
 	return stale, nil
 }
@@ -786,7 +826,12 @@ func (u *updater) rebuild(ctx context.Context) error {
 		// Incus pulls the digest and ignores a tag that disagrees with it (verified on 7.6).
 		alias += "@" + u.digest
 	}
-	return Rebuild(ctx, u.srv, u.t.Instance, api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias})
+	return Rebuild(
+		ctx,
+		u.srv,
+		u.t.Instance,
+		api.InstanceSource{Type: "image", Protocol: "oci", Server: server, Alias: alias},
+	)
 }
 
 // rebuildOld undoes the rebuild from the old fingerprint, which Incus still caches.
@@ -797,7 +842,10 @@ func (u *updater) rebuildOld(ctx context.Context) error {
 	err := Rebuild(ctx, u.srv, u.t.Instance, api.InstanceSource{Type: "image", Fingerprint: u.c.From})
 	if incus.IsBusy(err) {
 		// Incus replaces the rootfs before the oci.* refresh that another write's lock skips (7.6).
-		if inst, _, gerr := u.srv.GetInstance(u.t.Instance); gerr == nil && inst.Config["volatile.base_image"] == u.c.From {
+		if inst, _, gerr := u.srv.GetInstance(
+			u.t.Instance,
+		); gerr == nil &&
+			inst.Config["volatile.base_image"] == u.c.From {
 			u.log.Warn().Err(err).Msg("old image back, but its oci.* keys not refreshed; the claim's go back")
 			err = nil
 		}
@@ -832,7 +880,12 @@ func ociKeys(cfg map[string]string) map[string]string {
 
 func (u *updater) snapshot(ctx context.Context) error {
 	for _, v := range u.vols {
-		op, err := u.srv.CreateStoragePoolVolumeSnapshot(v.pool, "custom", v.name, api.StorageVolumeSnapshotsPost{Name: u.c.Snapshot})
+		op, err := u.srv.CreateStoragePoolVolumeSnapshot(
+			v.pool,
+			"custom",
+			v.name,
+			api.StorageVolumeSnapshotsPost{Name: u.c.Snapshot},
+		)
 		if err == nil {
 			err = op.WaitContext(ctx)
 		}
@@ -863,7 +916,11 @@ func (u *updater) restore(ctx context.Context) error {
 			put.Restore = u.c.Snapshot
 			err = u.srv.UpdateStoragePoolVolume(v.pool, "custom", v.name, put, etag)
 		}
-		u.audit.Log().Str("event", "snapshot.restore").Str("snapshot", v.pool+"/"+v.name+"/"+u.c.Snapshot).Err(err).Send()
+		u.audit.Log().
+			Str("event", "snapshot.restore").
+			Str("snapshot", v.pool+"/"+v.name+"/"+u.c.Snapshot).
+			Err(err).
+			Send()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s/%s: %w", v.pool, v.name, err))
 		}

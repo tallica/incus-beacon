@@ -64,7 +64,10 @@ func WriteStatus(w io.Writer, format string, rows []StatusRow) error {
 	}
 	table := [][]string{{"PROJECT", "INSTANCE", "STATUS", "IMAGE", "LATEST", "SINCE", "NOTE"}}
 	for _, r := range rows {
-		table = append(table, []string{r.Project, r.Instance, r.Status, dash(r.Image), dash(r.Latest), dash(r.Since), r.Note})
+		table = append(
+			table,
+			[]string{r.Project, r.Instance, r.Status, dash(r.Image), dash(r.Latest), dash(r.Since), r.Note},
+		)
 	}
 	return writeTable(w, table)
 }

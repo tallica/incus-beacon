@@ -168,7 +168,10 @@ type series struct {
 // Histogram's bounds are the upper bounds of its buckets, in ascending order.
 func (s *Set) Histogram(name, help string, bounds []float64, labels ...string) *Histogram {
 	h := &Histogram{
-		desc:   desc{name: name, help: help, kind: "histogram", labels: labels},
+		name:   name,
+		help:   help,
+		kind:   "histogram",
+		labels: labels,
 		bounds: bounds,
 		series: map[string]*series{},
 	}

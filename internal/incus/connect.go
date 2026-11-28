@@ -55,7 +55,11 @@ func Connect(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServ
 			fp := cmp.Or(opts.ServerFingerprint, st.fingerprint)
 			srv, err := connectTrusted(ctx, opts.URL, st.cert, st.key, fp, opts.UserAgent)
 			if errors.Is(err, errUntrusted) {
-				return nil, fmt.Errorf("%w; the certificate in %s was enrolled earlier: remove it and give a new --token", err, opts.StateDir)
+				return nil, fmt.Errorf(
+					"%w; the certificate in %s was enrolled earlier: remove it and give a new --token",
+					err,
+					opts.StateDir,
+				)
 			}
 			return srv, err
 		case !errors.Is(err, fs.ErrNotExist):
@@ -68,7 +72,12 @@ func Connect(ctx context.Context, opts ConnectOptions) (incusclient.InstanceServ
 	return nil, errors.New("--incus needs --client-cert and --client-key, or --token (or --token-file) and --state-dir")
 }
 
-func connectTrusted(ctx context.Context, url string, cert, key []byte, fingerprint, userAgent string) (incusclient.InstanceServer, error) {
+func connectTrusted(
+	ctx context.Context,
+	url string,
+	cert, key []byte,
+	fingerprint, userAgent string,
+) (incusclient.InstanceServer, error) {
 	srv, err := dial(ctx, url, cert, key, fingerprint, userAgent)
 	if err != nil {
 		return nil, err
@@ -76,7 +85,12 @@ func connectTrusted(ctx context.Context, url string, cert, key []byte, fingerpri
 	return srv, trusted(srv)
 }
 
-func dial(ctx context.Context, url string, cert, key []byte, fingerprint, userAgent string) (incusclient.InstanceServer, error) {
+func dial(
+	ctx context.Context,
+	url string,
+	cert, key []byte,
+	fingerprint, userAgent string,
+) (incusclient.InstanceServer, error) {
 	args := &incusclient.ConnectionArgs{
 		TLSClientCert: string(cert),
 		TLSClientKey:  string(key),

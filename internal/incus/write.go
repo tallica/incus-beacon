@@ -128,7 +128,12 @@ func write(ctx context.Context, srv incusclient.InstanceServer, t Target, keys m
 
 // UpdateInstance applies change to a fresh read of the instance and writes it under that ETag,
 // reading again once on a 412 and backing off while another operation holds the instance.
-func UpdateInstance(ctx context.Context, srv incusclient.InstanceServer, name string, change func(*api.InstancePut) error) error {
+func UpdateInstance(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	name string,
+	change func(*api.InstancePut) error,
+) error {
 	var err error
 	conflicts, wait := 0, busyRetry
 	for {
@@ -153,7 +158,12 @@ func UpdateInstance(ctx context.Context, srv incusclient.InstanceServer, name st
 	return err
 }
 
-func updateOnce(ctx context.Context, srv incusclient.InstanceServer, name string, change func(*api.InstancePut) error) error {
+func updateOnce(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	name string,
+	change func(*api.InstancePut) error,
+) error {
 	inst, etag, err := srv.GetInstance(name)
 	if err != nil {
 		return err

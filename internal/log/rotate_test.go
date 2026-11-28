@@ -204,7 +204,17 @@ func TestRotatingDropsFilesPastALowerKeep(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	if want := []string{"audit.log", "audit.log.1", "audit.log.2", "audit.log.4", "audit.log.old", "other.log.4"}; !slices.Equal(names, want) {
+	if want := []string{
+		"audit.log",
+		"audit.log.1",
+		"audit.log.2",
+		"audit.log.4",
+		"audit.log.old",
+		"other.log.4",
+	}; !slices.Equal(
+		names,
+		want,
+	) {
 		t.Errorf("files %v, want %v", names, want)
 	}
 }

@@ -33,7 +33,12 @@ type fakeRegistry struct {
 }
 
 func newFake() *fakeRegistry {
-	return &fakeRegistry{images: map[string]image{}, tags: map[string][]string{}, created: map[string]time.Time{}, calls: map[string]int{}}
+	return &fakeRegistry{
+		images:  map[string]image{},
+		tags:    map[string][]string{},
+		created: map[string]time.Time{},
+		calls:   map[string]int{},
+	}
 }
 
 func (f *fakeRegistry) count(name string) int {
@@ -153,7 +158,9 @@ func TestSemver(t *testing.T) {
 	f.tags["docker.io/library/nginx"] = []string{"1.27.3-alpine", "1.27.4-alpine", "1.28.0", "1.28.0-alpine", "latest"}
 
 	constrained := target("pinned", "nginx:1.27.3-alpine", fpOld, policy.TrackSemver)
-	c, err := policyWith(map[string]string{"user.incus-beacon.track": "semver", "user.incus-beacon.constraint": "~1.27"})
+	c, err := policyWith(
+		map[string]string{"user.incus-beacon.track": "semver", "user.incus-beacon.constraint": "~1.27"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +294,15 @@ func TestComposeDrift(t *testing.T) {
 	}
 	for i, w := range want {
 		if res[i].Status != w.status || res[i].Reason != w.reason || res[i].Latest != "" {
-			t.Errorf("%s: %s %q latest %q, want %s %q", res[i].Target.Instance, res[i].Status, res[i].Reason, res[i].Latest, w.status, w.reason)
+			t.Errorf(
+				"%s: %s %q latest %q, want %s %q",
+				res[i].Target.Instance,
+				res[i].Status,
+				res[i].Reason,
+				res[i].Latest,
+				w.status,
+				w.reason,
+			)
 		}
 	}
 	if n := f.count("tags"); n != 0 {
@@ -351,7 +366,10 @@ func TestRegistryErrors(t *testing.T) {
 		err  error
 		want string
 	}{
-		{&registry.RateLimitError{Host: "registry-1.docker.io", Until: until}, "rate limited until 2026-11-04T18:00:00Z"},
+		{
+			&registry.RateLimitError{Host: "registry-1.docker.io", Until: until},
+			"rate limited until 2026-11-04T18:00:00Z",
+		},
 		{registry.ErrAuth, "registry auth failed"},
 		{registry.ErrNoAccess, "not found, or private: no registry credentials"},
 		{registry.ErrNotFound, "tag not found"},

@@ -226,6 +226,33 @@ func printOutcome(w io.Writer, o update.Outcome, snapshot, dropped string) {
 	}
 }
 
+// newChecker builds the runner that applies updates and the checker that drives it.
+func newChecker(
+	c *config.Serve,
+	reg *registry.Client,
+	sender *notify.Sender,
+	set *metrics.Set,
+	logger, audit zerolog.Logger,
+) *serve.Checker {
+	runner := &update.Runner{
+		Enabled: c.Update, Window: c.Window, Registry: reg, Metrics: set, Log: logger,
+		Options: updateOptions(c.UpdateFlags, logger, audit),
+	}
+	runner.Init()
+	return &serve.Checker{
+		Engine: check.New(
+			reg,
+			check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update},
+			logger,
+		),
+		Runner:       runner,
+		Sender:       sender,
+		NotifyErrors: c.NotifyErrors,
+		WatchAll:     c.Watch == config.WatchAll,
+		Log:          logger,
+	}
+}
+
 func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger) error {
 	logger.Info().Str("version", version.String()).Msg("incus-beacon")
 	set := &metrics.Set{}
@@ -247,19 +274,7 @@ func runServe(ctx context.Context, c *config.Serve, logger, audit zerolog.Logger
 	}
 	conn := &incus.Conn{Options: connectOptions(c.Common)}
 	watchAll := c.Watch == config.WatchAll
-	runner := &update.Runner{
-		Enabled: c.Update, Window: c.Window, Registry: reg, Metrics: set, Log: logger,
-		Options: updateOptions(c.UpdateFlags, logger, audit),
-	}
-	runner.Init()
-	checker := &serve.Checker{
-		Engine:       check.New(reg, check.Options{Concurrency: c.Concurrency, Cooldown: c.Cooldown, Pin: c.Update}, logger),
-		Runner:       runner,
-		Sender:       sender,
-		NotifyErrors: c.NotifyErrors,
-		WatchAll:     watchAll,
-		Log:          logger,
-	}
+	checker := newChecker(c, reg, sender, set, logger, audit)
 	warned := map[incus.Key]bool{} // only the cycle goroutine touches it
 	cycle := func(ctx context.Context) (serve.Summary, error) {
 		srv, err := conn.Get(ctx)
@@ -458,11 +473,20 @@ func listOptions(c config.Common, instance string) incus.ListOptions {
 }
 
 func newRegistry(r config.Registry, m *metrics.Set) (*registry.Client, error) {
-	return registry.New(registry.Options{AuthFile: r.RegistryAuthFile, Timeout: r.Timeout, UserAgent: userAgent(), Metrics: m})
+	return registry.New(
+		registry.Options{AuthFile: r.RegistryAuthFile, Timeout: r.Timeout, UserAgent: userAgent(), Metrics: m},
+	)
 }
 
 func updateOptions(u config.UpdateFlags, logger, audit zerolog.Logger) update.Options {
-	return update.Options{StopTimeout: u.StopTimeout, Wait: u.Wait, Settle: u.Settle, Keep: u.Keep, Log: logger, Audit: audit}
+	return update.Options{
+		StopTimeout: u.StopTimeout,
+		Wait:        u.Wait,
+		Settle:      u.Settle,
+		Keep:        u.Keep,
+		Log:         logger,
+		Audit:       audit,
+	}
 }
 
 func userAgent() string { return "incus-beacon/" + version.Version }

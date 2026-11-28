@@ -42,69 +42,91 @@ type ConfigureOptions struct {
 
 const envPrefix = "environment.BEACON_"
 
+// change is what Configure was asked to change, with what it takes to undo it.
+type change struct {
+	name, pool, vol                   string
+	cfg, before                       map[string]string
+	oldURLs, newURLs                  []string
+	cert                              *api.Certificate
+	oldProjects, newProjects          []string
+	cfgChange, urlsChange, certChange bool
+}
+
+// planChange works out the new settings, refusing any serve would, and which of the three places they live change.
+func planChange(srv incusclient.InstanceServer, inst *api.Instance, opts ConfigureOptions) (*change, error) {
+	c := &change{name: opts.Name, before: maps.Clone(inst.Config)}
+	var err error
+	if c.cfg, err = configured(srv, inst, opts); err != nil {
+		return nil, err
+	}
+	if err := config.CheckServeEnv(serveEnv(c.cfg)); err != nil {
+		return nil, fmt.Errorf("the instance's serve would refuse these settings: %w", err)
+	}
+
+	c.pool, c.vol = inst.Devices[stateDev]["pool"], VolumeName(c.name)
+	if opts.NotifyURLs != nil {
+		if c.oldURLs, err = readNotifyURLs(srv, c.pool, c.vol); err != nil {
+			return nil, err
+		}
+		c.newURLs = *opts.NotifyURLs
+	}
+	c.urlsChange = opts.NotifyURLs != nil && !slices.Equal(*opts.NotifyURLs, c.oldURLs)
+	if opts.Projects != nil {
+		if c.cert, err = certificate(srv, c.name); err != nil {
+			return nil, err
+		}
+		c.oldProjects, c.newProjects = c.cert.Projects, *opts.Projects
+	}
+	c.certChange = c.cert != nil && restriction(*opts.Projects) != restriction(c.cert.Projects)
+	c.cfgChange = !maps.Equal(c.cfg, c.before)
+	return c, nil
+}
+
+func (c *change) changes() bool { return c.cfgChange || c.urlsChange || c.certChange }
+
+// apply writes the new settings, or with forward false the old ones back.
+func (c *change) apply(ctx context.Context, srv incusclient.InstanceServer, forward bool) error {
+	from, to, urls, projects := c.cfg, c.before, c.oldURLs, c.oldProjects
+	if forward {
+		from, to, urls, projects = c.before, c.cfg, c.newURLs, c.newProjects
+	}
+	var errs []error
+	if c.certChange {
+		errs = append(errs, restrict(srv, c.cert.Fingerprint, projects))
+	}
+	if c.urlsChange {
+		errs = append(errs, setNotifyURLs(srv, c.pool, c.vol, urls))
+	}
+	if c.cfgChange {
+		errs = append(errs, rewriteKeys(ctx, srv, c.name, from, to))
+	}
+	return errors.Join(errs...)
+}
+
 // Configure follows docs/ARCHITECTURE.md#connecting-to-incus.
 func Configure(ctx context.Context, srv incusclient.InstanceServer, opts ConfigureOptions) (err error) {
 	srv, inst, err := installed(srv, opts.Name, opts.Log)
 	if err != nil {
 		return err
 	}
-	name, before := opts.Name, maps.Clone(inst.Config)
-	cfg, err := configured(srv, inst, opts)
+	c, err := planChange(srv, inst, opts)
 	if err != nil {
 		return err
 	}
-	if err := config.CheckServeEnv(serveEnv(cfg)); err != nil {
-		return fmt.Errorf("the instance's serve would refuse these settings: %w", err)
-	}
-
-	pool, vol := inst.Devices[stateDev]["pool"], VolumeName(name)
-	var oldURLs []string
-	if opts.NotifyURLs != nil {
-		if oldURLs, err = readNotifyURLs(srv, pool, vol); err != nil {
-			return err
-		}
-	}
-	urlsChange := opts.NotifyURLs != nil && !slices.Equal(*opts.NotifyURLs, oldURLs)
-	var cert *api.Certificate
-	if opts.Projects != nil {
-		if cert, err = certificate(srv, name); err != nil {
-			return err
-		}
-	}
-	certChange := cert != nil && restriction(*opts.Projects) != restriction(cert.Projects)
-	cfgChange := !maps.Equal(cfg, before)
-	if !cfgChange && !urlsChange && !certChange {
+	name := opts.Name
+	if !c.changes() {
 		opts.Log.Info().Str("instance", name).Msg("settings already as given; nothing changed")
 		return nil
 	}
-	audit := log.AuditFor(opts.Audit, log.Process(), inst.Project, name).With().Strs("settings", changed(before, cfg, urlsChange, certChange)).Logger()
+	audit := log.AuditFor(opts.Audit, log.Process(), inst.Project, name).
+		With().
+		Strs("settings", changed(c.before, c.cfg, c.urlsChange, c.certChange)).
+		Logger()
 	log.AuditBegin(audit, "configure").Send()
 	defer func() { log.AuditEnd(audit, "configure", err).Send() }()
 	running := inst.StatusCode != api.Stopped
 	// A track change alone needs no restart: serve reads policy keys every cycle.
-	restart := running && (urlsChange || !maps.Equal(envOf(cfg), envOf(before)))
-
-	apply := func(from, to map[string]string, urls, projects []string) error {
-		var errs []error
-		if certChange {
-			errs = append(errs, restrict(srv, cert.Fingerprint, projects))
-		}
-		if urlsChange {
-			errs = append(errs, setNotifyURLs(srv, pool, vol, urls))
-		}
-		if cfgChange {
-			errs = append(errs, rewriteKeys(ctx, srv, name, from, to))
-		}
-		return errors.Join(errs...)
-	}
-	var newURLs, oldProjects, newProjects []string
-	if opts.NotifyURLs != nil {
-		newURLs = *opts.NotifyURLs
-	}
-	if cert != nil {
-		oldProjects, newProjects = cert.Projects, *opts.Projects
-	}
-	undo := func() error { return apply(cfg, before, oldURLs, oldProjects) }
+	restart := running && (c.urlsChange || !maps.Equal(envOf(c.cfg), envOf(c.before)))
 
 	// Stopped while it changes, serve never runs with the certificate and its environment disagreeing.
 	if restart {
@@ -112,41 +134,55 @@ func Configure(ctx context.Context, srv incusclient.InstanceServer, opts Configu
 			return fmt.Errorf("stop %s: %w", name, err)
 		}
 	}
-	if err := apply(before, cfg, newURLs, newProjects); err != nil {
-		log.AuditBegin(audit, "configure.rollback").Send()
-		rerr := undo()
-		if restart {
-			rerr = errors.Join(rerr, update.SetState(ctx, srv, name, "start"))
-		}
-		log.AuditEnd(audit, "configure.rollback", rerr).Send()
+	if err := c.apply(ctx, srv, true); err != nil {
+		rerr := rollBack(audit, "configure.rollback", func() error {
+			rerr := c.apply(ctx, srv, false)
+			if restart {
+				rerr = errors.Join(rerr, update.SetState(ctx, srv, name, "start"))
+			}
+			return rerr
+		})
 		return errors.Join(fmt.Errorf("configure %s: %w", name, err), rerr)
 	}
 	opts.Log.Info().Str("instance", name).Msg("settings changed")
 	switch {
 	case !running:
-		opts.Log.Warn().Str("instance", name).Msg("stopped, so not checked beyond serve's flag parsing; the settings apply when it starts")
+		opts.Log.Warn().
+			Str("instance", name).
+			Msg("stopped, so not checked beyond serve's flag parsing; the settings apply when it starts")
 		return nil
 	case !restart:
 		return nil
 	}
+	return restartReady(ctx, srv, opts, audit, c)
+}
 
-	err = startReady(ctx, srv, name, opts.Wait)
+// restartReady starts the instance and waits for /ready, rolling back to the old settings if it never gets there.
+func restartReady(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	opts ConfigureOptions,
+	audit zerolog.Logger,
+	c *change,
+) error {
+	name := opts.Name
+	err := startReady(ctx, srv, name, opts.Wait)
 	if err == nil {
 		opts.Log.Info().Str("instance", name).Msg("restarted and ready")
 		return nil
 	}
 	err = fmt.Errorf("configure %s: %w", name, err)
 	opts.Log.Warn().Err(err).Msg("rolling back")
-	log.AuditBegin(audit, "configure.rollback").Send()
 	// The old settings come back running, as the instance was before configure, whether the start or the probe failed.
-	rerr := stopIfRunning(ctx, srv, name)
-	if rerr == nil {
-		rerr = undo()
-	}
-	if rerr == nil {
-		rerr = startReady(ctx, srv, name, opts.Wait)
-	}
-	log.AuditEnd(audit, "configure.rollback", rerr).Send()
+	rerr := rollBack(audit, "configure.rollback", func() error {
+		if err := stopIfRunning(ctx, srv, name); err != nil {
+			return err
+		}
+		if err := c.apply(ctx, srv, false); err != nil {
+			return err
+		}
+		return startReady(ctx, srv, name, opts.Wait)
+	})
 	if rerr != nil {
 		return errors.Join(err, fmt.Errorf("roll back: %w", rerr))
 	}

@@ -74,7 +74,7 @@ func (ts *trustServer) serve(w http.ResponseWriter, r *http.Request) {
 		if ts.trusted[peer] {
 			auth = "trusted"
 		}
-		sync200(w, api.Server{ServerUntrusted: api.ServerUntrusted{Auth: auth}})
+		sync200(w, api.Server{Auth: auth})
 	case r.URL.Path == "/1.0/certificates" && r.Method == http.MethodPost:
 		ts.posts++
 		var post api.CertificatesPost
@@ -181,7 +181,10 @@ func TestEnrollUnwritableStateKeepsToken(t *testing.T) {
 
 func TestEnrollBadToken(t *testing.T) {
 	t.Parallel()
-	_, err := Connect(context.Background(), ConnectOptions{URL: "https://192.168.1.10:8443", Token: "not-a-token", StateDir: t.TempDir()})
+	_, err := Connect(
+		context.Background(),
+		ConnectOptions{URL: "https://192.168.1.10:8443", Token: "not-a-token", StateDir: t.TempDir()},
+	)
 	if err == nil || !strings.Contains(err.Error(), "trust token") {
 		t.Errorf("err %v, want a trust token error", err)
 	}

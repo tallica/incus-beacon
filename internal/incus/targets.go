@@ -129,7 +129,12 @@ func TargetOf(ctx context.Context, srv incusclient.InstanceServer, k Key, watchA
 	return t, ok, nil
 }
 
-func target(srv incusclient.InstanceServer, inst *api.Instance, watchAll bool, sources map[string]*api.ImageSource) (Target, bool) {
+func target(
+	srv incusclient.InstanceServer,
+	inst *api.Instance,
+	watchAll bool,
+	sources map[string]*api.ImageSource,
+) (Target, bool) {
 	if !isOCI(inst.ExpandedConfig) {
 		return Target{}, false
 	}
@@ -182,9 +187,13 @@ func inputs(inst *api.Instance) string {
 		if _, ok := written[k]; ok {
 			continue
 		}
-		if k == "volatile.base_image" || k == RefFromCompose || k == ComposeOverrideKey || k == ComposeOverrideOfKey || strings.HasPrefix(k, "image.") ||
-			strings.HasPrefix(k, policy.Prefix) || strings.HasPrefix(k, policy.LabelPrefix) ||
-			strings.HasPrefix(k, policy.LegacyPrefix) || strings.HasPrefix(k, policy.LegacyLabelPrefix) {
+		named := k == "volatile.base_image" || k == RefFromCompose ||
+			k == ComposeOverrideKey || k == ComposeOverrideOfKey
+		prefixed := slices.ContainsFunc(
+			[]string{"image.", policy.Prefix, policy.LabelPrefix, policy.LegacyPrefix, policy.LegacyLabelPrefix},
+			func(p string) bool { return strings.HasPrefix(k, p) },
+		)
+		if named || prefixed {
 			fmt.Fprintf(&b, "\n%s=%s", k, inst.ExpandedConfig[k])
 		}
 	}
@@ -270,7 +279,12 @@ func applied(t Target, asked string) (string, bool) {
 func sameRef(a, b string) bool { return registry.Normalize(a) == registry.Normalize(b) }
 
 // resolveRef follows docs/ARCHITECTURE.md#image-ref-resolution.
-func resolveRef(srv incusclient.InstanceServer, t Target, config map[string]string, sources map[string]*api.ImageSource) (ref, from string) {
+func resolveRef(
+	srv incusclient.InstanceServer,
+	t Target,
+	config map[string]string,
+	sources map[string]*api.ImageSource,
+) (ref, from string) {
 	if t.Policy.Image != "" {
 		return t.Policy.Image, RefFromBeacon
 	}
