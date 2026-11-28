@@ -731,6 +731,34 @@ func TestUninstall(t *testing.T) {
 	}
 }
 
+func TestUninstallStopsAtACertificateListingItCannotRead(t *testing.T) {
+	t.Parallel()
+	f := newFake()
+	o := opts()
+	o.Wait = 10 * time.Millisecond
+	_ = Install(context.Background(), f, o)
+	f.certs = []api.Certificate{{Name: "incus-beacon", Fingerprint: "mine"}}
+	f.failList = errors.New("listing refused")
+	f.calls = nil
+
+	var buf bytes.Buffer
+	err := Uninstall(
+		context.Background(),
+		f,
+		UninstallOptions{Name: "incus-beacon", Log: zerolog.Nop(), Audit: zerolog.New(&buf)},
+	)
+	if err == nil || !strings.Contains(err.Error(), "listing refused") {
+		t.Fatalf("err %v, want the listing refused", err)
+	}
+	r := checkAudit(t, &buf, "uninstall begin", "uninstall failed")
+	if got, want := fmt.Sprint(r[1]["removed"]), "[instance incus-beacon volume incus-beacon-state]"; got != want {
+		t.Errorf("removed %s, want %s", got, want)
+	}
+	if len(f.certs) != 1 {
+		t.Errorf("certs left %v, want the one left alone", f.certs)
+	}
+}
+
 func TestUninstallFinishesAnAcceptedDeleteOnceCancelled(t *testing.T) {
 	t.Parallel()
 	f := newFake()

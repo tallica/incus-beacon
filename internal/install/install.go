@@ -289,6 +289,13 @@ type UninstallOptions struct {
 	Audit     zerolog.Logger // as for Options
 }
 
+// removal is what Uninstall has done so far: what it removed, the volume it kept, and what went wrong.
+type removal struct {
+	removed []string
+	kept    string
+	errs    []error
+}
+
 // Uninstall tolerates any of its parts being gone already.
 func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts UninstallOptions) (err error) {
 	name, logger := opts.Name, opts.Log
@@ -299,54 +306,78 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 	}
 	audit := log.AuditFor(opts.Audit, log.Process(), project, name)
 	log.AuditBegin(audit, "uninstall").Send()
-	var removed []string
-	kept := ""
+	r := &removal{}
 	defer func() {
 		e := log.AuditEnd(audit, "uninstall", err)
-		if len(removed) > 0 {
-			e = e.Strs("removed", removed)
+		if len(r.removed) > 0 {
+			e = e.Strs("removed", r.removed)
 		}
-		if kept != "" {
-			e = e.Str("kept_volume", kept)
+		if r.kept != "" {
+			e = e.Str("kept_volume", r.kept)
 		}
 		e.Send()
 	}()
-	var errs []error
-	pool := ""
+	pool := removeInstance(ctx, srv, name, inst, ferr, logger, r)
+	removeVolumes(srv, name, pool, opts.DeleteLog, logger, r)
+	removeTrust(srv, name, logger, r)
+	return errors.Join(r.errs...)
+}
+
+// removeInstance stops and deletes the instance, and returns the pool its state volume was on.
+func removeInstance(
+	ctx context.Context,
+	srv incusclient.InstanceServer,
+	name string,
+	inst *api.Instance,
+	ferr error,
+	logger zerolog.Logger,
+	r *removal,
+) (pool string) {
 	switch {
 	case ferr == nil:
 		pool = inst.Devices[stateDev]["pool"]
 		if inst.StatusCode != api.Stopped {
 			if err := update.SetState(ctx, srv, name, "stop"); err != nil {
-				errs = append(errs, fmt.Errorf("stop %s: %w", name, err))
+				r.errs = append(r.errs, fmt.Errorf("stop %s: %w", name, err))
 			}
 		}
 		if err := deleteInstance(ctx, srv, name); err != nil {
-			errs = append(errs, fmt.Errorf("delete %s: %w", name, err))
+			r.errs = append(r.errs, fmt.Errorf("delete %s: %w", name, err))
 		} else {
-			removed = append(removed, "instance "+name)
+			r.removed = append(r.removed, "instance "+name)
 			logger.Info().Str("instance", name).Msg("instance deleted")
 		}
 	case !notFound(ferr):
-		errs = append(errs, ferr)
+		r.errs = append(r.errs, ferr)
 	}
+	return pool
+}
+
+// removeVolumes deletes the state volume, and the log volume only with deleteLog.
+func removeVolumes(
+	srv incusclient.InstanceServer,
+	name, pool string,
+	deleteLog bool,
+	logger zerolog.Logger,
+	r *removal,
+) {
 	for _, vol := range []string{VolumeName(name), LogVolumeName(name)} {
 		p := pool
 		if p == "" {
 			found, err := poolOf(srv, vol)
 			if err != nil {
-				errs = append(errs, err)
+				r.errs = append(r.errs, err)
 				continue
 			}
 			p = found
 		}
 		switch {
 		case p == "": // in no pool: gone already
-		case vol == LogVolumeName(name) && !opts.DeleteLog:
+		case vol == LogVolumeName(name) && !deleteLog:
 			if ok, err := volumeExists(srv, p, vol); err != nil {
-				errs = append(errs, err)
+				r.errs = append(r.errs, err)
 			} else if ok {
-				kept = vol
+				r.kept = vol
 				logger.Info().
 					Str("pool", p).
 					Str("volume", vol).
@@ -354,36 +385,40 @@ func Uninstall(ctx context.Context, srv incusclient.InstanceServer, opts Uninsta
 			}
 		default:
 			if deleted, err := deleteVolume(srv, p, vol); err != nil {
-				errs = append(errs, err)
+				r.errs = append(r.errs, err)
 			} else if deleted {
-				removed = append(removed, "volume "+vol)
+				r.removed = append(r.removed, "volume "+vol)
 				logger.Info().Str("pool", p).Str("volume", vol).Msg("volume deleted")
 			}
 		}
 	}
+}
+
+// removeTrust revokes the instance's trust tokens and removes its certificates; an unreadable certificate listing ends it.
+func removeTrust(srv incusclient.InstanceServer, name string, logger zerolog.Logger, r *removal) {
 	revoked, err := revokeTokens(srv, name, logger)
 	for _, id := range revoked {
-		removed = append(removed, "trust token "+id)
+		r.removed = append(r.removed, "trust token "+id)
 	}
 	if err != nil {
-		errs = append(errs, err)
+		r.errs = append(r.errs, err)
 	}
 	certs, err := srv.GetCertificates()
 	if err != nil {
-		return errors.Join(append(errs, err)...)
+		r.errs = append(r.errs, err)
+		return
 	}
 	for _, c := range certs {
 		if c.Name != name {
 			continue
 		}
 		if err := srv.DeleteCertificate(c.Fingerprint); err != nil {
-			errs = append(errs, fmt.Errorf("remove certificate %s: %w", c.Fingerprint, err))
+			r.errs = append(r.errs, fmt.Errorf("remove certificate %s: %w", c.Fingerprint, err))
 		} else {
-			removed = append(removed, "certificate "+c.Fingerprint)
+			r.removed = append(r.removed, "certificate "+c.Fingerprint)
 			logger.Info().Str("certificate", c.Name).Msg("certificate removed")
 		}
 	}
-	return errors.Join(errs...)
 }
 
 func createVolume(srv incusclient.InstanceServer, pool, vol string) error {
